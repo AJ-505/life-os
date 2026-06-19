@@ -25,6 +25,12 @@ export const PROJECT_COLORS = [
 
 export type ProjectColor = (typeof PROJECT_COLORS)[number]
 
+/** Client-generated id so creates can be optimistic (the row exists locally
+ *  before the server confirms). The DB accepts the same uuid. */
+export function newId(): string {
+  return globalThis.crypto.randomUUID()
+}
+
 /** Gap used for fractional ordering; new items land at max + GAP. */
 export const POSITION_GAP = 1024
 

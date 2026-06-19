@@ -1,7 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { format, isPast, isToday } from 'date-fns'
-import { Crosshair } from 'lucide-react'
+import { CornerDownRight, Crosshair } from 'lucide-react'
 
 import { cn } from '#/design-system'
 import { Checkbox } from '#/design-system/ui/checkbox'
@@ -9,7 +9,9 @@ import { Checkbox } from '#/design-system/ui/checkbox'
 import { POSITION_GAP } from '../types'
 import { useSetTaskFocus, useUpdateTask } from '../queries'
 import { taskId } from './board-logic'
+import { useBoardUI } from './board-ui'
 
+import type { TaskNode } from './board-logic'
 import type { Task } from '../types'
 
 export function DueChip({ due, done }: { due: Date | string; done?: boolean }) {
@@ -33,25 +35,32 @@ export function DueChip({ due, done }: { due: Date | string; done?: boolean }) {
 
 export function TaskRowBody({
   task,
-  onOpen,
   showProject,
   dragging,
+  subtask,
 }: {
   task: Task
-  onOpen?: () => void
   showProject?: string
   dragging?: boolean
+  subtask?: boolean
 }) {
   const updateTask = useUpdateTask()
   const setFocus = useSetTaskFocus()
+  const { openTask, setHovered } = useBoardUI()
 
   return (
     <div
+      onMouseEnter={() => setHovered(task.id)}
+      onMouseLeave={() => setHovered(null)}
       className={cn(
         'group/task flex cursor-grab items-start gap-2 rounded-md border border-transparent px-2 py-1.5 text-sm transition-colors hover:border-border hover:bg-accent/60 active:cursor-grabbing',
         dragging && 'border-border bg-card shadow-lg',
+        subtask && 'py-1',
       )}
     >
+      {subtask ? (
+        <CornerDownRight className="mt-1 size-3 shrink-0 text-muted-foreground/50" />
+      ) : null}
       <Checkbox
         checked={task.done}
         onCheckedChange={(checked) =>
@@ -63,7 +72,7 @@ export function TaskRowBody({
       />
       <button
         type="button"
-        onClick={onOpen}
+        onClick={() => openTask(task.id)}
         onPointerDown={(e) => e.stopPropagation()}
         className={cn(
           'min-w-0 flex-1 cursor-pointer text-left leading-snug',
@@ -102,17 +111,25 @@ export function TaskRowBody({
   )
 }
 
-export function TaskRow({
-  task,
-  onOpen,
-}: {
-  task: Task
-  onOpen: () => void
-}) {
+function SubtaskRows({ nodes }: { nodes: Array<TaskNode> }) {
+  return (
+    <div className="ml-3.5 flex flex-col border-l border-border/60 pl-0.5">
+      {nodes.map((n) => (
+        <div key={n.task.id}>
+          <TaskRowBody task={n.task} subtask />
+          {n.children.length > 0 ? <SubtaskRows nodes={n.children} /> : null}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** A sortable top-level task row; its subtask tree rides along inside it. */
+export function TaskRow({ node }: { node: TaskNode }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
-      id: taskId(task.id),
-      data: { type: 'task', taskId: task.id, projectId: task.projectId },
+      id: taskId(node.task.id),
+      data: { type: 'task', taskId: node.task.id, projectId: node.task.projectId },
     })
 
   return (
@@ -123,7 +140,8 @@ export function TaskRow({
       {...attributes}
       {...listeners}
     >
-      <TaskRowBody task={task} onOpen={onOpen} />
+      <TaskRowBody task={node.task} />
+      {node.children.length > 0 ? <SubtaskRows nodes={node.children} /> : null}
     </div>
   )
 }

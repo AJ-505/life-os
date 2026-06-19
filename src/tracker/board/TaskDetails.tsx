@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { format } from 'date-fns'
-import { Archive, CalendarIcon, Crosshair, Trash2 } from 'lucide-react'
+import { Archive, CalendarIcon, Crosshair, Plus, Trash2, X } from 'lucide-react'
 
 import { cn } from '#/design-system'
 import { Button } from '#/design-system/ui/button'
 import { Calendar } from '#/design-system/ui/calendar'
+import { Checkbox } from '#/design-system/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -29,8 +30,9 @@ import {
 import { Switch } from '#/design-system/ui/switch'
 import { Textarea } from '#/design-system/ui/textarea'
 
-import { POSITION_GAP, positionAfter } from '../types'
+import { POSITION_GAP, newId, positionAfter } from '../types'
 import {
+  useCreateTask,
   useDeleteTask,
   useMoveTask,
   useSetTaskFocus,
@@ -38,6 +40,82 @@ import {
 } from '../queries'
 
 import type { BoardData, Task } from '../types'
+
+function Subtasks({ parent, board }: { parent: Task; board: BoardData }) {
+  const createTask = useCreateTask()
+  const updateTask = useUpdateTask()
+  const deleteTask = useDeleteTask()
+  const [title, setTitle] = useState('')
+
+  const project = board.find((p) => p.id === parent.projectId)
+  const children = (project?.tasks ?? [])
+    .filter((t) => t.parentId === parent.id && !t.archived)
+    .sort((a, b) => a.position - b.position)
+
+  const add = () => {
+    const t = title.trim()
+    if (!t) return
+    createTask.mutate({
+      id: newId(),
+      projectId: parent.projectId,
+      parentId: parent.id,
+      title: t,
+      position: positionAfter(children),
+    })
+    setTitle('')
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label className="os-label">
+        Subtasks{children.length > 0 ? ` · ${children.filter((c) => c.done).length}/${children.length}` : ''}
+      </Label>
+      <div className="flex flex-col gap-0.5">
+        {children.map((c) => (
+          <div
+            key={c.id}
+            className="group flex items-center gap-2 rounded-md px-1 py-1 hover:bg-accent/60"
+          >
+            <Checkbox
+              checked={c.done}
+              onCheckedChange={(checked) =>
+                updateTask.mutate({ id: c.id, done: checked === true })
+              }
+              aria-label="Done"
+              className="rounded-full"
+            />
+            <span
+              className={cn(
+                'min-w-0 flex-1 truncate text-sm',
+                c.done && 'text-muted-foreground line-through decoration-border',
+              )}
+            >
+              {c.title}
+            </span>
+            <button
+              type="button"
+              aria-label="Delete subtask"
+              onClick={() => deleteTask.mutate({ id: c.id })}
+              className="shrink-0 cursor-pointer text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-1.5 px-1">
+        <Plus className="size-3.5 shrink-0 text-muted-foreground" />
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && add()}
+          placeholder="Add a subtask"
+          className="w-full bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground/70"
+        />
+      </div>
+    </div>
+  )
+}
 
 export function TaskDetails({
   task,
@@ -180,6 +258,8 @@ export function TaskDetails({
               </Select>
             </div>
           </div>
+
+          <Subtasks parent={task} board={board} />
 
           <div className="flex items-center justify-between rounded-md border px-3 py-2">
             <span className="flex items-center gap-2 text-sm">

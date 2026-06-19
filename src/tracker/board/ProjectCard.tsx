@@ -45,18 +45,17 @@ import {
   PopoverTrigger,
 } from '#/design-system/ui/popover'
 
-import { PROJECT_COLORS, positionAfter } from '../types'
+import { PROJECT_COLORS, newId, positionAfter } from '../types'
 import {
   useCreateTask,
   useDeleteProject,
   useSetProjectStatus,
   useUpdateProject,
 } from '../queries'
-import { listId, projId, taskId, visibleTasks } from './board-logic'
+import { listId, projId, taskId, taskTree } from './board-logic'
 import { TaskRow } from './TaskRow'
-import { TaskDetails } from './TaskDetails'
 
-import type { BoardData, ProjectWithTasks, Task } from '../types'
+import type { ProjectWithTasks } from '../types'
 
 function ColorSwatches({
   value,
@@ -191,9 +190,10 @@ function AddTaskInput({ project }: { project: ProjectWithTasks }) {
     const t = title.trim()
     if (!t) return
     createTask.mutate({
+      id: newId(),
       projectId: project.id,
       title: t,
-      position: positionAfter(project.tasks),
+      position: positionAfter(project.tasks.filter((x) => !x.parentId)),
     })
     setTitle('')
   }
@@ -214,13 +214,11 @@ function AddTaskInput({ project }: { project: ProjectWithTasks }) {
 
 export function ProjectCardBody({
   project,
-  board,
   showDone,
   dragHandle,
   ghost,
 }: {
   project: ProjectWithTasks
-  board: BoardData
   showDone: boolean
   dragHandle?: Record<string, unknown>
   ghost?: boolean
@@ -230,7 +228,6 @@ export function ProjectCardBody({
   const deleteProject = useDeleteProject()
   const [editing, setEditing] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const [openTask, setOpenTask] = useState<Task | null>(null)
 
   const { setNodeRef: setListRef, isOver: listIsOver } = useDroppable({
     id: listId(project.id),
@@ -238,7 +235,7 @@ export function ProjectCardBody({
     disabled: ghost,
   })
 
-  const tasks = visibleTasks(project, showDone)
+  const nodes = taskTree(project, showDone)
   const doneCount = project.tasks.filter((t) => t.done && !t.archived).length
   const totalCount = project.tasks.filter((t) => !t.archived).length
   const progress = totalCount === 0 ? 0 : doneCount / totalCount
@@ -261,7 +258,7 @@ export function ProjectCardBody({
       </div>
 
       <div
-        className="flex cursor-grab items-center gap-1.5 px-2.5 py-2 active:cursor-grabbing"
+        className="flex cursor-grab items-center gap-1 px-2 py-2 active:cursor-grabbing"
         {...(dragHandle ?? {})}
       >
         <button
@@ -271,7 +268,7 @@ export function ProjectCardBody({
             updateProject.mutate({ id: project.id, collapsed: !project.collapsed })
           }
           onPointerDown={(e) => e.stopPropagation()}
-          className="cursor-pointer rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="cursor-pointer rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           <ChevronDown
             className={cn(
@@ -296,7 +293,7 @@ export function ProjectCardBody({
             <Button
               variant="ghost"
               size="icon"
-              className="size-6 text-muted-foreground"
+              className="size-7 p-1 text-muted-foreground"
               onPointerDown={(e) => e.stopPropagation()}
               aria-label="Project menu"
             >
@@ -332,14 +329,14 @@ export function ProjectCardBody({
       {!project.collapsed && !ghost ? (
         <div ref={setListRef} className="flex flex-col gap-0.5 px-1.5 pb-2">
           <SortableContext
-            items={tasks.map((t) => taskId(t.id))}
+            items={nodes.map((n) => taskId(n.task.id))}
             strategy={verticalListSortingStrategy}
           >
-            {tasks.map((t) => (
-              <TaskRow key={t.id} task={t} onOpen={() => setOpenTask(t)} />
+            {nodes.map((n) => (
+              <TaskRow key={n.task.id} node={n} />
             ))}
           </SortableContext>
-          {tasks.length === 0 ? (
+          {nodes.length === 0 ? (
             <p className="px-2 py-1 text-xs text-muted-foreground/60">
               {totalCount > 0 ? 'All done in here.' : 'Nothing yet.'}
             </p>
@@ -350,9 +347,7 @@ export function ProjectCardBody({
 
       {project.collapsed && !ghost ? (
         <div ref={setListRef} className="px-3 pb-2">
-          <p className="os-label">
-            {totalCount - doneCount} open
-          </p>
+          <p className="os-label">{totalCount - doneCount} open</p>
         </div>
       ) : null}
 
@@ -394,28 +389,15 @@ export function ProjectCardBody({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {openTask ? (
-        <TaskDetails
-          task={
-            project.tasks.find((t) => t.id === openTask.id) ?? openTask
-          }
-          board={board}
-          open={true}
-          onClose={() => setOpenTask(null)}
-        />
-      ) : null}
     </div>
   )
 }
 
 export function ProjectCard({
   project,
-  board,
   showDone,
 }: {
   project: ProjectWithTasks
-  board: BoardData
   showDone: boolean
 }) {
   const {
@@ -434,11 +416,10 @@ export function ProjectCard({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={cn('rise-in', isDragging && 'opacity-30')}
+      className={cn(isDragging && 'opacity-30')}
     >
       <ProjectCardBody
         project={project}
-        board={board}
         showDone={showDone}
         dragHandle={{ ...attributes, ...listeners }}
       />

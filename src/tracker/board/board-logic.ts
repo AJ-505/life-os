@@ -37,17 +37,65 @@ export function columnProjects(
     .sort((a, b) => a.gridRow - b.gridRow)
 }
 
-export function columnCount(board: BoardData): number {
-  const active = activeProjects(board)
-  if (active.length === 0) return 1
-  return Math.max(...active.map((p) => p.gridCol)) + 1
+/**
+ * The columns that actually exist, compacted: only gridCol values that hold
+ * at least one active project. Emptying a column (delete, move) makes it
+ * vanish instead of leaving a stranded "+ Project" placeholder behind.
+ */
+export function boardColumns(board: BoardData): Array<number> {
+  return [...new Set(activeProjects(board).map((p) => p.gridCol))].sort(
+    (a, b) => a - b,
+  )
 }
 
+/* ------------------------------------------------------------ task nesting */
+
+export type TaskNode = { task: Task; children: Array<TaskNode> }
+
+/**
+ * Visible task tree for a project card. A row stays visible while anything
+ * in its subtree is (so finishing a parent never hides open subtasks).
+ */
+export function taskTree(
+  project: ProjectWithTasks,
+  showDone: boolean,
+): Array<TaskNode> {
+  const byParent = new Map<string | null, Array<Task>>()
+  for (const t of project.tasks) {
+    const key = t.parentId ?? null
+    const list = byParent.get(key)
+    if (list) list.push(t)
+    else byParent.set(key, [t])
+  }
+  const vis = (t: Task) => !t.archived && (showDone || !t.done)
+  const build = (parent: string | null): Array<TaskNode> =>
+    (byParent.get(parent) ?? [])
+      .map((t) => ({ task: t, children: build(t.id) }))
+      .filter((n) => vis(n.task) || n.children.length > 0)
+  return build(null)
+}
+
+/** Top-level visible tasks — the sortable rows position math runs against. */
 export function visibleTasks(
   project: ProjectWithTasks,
   showDone: boolean,
 ): Array<Task> {
-  return project.tasks.filter((t) => !t.archived && (showDone || !t.done))
+  return taskTree(project, showDone).map((n) => n.task)
+}
+
+/** Every descendant task id of `id`, for cascade-style cache updates. */
+export function descendantIds(tasks: Array<Task>, id: string): Array<string> {
+  const out: Array<string> = []
+  const walk = (parent: string) => {
+    for (const t of tasks) {
+      if (t.parentId === parent) {
+        out.push(t.id)
+        walk(t.id)
+      }
+    }
+  }
+  walk(id)
+  return out
 }
 
 export function focusTasks(board: BoardData): Array<Task & { project: ProjectWithTasks }> {
@@ -58,14 +106,15 @@ export function focusTasks(board: BoardData): Array<Task & { project: ProjectWit
 }
 
 /**
- * Where should a dragged project land?
- * `overIndex` is dnd-kit's sortable index of the item being hovered
- * (arrayMove semantics: remove active, insert at overIndex).
+ * Where should a dragged project land? We insert it *before* the project
+ * being hovered (deriving the slot from that project's id rather than a
+ * sortable index, which is off-by-one whenever the dragged item starts ahead
+ * of its target). Dropping on a column appends to that column.
  */
 export function projectDrop(
   board: BoardData,
   activeProjectId: string,
-  over: { kind: 'proj' | 'col'; key: string; overIndex: number },
+  over: { kind: 'proj' | 'col'; key: string },
 ): { gridCol: number; gridRow: number } | null {
   if (over.kind === 'col') {
     const col = Number(over.key)
@@ -75,24 +124,29 @@ export function projectDrop(
     const last = rows.at(-1)
     return { gridCol: col, gridRow: last ? last.gridRow + POSITION_GAP : POSITION_GAP }
   }
+  if (over.key === activeProjectId) return null
   const overProject = board.find((p) => p.id === over.key)
-  if (!overProject || overProject.id === activeProjectId) return null
+  if (!overProject) return null
   const col = overProject.gridCol
   const rows = columnProjects(board, col).filter(
     (p) => p.id !== activeProjectId,
   )
-  const index = Math.max(0, Math.min(over.overIndex, rows.length))
+  const index = rows.findIndex((p) => p.id === over.key)
   return {
     gridCol: col,
-    gridRow: positionAt(rows.map((p) => p.gridRow), index),
+    gridRow: positionAt(
+      rows.map((p) => p.gridRow),
+      index === -1 ? rows.length : index,
+    ),
   }
 }
 
-/** Where should a dragged task land inside a project list? */
+/** Where should a dragged task land? Inserts before the hovered task, or at
+ *  the end when dropped on the list/empty area. */
 export function taskDrop(
   board: BoardData,
   activeTaskId: string,
-  over: { kind: 'task' | 'list'; key: string; overIndex: number },
+  over: { kind: 'task' | 'list'; key: string },
   showDone: boolean,
 ): { projectId: string; position: number } | null {
   if (over.kind === 'list') {
@@ -107,29 +161,37 @@ export function taskDrop(
       position: last ? last.position + POSITION_GAP : POSITION_GAP,
     }
   }
+  if (over.key === activeTaskId) return null
   const project = board.find((p) => p.tasks.some((t) => t.id === over.key))
   if (!project) return null
   const items = visibleTasks(project, showDone).filter(
     (t) => t.id !== activeTaskId,
   )
-  const index = Math.max(0, Math.min(over.overIndex, items.length))
+  const index = items.findIndex((t) => t.id === over.key)
   return {
     projectId: project.id,
-    position: positionAt(items.map((t) => t.position), index),
+    position: positionAt(
+      items.map((t) => t.position),
+      index === -1 ? items.length : index,
+    ),
   }
 }
 
-/** focusOrder for dropping into the focus panel. */
+/** focusOrder for dropping into the focus panel; inserts before the hovered
+ *  item, or at the end when dropped on the zone itself. */
 export function focusDrop(
   board: BoardData,
   activeTaskId: string,
-  over: { kind: 'fitem' | 'focuszone'; key: string; overIndex: number },
+  over: { kind: 'fitem' | 'focuszone'; key: string },
 ): number {
   const items = focusTasks(board).filter((t) => t.id !== activeTaskId)
-  if (over.kind === 'focuszone' || items.length === 0) {
+  if (over.kind === 'focuszone' || over.key === activeTaskId || items.length === 0) {
     const last = items.at(-1)
     return last ? last.focusOrder + POSITION_GAP : POSITION_GAP
   }
-  const index = Math.max(0, Math.min(over.overIndex, items.length))
-  return positionAt(items.map((t) => t.focusOrder), index)
+  const index = items.findIndex((t) => t.id === over.key)
+  return positionAt(
+    items.map((t) => t.focusOrder),
+    index === -1 ? items.length : index,
+  )
 }

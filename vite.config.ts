@@ -3,12 +3,21 @@ import { devtools } from '@tanstack/devtools-vite'
 
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 
-import viteReact from '@vitejs/plugin-react'
+import viteReact, { reactCompilerPreset } from '@vitejs/plugin-react'
+import babel from '@rolldown/plugin-babel'
 import tailwindcss from '@tailwindcss/vite'
 
 const config = defineConfig({
   resolve: { tsconfigPaths: true },
-  plugins: [devtools(), tailwindcss(), tanstackStart(), viteReact()],
+  plugins: [
+    devtools(),
+    tailwindcss(),
+    tanstackStart(),
+    viteReact(),
+    // React Compiler auto-memoizes components/hooks at build time, so we don't
+    // hand-write memo/useMemo/useCallback to keep the board fast under load.
+    babel({ presets: [reactCompilerPreset({ target: '19' })] }),
+  ],
 })
 
 export default config

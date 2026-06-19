@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
   PointerSensor,
   TouchSensor,
+  closestCenter,
   pointerWithin,
   rectIntersection,
   useDroppable,
@@ -17,7 +18,7 @@ import {
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { Check, Crosshair, Plus } from 'lucide-react'
 
-import { cn } from '#/design-system'
+import { cn, useLocalFlag } from '#/design-system'
 import { Button } from '#/design-system/ui/button'
 import {
   Dialog,
@@ -31,13 +32,19 @@ import { Label } from '#/design-system/ui/label'
 import { Sheet, SheetContent } from '#/design-system/ui/sheet'
 import { Switch } from '#/design-system/ui/switch'
 
-import { PROJECT_COLORS, positionAfter } from '../types'
-import { boardQueryOptions, useCreateProject, useMoveProject, useMoveTask, useSetTaskFocus } from '../queries'
+import { PROJECT_COLORS, newId, positionAfter } from '../types'
+import {
+  boardQueryOptions,
+  useCreateProject,
+  useMoveProject,
+  useMoveTask,
+  useSetTaskFocus,
+} from '../queries'
 import { FocusItemBody, FocusPanel } from '../focus/FocusPanel'
 import {
   activeProjects,
+  boardColumns,
   colId,
-  columnCount,
   columnProjects,
   focusDrop,
   parseDragId,
@@ -47,26 +54,44 @@ import {
 } from './board-logic'
 import { ProjectCard, ProjectCardBody } from './ProjectCard'
 import { TaskRowBody } from './TaskRow'
+import { TaskDetails } from './TaskDetails'
+import { BoardUIContext } from './board-ui'
 
 import type { CollisionDetection, DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import type { BoardData, ProjectWithTasks, Task } from '../types'
 
-const collisionDetection: CollisionDetection = (args) => {
-  const pointer = pointerWithin(args)
-  return pointer.length > 0 ? pointer : rectIntersection(args)
-}
+type DragKind = 'proj' | 'task' | 'fitem' | null
 
-function useLocalFlag(key: string, initial: boolean) {
-  const [value, setValue] = useState(initial)
-  useEffect(() => {
-    const stored = localStorage.getItem(key)
-    if (stored !== null) setValue(stored === '1')
-  }, [key])
-  const update = (v: boolean) => {
-    setValue(v)
-    localStorage.setItem(key, v ? '1' : '0')
+/**
+ * The board nests droppables three deep (column ▸ task list ▸ task rows).
+ * A naive pointerWithin then resolves a task drag to the *column* under the
+ * cursor, which onDragEnd can't act on — so drops silently no-op. This
+ * detection filters candidate droppables to only those that make sense for
+ * what's being dragged, so a task always lands on a task/list/focus target.
+ */
+function collisionFor(kind: DragKind): CollisionDetection {
+  return (args) => {
+    const allow = (raw: string | number) => {
+      const k = parseDragId(raw)?.kind
+      if (kind === 'proj') return k === 'proj' || k === 'col'
+      if (kind === 'task')
+        return k === 'task' || k === 'list' || k === 'fitem' || k === 'focuszone'
+      if (kind === 'fitem') return k === 'fitem' || k === 'focuszone'
+      return true
+    }
+    const droppableContainers = args.droppableContainers.filter((c) =>
+      allow(c.id),
+    )
+    const scoped = { ...args, droppableContainers }
+
+    // Projects are big rectangles → pointer/rect works best. Tasks & focus
+    // items are a tight sortable list → closestCenter gives clean reordering.
+    if (kind === 'proj') {
+      const pointer = pointerWithin(scoped)
+      return pointer.length > 0 ? pointer : rectIntersection(scoped)
+    }
+    return closestCenter(scoped)
   }
-  return [value, update] as const
 }
 
 function NewProjectDialog({
@@ -90,6 +115,7 @@ function NewProjectDialog({
     const n = name.trim()
     if (!n) return
     createProject.mutate({
+      id: newId(),
       name: n,
       color,
       gridCol,
@@ -183,7 +209,7 @@ function BoardColumn({
         strategy={verticalListSortingStrategy}
       >
         {projects.map((p) => (
-          <ProjectCard key={p.id} project={p} board={board} showDone={showDone} />
+          <ProjectCard key={p.id} project={p} showDone={showDone} />
         ))}
       </SortableContext>
       <button
@@ -217,15 +243,20 @@ export function BoardView() {
   const [mobileFocusOpen, setMobileFocusOpen] = useState(false)
   const [newProjectCol, setNewProjectCol] = useState<number | null>(null)
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null)
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null)
+  const hoveredRef = useRef<string | null>(null)
+  const [dragKind, setDragKind] = useState<DragKind>(null)
+  const collisionDetection = useMemo(() => collisionFor(dragKind), [dragKind])
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 220, tolerance: 8 },
+      activationConstraint: { delay: 200, tolerance: 8 },
     }),
   )
 
-  const cols = columnCount(board)
+  const columns = useMemo(() => boardColumns(board), [board])
+  const ghostCol = (columns.at(-1) ?? -1) + 1
   const active = activeProjects(board)
   const openCount = useMemo(
     () =>
@@ -236,13 +267,67 @@ export function BoardView() {
     [active],
   )
 
-  const findTask = (id: string) => {
-    for (const p of board) {
-      const t = p.tasks.find((x) => x.id === id)
-      if (t) return { task: t, project: p }
+  const findTask = useCallback(
+    (id: string) => {
+      for (const p of board) {
+        const t = p.tasks.find((x) => x.id === id)
+        if (t) return { task: t, project: p }
+      }
+      return null
+    },
+    [board],
+  )
+
+  // Stable UI api so memoized rows never re-render just because the board did.
+  const boardUI = useMemo(
+    () => ({
+      openTask: (id: string) => setOpenTaskId(id),
+      setHovered: (id: string | null) => {
+        hoveredRef.current = id
+      },
+    }),
+    [],
+  )
+
+  // Trello-style keybindings: hover a task, hit a key.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null
+      if (
+        el &&
+        (el.tagName === 'INPUT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.isContentEditable)
+      )
+        return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+
+      if (e.key === ']') {
+        e.preventDefault()
+        setFocusOpen(!focusOpen)
+        return
+      }
+
+      const id = hoveredRef.current
+      if (!id) return
+      const found = findTask(id)
+      if (!found) return
+
+      if (e.key === 'e' || e.key === 'Enter') {
+        e.preventDefault()
+        setOpenTaskId(id)
+      } else if (e.key === 'f') {
+        e.preventDefault()
+        setFocus.mutate({
+          id,
+          inFocus: !found.task.inFocus,
+          focusOrder: Date.now() / 1000,
+        })
+      }
     }
-    return null
-  }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [findTask, focusOpen, setFocusOpen, setFocus])
 
   const onDragStart = (e: DragStartEvent) => {
     const parsed = parseDragId(e.active.id)
@@ -250,59 +335,45 @@ export function BoardView() {
     if (parsed.kind === 'proj') {
       const project = board.find((p) => p.id === parsed.key)
       if (project) setActiveDrag({ type: 'proj', project })
+      setDragKind('proj')
     } else if (parsed.kind === 'task') {
       const found = findTask(parsed.key)
       if (found) setActiveDrag({ type: 'task', task: found.task })
+      setDragKind('task')
     } else if (parsed.kind === 'fitem') {
       const found = findTask(parsed.key)
       if (found)
         setActiveDrag({ type: 'fitem', task: found.task, project: found.project })
+      setDragKind('fitem')
     }
   }
 
   const onDragEnd = (e: DragEndEvent) => {
     setActiveDrag(null)
+    setDragKind(null)
     const { active: a, over } = e
     if (!over) return
     const src = parseDragId(a.id)
     let dst = parseDragId(over.id)
     if (!src || !dst) return
-    const overIndex: number =
-      (over.data.current as { sortable?: { index: number } } | undefined)
-        ?.sortable?.index ?? 0
 
     if (src.kind === 'proj') {
       let target: { gridCol: number; gridRow: number } | null = null
       if (dst.kind === 'col') {
-        target = projectDrop(board, src.key, {
-          kind: 'col',
-          key: dst.key,
-          overIndex,
-        })
+        target = projectDrop(board, src.key, { kind: 'col', key: dst.key })
       } else {
-        // hovering a project's interior (a task or its list) counts as
-        // hovering the project itself, inserted just above it
+        // hovering a project's interior (a task or its list) means "insert
+        // before that project"
         let projKey: string | null = null
-        let idx = overIndex
         if (dst.kind === 'proj') {
           projKey = dst.key
-        } else if (dst.kind === 'task' || dst.kind === 'list') {
-          projKey =
-            dst.kind === 'list'
-              ? dst.key
-              : (findTask(dst.key)?.project.id ?? null)
-          const overProject = board.find((p) => p.id === projKey)
-          if (!overProject) return
-          idx = columnProjects(board, overProject.gridCol).findIndex(
-            (p) => p.id === projKey,
-          )
+        } else if (dst.kind === 'list') {
+          projKey = dst.key
+        } else if (dst.kind === 'task') {
+          projKey = findTask(dst.key)?.project.id ?? null
         }
         if (!projKey || projKey === src.key) return
-        target = projectDrop(board, src.key, {
-          kind: 'proj',
-          key: projKey,
-          overIndex: idx,
-        })
+        target = projectDrop(board, src.key, { kind: 'proj', key: projKey })
       }
       if (target) moveProject.mutate({ id: src.key, ...target })
       return
@@ -313,7 +384,6 @@ export function BoardView() {
         const focusOrder = focusDrop(board, src.key, {
           kind: dst.kind,
           key: dst.key,
-          overIndex,
         })
         setFocus.mutate({ id: src.key, inFocus: true, focusOrder })
         return
@@ -323,7 +393,7 @@ export function BoardView() {
       const target = taskDrop(
         board,
         src.key,
-        { kind: dst.kind, key: dst.key, overIndex },
+        { kind: dst.kind, key: dst.key },
         showDone,
       )
       if (target) moveTask.mutate({ id: src.key, ...target })
@@ -335,135 +405,147 @@ export function BoardView() {
       const focusOrder = focusDrop(board, src.key, {
         kind: dst.kind,
         key: dst.key,
-        overIndex,
       })
       setFocus.mutate({ id: src.key, inFocus: true, focusOrder })
     }
   }
 
-  return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={collisionDetection}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      onDragCancel={() => setActiveDrag(null)}
-    >
-      <div className="flex min-h-0 flex-1">
-        <div className="flex min-w-0 flex-1 flex-col">
-          {/* Header */}
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2.5">
-            <div className="flex items-baseline gap-3">
-              <h1 className="text-lg font-bold tracking-tight">Board</h1>
-              <span className="os-label hidden sm:inline">
-                {active.length} projects · {openCount} open
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <label className="flex cursor-pointer items-center gap-1.5">
-                <Switch
-                  checked={showDone}
-                  onCheckedChange={setShowDone}
-                  aria-label="Show completed tasks"
-                />
-                <span className="os-label hidden sm:inline">done</span>
-              </label>
-              <Button
-                size="sm"
-                className="gap-1.5 bg-signal text-signal-foreground hover:bg-signal/90"
-                onClick={() => setNewProjectCol(cols - 1)}
-              >
-                <Plus className="size-4" /> Project
-              </Button>
-              <Button
-                variant={focusOpen ? 'secondary' : 'ghost'}
-                size="icon"
-                className="hidden lg:inline-flex"
-                aria-label="Toggle focus panel"
-                onClick={() => setFocusOpen(!focusOpen)}
-              >
-                <Crosshair className={cn('size-4', focusOpen && 'text-signal')} />
-              </Button>
-            </div>
-          </div>
+  const openTask = openTaskId ? findTask(openTaskId)?.task ?? null : null
 
-          {/* Canvas */}
-          <div className="board-canvas board-scroll min-h-0 flex-1 snap-x snap-mandatory overflow-auto sm:snap-none">
-            <div className="flex min-h-full items-start gap-2 p-3 pb-24 lg:pb-3">
-              {Array.from({ length: cols }, (_, col) => (
+  return (
+    <BoardUIContext.Provider value={boardUI}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={collisionDetection}
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        onDragCancel={() => {
+          setActiveDrag(null)
+          setDragKind(null)
+        }}
+      >
+        <div className="flex min-h-0 flex-1">
+          <div className="flex min-w-0 flex-1 flex-col">
+            {/* Header */}
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2.5">
+              <div className="flex items-baseline gap-3">
+                <h1 className="text-lg font-bold tracking-tight">Board</h1>
+                <span className="os-label hidden sm:inline">
+                  {active.length} projects · {openCount} open
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="flex cursor-pointer items-center gap-1.5">
+                  <Switch
+                    checked={showDone}
+                    onCheckedChange={setShowDone}
+                    aria-label="Show completed tasks"
+                  />
+                  <span className="os-label hidden sm:inline">done</span>
+                </label>
+                <Button
+                  size="sm"
+                  className="gap-1.5 bg-signal text-signal-foreground hover:bg-signal/90"
+                  onClick={() => setNewProjectCol(columns.at(-1) ?? 0)}
+                >
+                  <Plus className="size-4" /> Project
+                </Button>
+                <Button
+                  variant={focusOpen ? 'secondary' : 'ghost'}
+                  size="icon"
+                  className="hidden lg:inline-flex"
+                  aria-label="Toggle focus panel (])"
+                  title="Toggle focus panel  ]"
+                  onClick={() => setFocusOpen(!focusOpen)}
+                >
+                  <Crosshair className={cn('size-4', focusOpen && 'text-signal')} />
+                </Button>
+              </div>
+            </div>
+
+            {/* Canvas */}
+            <div className="board-canvas board-scroll min-h-0 flex-1 snap-x snap-mandatory overflow-auto sm:snap-none">
+              <div className="flex min-h-full items-start gap-2 p-3 pb-24 lg:pb-3">
+                {columns.map((col) => (
+                  <BoardColumn
+                    key={col}
+                    col={col}
+                    board={board}
+                    showDone={showDone}
+                    onAddProject={setNewProjectCol}
+                  />
+                ))}
                 <BoardColumn
-                  key={col}
-                  col={col}
+                  col={ghostCol}
                   board={board}
                   showDone={showDone}
+                  isGhost
                   onAddProject={setNewProjectCol}
                 />
-              ))}
-              <BoardColumn
-                col={cols}
-                board={board}
-                showDone={showDone}
-                isGhost
-                onAddProject={setNewProjectCol}
-              />
+              </div>
             </div>
           </div>
+
+          {/* Desktop focus panel */}
+          {focusOpen ? (
+            <aside className="hidden w-80 shrink-0 border-l bg-sidebar/50 lg:block">
+              <FocusPanel board={board} onClose={() => setFocusOpen(false)} />
+            </aside>
+          ) : null}
         </div>
 
-        {/* Desktop focus panel */}
-        {focusOpen ? (
-          <aside className="hidden w-80 shrink-0 border-l bg-sidebar/50 lg:block">
+        {/* Mobile focus */}
+        <Button
+          size="icon"
+          aria-label="Open focus"
+          className="fixed bottom-5 right-5 z-40 size-12 rounded-full bg-signal text-signal-foreground shadow-xl hover:bg-signal/90 lg:hidden"
+          onClick={() => setMobileFocusOpen(true)}
+        >
+          <Crosshair className="size-5" />
+        </Button>
+        <Sheet open={mobileFocusOpen} onOpenChange={setMobileFocusOpen}>
+          <SheetContent side="right" className="w-[88vw] max-w-sm p-0 pt-8">
             <FocusPanel board={board} />
-          </aside>
+          </SheetContent>
+        </Sheet>
+
+        <NewProjectDialog
+          open={newProjectCol !== null}
+          onClose={() => setNewProjectCol(null)}
+          gridCol={newProjectCol ?? 0}
+          board={board}
+        />
+
+        {/* One details dialog for the whole board — not one per card. */}
+        {openTask ? (
+          <TaskDetails
+            task={openTask}
+            board={board}
+            open={true}
+            onClose={() => setOpenTaskId(null)}
+          />
         ) : null}
-      </div>
 
-      {/* Mobile focus */}
-      <Button
-        size="icon"
-        aria-label="Open focus"
-        className="fixed bottom-5 right-5 z-40 size-12 rounded-full bg-signal text-signal-foreground shadow-xl hover:bg-signal/90 lg:hidden"
-        onClick={() => setMobileFocusOpen(true)}
-      >
-        <Crosshair className="size-5" />
-      </Button>
-      <Sheet open={mobileFocusOpen} onOpenChange={setMobileFocusOpen}>
-        <SheetContent side="right" className="w-[88vw] max-w-sm p-0 pt-8">
-          <FocusPanel board={board} />
-        </SheetContent>
-      </Sheet>
-
-      <NewProjectDialog
-        open={newProjectCol !== null}
-        onClose={() => setNewProjectCol(null)}
-        gridCol={newProjectCol ?? 0}
-        board={board}
-      />
-
-      <DragOverlay>
-        {activeDrag?.type === 'proj' ? (
-          <div className="w-[280px]">
-            <ProjectCardBody
-              project={activeDrag.project}
-              board={board}
-              showDone={showDone}
-              ghost
-            />
-          </div>
-        ) : activeDrag?.type === 'task' ? (
-          <div className="w-[260px]">
-            <TaskRowBody task={activeDrag.task} dragging />
-          </div>
-        ) : activeDrag?.type === 'fitem' ? (
-          <div className="w-[280px]">
-            <FocusItemBody
-              task={activeDrag.task}
-              project={activeDrag.project}
-              dragging
-            />
-          </div>
-        ) : null}
-      </DragOverlay>
-    </DndContext>
+        <DragOverlay dropAnimation={null}>
+          {activeDrag?.type === 'proj' ? (
+            <div className="w-[280px]">
+              <ProjectCardBody project={activeDrag.project} showDone={showDone} ghost />
+            </div>
+          ) : activeDrag?.type === 'task' ? (
+            <div className="w-[260px]">
+              <TaskRowBody task={activeDrag.task} dragging />
+            </div>
+          ) : activeDrag?.type === 'fitem' ? (
+            <div className="w-[280px]">
+              <FocusItemBody
+                task={activeDrag.task}
+                project={activeDrag.project}
+                dragging
+              />
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+    </BoardUIContext.Provider>
   )
 }

@@ -6,11 +6,12 @@ import {
 } from '@tanstack/react-router'
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
+import { Toaster } from 'sonner'
 
 import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
 
 import { THEME_INIT_SCRIPT, ThemeProvider } from '#/design-system'
-import { AppShell } from '#/shell'
+import { AppShell, UpdateWatcher } from '#/shell'
 
 import appCss from '../styles.css?url'
 
@@ -49,6 +50,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <ThemeProvider>{children}</ThemeProvider>
+        <Toaster position="bottom-center" closeButton richColors />
+        <UpdateWatcher />
         <TanStackDevtools
           config={{ position: 'bottom-right' }}
           plugins={[

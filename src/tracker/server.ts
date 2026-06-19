@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { asc, eq } from 'drizzle-orm'
+import { asc, eq, sql } from 'drizzle-orm'
 
 import { db } from '#/db'
 import { projects, tasks } from './schema'
@@ -19,6 +19,7 @@ export const fetchBoard = createServerFn({ method: 'GET' }).handler(
 export const createProject = createServerFn({ method: 'POST' })
   .validator(
     (input: {
+      id: string
       name: string
       color: string
       gridCol: number
@@ -28,8 +29,14 @@ export const createProject = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const name = data.name.trim()
     if (!name) throw new Error('Project name is required')
-    const [row] = await db.insert(projects).values({ ...data, name }).returning()
-    return row
+    // Client supplies the id so creation is optimistic; conflicts mean an
+    // outbox retry already landed — that's a success, not an error.
+    const [row] = await db
+      .insert(projects)
+      .values({ ...data, name })
+      .onConflictDoNothing()
+      .returning()
+    return row ?? null
   })
 
 export const updateProject = createServerFn({ method: 'POST' })
@@ -93,7 +100,9 @@ export const deleteProject = createServerFn({ method: 'POST' })
 export const createTask = createServerFn({ method: 'POST' })
   .validator(
     (input: {
+      id: string
       projectId: string
+      parentId?: string | null
       title: string
       position: number
       dueAt?: string | null
@@ -105,13 +114,16 @@ export const createTask = createServerFn({ method: 'POST' })
     const [row] = await db
       .insert(tasks)
       .values({
+        id: data.id,
         projectId: data.projectId,
+        parentId: data.parentId ?? null,
         title,
         position: data.position,
         dueAt: data.dueAt ? new Date(data.dueAt) : null,
       })
+      .onConflictDoNothing()
       .returning()
-    return row
+    return row ?? null
   })
 
 export const updateTask = createServerFn({ method: 'POST' })
@@ -141,7 +153,8 @@ export const updateTask = createServerFn({ method: 'POST' })
     return row
   })
 
-/** Move within a project or across projects. Focus membership is untouched. */
+/** Move within a project or across projects. Focus membership is untouched.
+ *  Subtasks travel with their parent. */
 export const moveTask = createServerFn({ method: 'POST' })
   .validator(
     (input: { id: string; projectId: string; position: number }) => input,
@@ -152,6 +165,15 @@ export const moveTask = createServerFn({ method: 'POST' })
       .set({ projectId: data.projectId, position: data.position })
       .where(eq(tasks.id, data.id))
       .returning()
+    await db.execute(sql`
+      with recursive sub as (
+        select id from ${tasks} where parent_id = ${data.id}
+        union all
+        select t.id from ${tasks} t join sub on t.parent_id = sub.id
+      )
+      update ${tasks} set project_id = ${data.projectId}
+      where id in (select id from sub)
+    `)
     return row
   })
 

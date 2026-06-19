@@ -5,7 +5,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Crosshair, X } from 'lucide-react'
+import { Crosshair, PanelRightClose, X } from 'lucide-react'
 
 import { cn } from '#/design-system'
 import { Button } from '#/design-system/ui/button'
@@ -96,7 +96,13 @@ function FocusItem({ task, project }: { task: Task; project: Project }) {
   )
 }
 
-export function FocusPanel({ board }: { board: BoardData }) {
+export function FocusPanel({
+  board,
+  onClose,
+}: {
+  board: BoardData
+  onClose?: () => void
+}) {
   const setFocus = useSetTaskFocus()
   const items = focusTasks(board)
   const doneItems = items.filter((t) => t.done)
@@ -116,20 +122,34 @@ export function FocusPanel({ board }: { board: BoardData }) {
             {items.filter((t) => !t.done).length}
           </span>
         </span>
-        {doneItems.length > 0 ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-xs text-muted-foreground"
-            onClick={() =>
-              doneItems.forEach((t) =>
-                setFocus.mutate({ id: t.id, inFocus: false }),
-              )
-            }
-          >
-            Clear done
-          </Button>
-        ) : null}
+        <div className="flex items-center gap-1">
+          {doneItems.length > 0 ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-muted-foreground"
+              onClick={() =>
+                doneItems.forEach((t) =>
+                  setFocus.mutate({ id: t.id, inFocus: false }),
+                )
+              }
+            >
+              Clear done
+            </Button>
+          ) : null}
+          {onClose ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="hidden size-6 text-muted-foreground lg:inline-flex"
+              aria-label="Collapse focus panel (])"
+              title="Collapse  ]"
+              onClick={onClose}
+            >
+              <PanelRightClose className="size-4" />
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <ScrollArea className="min-h-0 flex-1">

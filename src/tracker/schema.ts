@@ -1,4 +1,5 @@
 import { relations } from 'drizzle-orm'
+import type { AnyPgColumn } from 'drizzle-orm/pg-core'
 import {
   boolean,
   doublePrecision,
@@ -45,6 +46,10 @@ export const tasks = pgTable('tasks', {
   projectId: uuid('project_id')
     .notNull()
     .references(() => projects.id, { onDelete: 'cascade' }),
+  // Self-reference: a task can nest under another task, infinitely deep.
+  parentId: uuid('parent_id').references((): AnyPgColumn => tasks.id, {
+    onDelete: 'cascade',
+  }),
   title: text().notNull(),
   notes: text(),
   position: doublePrecision().notNull().default(0),
