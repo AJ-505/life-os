@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   DndContext,
-  DragOverlay,
+  MeasuringStrategy,
   PointerSensor,
   TouchSensor,
   closestCenter,
@@ -40,7 +41,7 @@ import {
   useMoveTask,
   useSetTaskFocus,
 } from '../queries'
-import { FocusItemBody, FocusPanel } from '../focus/FocusPanel'
+import { FocusPanel } from '../focus/FocusPanel'
 import {
   activeProjects,
   boardColumns,
@@ -52,10 +53,9 @@ import {
   projectDrop,
   taskDrop,
 } from './board-logic'
-import { ProjectCard, ProjectCardBody } from './ProjectCard'
-import { TaskRowBody } from './TaskRow'
+import { ProjectCard } from './ProjectCard'
 import { TaskDetails } from './TaskDetails'
-import { BoardUIContext } from './board-ui'
+import { BoardUIContext, DragActiveContext } from './board-ui'
 
 import type { CollisionDetection, DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import type { BoardData, ProjectWithTasks, Task } from '../types'
@@ -71,26 +71,62 @@ type DragKind = 'proj' | 'task' | 'fitem' | null
  */
 function collisionFor(kind: DragKind): CollisionDetection {
   return (args) => {
-    const allow = (raw: string | number) => {
-      const k = parseDragId(raw)?.kind
-      if (kind === 'proj') return k === 'proj' || k === 'col'
-      if (kind === 'task')
-        return k === 'task' || k === 'list' || k === 'fitem' || k === 'focuszone'
-      if (kind === 'fitem') return k === 'fitem' || k === 'focuszone'
-      return true
+    // Filter candidates by the droppable's own `data.type` (O(1) per item) so
+    // we never parse drag-id strings on every pointer move.
+    const byType = (...types: Array<string>) =>
+      args.droppableContainers.filter((c) =>
+        types.includes(c.data.current?.type as string),
+      )
+    const hit = (cs: typeof args.droppableContainers) => {
+      const scoped = { ...args, droppableContainers: cs }
+      const p = pointerWithin(scoped)
+      return p.length > 0 ? p : rectIntersection(scoped)
     }
-    const droppableContainers = args.droppableContainers.filter((c) =>
-      allow(c.id),
-    )
-    const scoped = { ...args, droppableContainers }
+    const containerOf = (id: string | number) =>
+      args.droppableContainers.find((c) => c.id === id)
 
-    // Projects are big rectangles → pointer/rect works best. Tasks & focus
-    // items are a tight sortable list → closestCenter gives clean reordering.
-    if (kind === 'proj') {
-      const pointer = pointerWithin(scoped)
-      return pointer.length > 0 ? pointer : rectIntersection(scoped)
+    // Projects are big rectangles → pointer/rect works best.
+    if (kind === 'proj') return hit(byType('proj', 'col'))
+
+    if (kind === 'fitem') {
+      const within = closestCenter({
+        ...args,
+        droppableContainers: byType('fitem'),
+      })
+      return within.length > 0 ? within : hit(byType('focuszone'))
     }
-    return closestCenter(scoped)
+
+    if (kind === 'task') {
+      // Pass 1 — which project list (or the focus zone) is the pointer inside?
+      // Resolving the *container* first is what makes in-project reordering and
+      // cross-project moves land where you actually release, instead of
+      // snapping to the globally-nearest task anywhere on the board.
+      const top = hit(byType('list', 'focuszone')).at(0)
+      const container = top ? containerOf(top.id) : undefined
+      if (!container) {
+        // Anywhere else on a project card (its header/edges) → drop into it.
+        const onCard = hit(byType('proj')).at(0)
+        return onCard ? [{ id: onCard.id }] : []
+      }
+      if (container.data.current?.type === 'focuszone') {
+        const within = closestCenter({
+          ...args,
+          droppableContainers: byType('fitem'),
+        })
+        return within.length > 0 ? within : [{ id: container.id }]
+      }
+      // Pass 2 — the closest task row *within that project only*.
+      const projectId = container.data.current?.projectId
+      const rows = args.droppableContainers.filter(
+        (c) =>
+          c.data.current?.type === 'task' &&
+          c.data.current.projectId === projectId,
+      )
+      const within = closestCenter({ ...args, droppableContainers: rows })
+      return within.length > 0 ? within : [{ id: container.id }]
+    }
+
+    return closestCenter(args)
   }
 }
 
@@ -227,10 +263,121 @@ function BoardColumn({
   )
 }
 
+function GhostProjectCard({
+  project,
+}: {
+  project: ProjectWithTasks
+}) {
+  const doneCount = project.tasks.filter((t) => t.done && !t.archived).length
+  const totalCount = project.tasks.filter((t) => !t.archived).length
+  const progress = totalCount === 0 ? 0 : doneCount / totalCount
+
+  return (
+    <div
+      data-proj={project.color}
+      className="rotate-1 flex flex-col overflow-hidden rounded-lg border bg-card shadow-xl ring-2 ring-signal/40"
+    >
+      <div className="relative h-1 bg-proj/25">
+        <div
+          className="h-full bg-proj transition-[width] duration-500"
+          style={{ width: `${progress * 100}%` }}
+        />
+      </div>
+      <div className="flex items-center gap-1 px-2 py-2">
+        <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">
+          {project.name}
+        </h3>
+        <span className="font-mono text-[10px] text-muted-foreground">
+          {doneCount}/{totalCount}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+function GhostTaskRow({ task, showProject }: { task: Task; showProject?: string }) {
+  return (
+    <div className="flex cursor-grab items-start gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-sm shadow-lg">
+      <div className="mt-0.5 size-4 shrink-0 rounded-full border border-muted-foreground/40" />
+      <span className={cn('min-w-0 flex-1 text-left leading-snug', task.done && 'text-muted-foreground line-through decoration-border')}>
+        {task.title}
+        {showProject ? (
+          <span className="mt-0.5 block truncate font-mono text-[10px] uppercase tracking-wider text-proj">
+            {showProject}
+          </span>
+        ) : null}
+      </span>
+    </div>
+  )
+}
+
 type ActiveDrag =
   | { type: 'proj'; project: ProjectWithTasks }
   | { type: 'task'; task: Task }
   | { type: 'fitem'; task: Task; project: ProjectWithTasks }
+
+/**
+ * Pixel-for-pixel drag overlay. Positions via direct DOM manipulation
+ * (ref + requestAnimationFrame), bypassing React's render cycle entirely.
+ * The 250ms CSS transition from useSortable is the #1 cause of drag lag —
+ * this overlay never touches React state for its position.
+ */
+function FastDragOverlay({
+  active,
+  offsetRef,
+  children,
+}: {
+  active: ActiveDrag | null
+  offsetRef: React.RefObject<{ x: number; y: number }>
+  children: React.ReactNode
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const pos = useRef({ x: 0, y: 0 })
+  const raf = useRef(0)
+
+  useEffect(() => {
+    if (!active) return
+    const onMove = (e: PointerEvent) => {
+      pos.current = { x: e.clientX, y: e.clientY }
+      if (!raf.current) {
+        raf.current = requestAnimationFrame(() => {
+          raf.current = 0
+          if (ref.current) {
+            // Subtract where *inside* the item the user grabbed, so the ghost
+            // sits under the cursor instead of a fixed corner offset — a
+            // mispositioned ghost reads as "lag" even at a perfect 60fps.
+            const { x, y } = offsetRef.current
+            ref.current.style.transform = `translate3d(${pos.current.x - x}px, ${pos.current.y - y}px, 0)`
+          }
+        })
+      }
+    }
+    window.addEventListener('pointermove', onMove, { passive: true })
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      if (raf.current) cancelAnimationFrame(raf.current)
+    }
+  }, [active, offsetRef])
+
+  if (!active) return null
+
+  return createPortal(
+    <div
+      ref={ref}
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        willChange: 'transform',
+        pointerEvents: 'none',
+        zIndex: 9999,
+      }}
+    >
+      {children}
+    </div>,
+    document.body,
+  )
+}
 
 export function BoardView() {
   const { data: board } = useSuspenseQuery(boardQueryOptions)
@@ -245,6 +392,7 @@ export function BoardView() {
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null)
   const [openTaskId, setOpenTaskId] = useState<string | null>(null)
   const hoveredRef = useRef<string | null>(null)
+  const grabOffset = useRef({ x: 10, y: 10 })
   const [dragKind, setDragKind] = useState<DragKind>(null)
   const collisionDetection = useMemo(() => collisionFor(dragKind), [dragKind])
 
@@ -278,15 +426,17 @@ export function BoardView() {
     [board],
   )
 
-  // Stable UI api so memoized rows never re-render just because the board did.
+  // Stable UI api so memoized rows never re-render just because the board did
+  // — or because a drag started/ended. The drag-active flag lives in its own
+  // context (consumed only by the thin sortable wrappers), so the heavy,
+  // memoized row bodies stay put across an entire drag.
+  const handleOpenTask = useCallback((id: string) => setOpenTaskId(id), [])
+  const setHovered = useCallback((id: string | null) => {
+    hoveredRef.current = id
+  }, [])
   const boardUI = useMemo(
-    () => ({
-      openTask: (id: string) => setOpenTaskId(id),
-      setHovered: (id: string | null) => {
-        hoveredRef.current = id
-      },
-    }),
-    [],
+    () => ({ openTask: handleOpenTask, setHovered }),
+    [handleOpenTask, setHovered],
   )
 
   // Trello-style keybindings: hover a task, hit a key.
@@ -332,6 +482,14 @@ export function BoardView() {
   const onDragStart = (e: DragStartEvent) => {
     const parsed = parseDragId(e.active.id)
     if (!parsed) return
+    // Remember where inside the item the pointer grabbed, so the overlay can
+    // track the cursor 1:1 (see FastDragOverlay).
+    const activator = e.activatorEvent as PointerEvent | null
+    const rect = e.active.rect.current.initial
+    grabOffset.current =
+      activator && 'clientX' in activator && rect
+        ? { x: activator.clientX - rect.left, y: activator.clientY - rect.top }
+        : { x: 10, y: 10 }
     if (parsed.kind === 'proj') {
       const project = board.find((p) => p.id === parsed.key)
       if (project) setActiveDrag({ type: 'proj', project })
@@ -414,9 +572,11 @@ export function BoardView() {
 
   return (
     <BoardUIContext.Provider value={boardUI}>
+     <DragActiveContext.Provider value={activeDrag !== null}>
       <DndContext
         sensors={sensors}
         collisionDetection={collisionDetection}
+        measuring={{ droppable: { strategy: MeasuringStrategy.WhileDragging } }}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
         onDragCancel={() => {
@@ -464,7 +624,10 @@ export function BoardView() {
             </div>
 
             {/* Canvas */}
-            <div className="board-canvas board-scroll min-h-0 flex-1 snap-x snap-mandatory overflow-auto sm:snap-none">
+            <div
+              data-dragging={activeDrag ? '' : undefined}
+              className="board-canvas board-scroll min-h-0 flex-1 snap-x snap-mandatory overflow-auto sm:snap-none"
+            >
               <div className="flex min-h-full items-start gap-2 p-3 pb-24 lg:pb-3">
                 {columns.map((col) => (
                   <BoardColumn
@@ -526,26 +689,23 @@ export function BoardView() {
           />
         ) : null}
 
-        <DragOverlay dropAnimation={null}>
+        <FastDragOverlay active={activeDrag} offsetRef={grabOffset}>
           {activeDrag?.type === 'proj' ? (
             <div className="w-[280px]">
-              <ProjectCardBody project={activeDrag.project} showDone={showDone} ghost />
+              <GhostProjectCard project={activeDrag.project} />
             </div>
           ) : activeDrag?.type === 'task' ? (
             <div className="w-[260px]">
-              <TaskRowBody task={activeDrag.task} dragging />
+              <GhostTaskRow task={activeDrag.task} />
             </div>
           ) : activeDrag?.type === 'fitem' ? (
             <div className="w-[280px]">
-              <FocusItemBody
-                task={activeDrag.task}
-                project={activeDrag.project}
-                dragging
-              />
+              <GhostTaskRow task={activeDrag.task} showProject={activeDrag.project.name} />
             </div>
           ) : null}
-        </DragOverlay>
+        </FastDragOverlay>
       </DndContext>
+     </DragActiveContext.Provider>
     </BoardUIContext.Provider>
   )
 }

@@ -207,6 +207,16 @@ body::after {
     transparent 1px
   );
   background-size: 26px 26px;
+  /* promote the gradient to its own compositor layer so card ring/shadow
+     repaints during a drag don't repaint the whole desk surface */
+  transform: translateZ(0);
+}
+
+/* While a drag is in flight, freeze every transition inside the board so
+   hover/ring/shadow/progress animations can't pile repaints onto each pointer
+   move. Scoped to the canvas → portaled menus/dialogs are unaffected. */
+.board-canvas[data-dragging] * {
+  transition: none !important;
 }
 
 /* mono micro-labels: the "OS chrome" voice */

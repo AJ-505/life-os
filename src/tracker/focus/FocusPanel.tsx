@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -14,11 +15,12 @@ import { ScrollArea } from '#/design-system/ui/scroll-area'
 
 import { useSetTaskFocus, useUpdateTask } from '../queries'
 import { focusItemId, focusTasks } from '../board/board-logic'
+import { useDragActive } from '../board/board-ui'
 import { DueChip } from '../board/TaskRow'
 
 import type { BoardData, Project, Task } from '../types'
 
-export function FocusItemBody({
+export const FocusItemBody = memo(function FocusItemBody({
   task,
   project,
   dragging,
@@ -74,9 +76,10 @@ export function FocusItemBody({
       </button>
     </div>
   )
-}
+})
 
 function FocusItem({ task, project }: { task: Task; project: Project }) {
+  const isDraggingBoard = useDragActive()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
       id: focusItemId(task.id),
@@ -86,7 +89,10 @@ function FocusItem({ task, project }: { task: Task; project: Project }) {
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition: isDraggingBoard ? 'none' : transition,
+      }}
       className={cn(isDragging && 'opacity-30')}
       {...attributes}
       {...listeners}

@@ -124,8 +124,16 @@ function useBoardMutation<TInput, TResult>(
     onSuccess: () => {
       // Refetch only once the dust settles: last in-flight mutation, nothing
       // queued. Keeps server truth (timestamps etc.) without mid-drag churn.
+      // Deferred off the commit frame so the full-board reconcile never lands
+      // inside a drop's synchronous render (which read as end-of-drag lag).
       if (queryClient.isMutating() <= 1 && outbox.length === 0) {
-        void queryClient.invalidateQueries({ queryKey: ['board'] })
+        const invalidate = () =>
+          void queryClient.invalidateQueries({ queryKey: ['board'] })
+        if (typeof requestIdleCallback !== 'undefined') {
+          requestIdleCallback(invalidate)
+        } else {
+          setTimeout(invalidate, 0)
+        }
       }
     },
   })

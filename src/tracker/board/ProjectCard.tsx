@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -53,6 +53,7 @@ import {
   useUpdateProject,
 } from '../queries'
 import { listId, projId, taskId, taskTree } from './board-logic'
+import { useDragActive } from './board-ui'
 import { TaskRow } from './TaskRow'
 
 import type { ProjectWithTasks } from '../types'
@@ -212,7 +213,7 @@ function AddTaskInput({ project }: { project: ProjectWithTasks }) {
   )
 }
 
-export function ProjectCardBody({
+export const ProjectCardBody = memo(function ProjectCardBody({
   project,
   showDone,
   dragHandle,
@@ -235,7 +236,7 @@ export function ProjectCardBody({
     disabled: ghost,
   })
 
-  const nodes = taskTree(project, showDone)
+  const nodes = useMemo(() => taskTree(project, showDone), [project, showDone])
   const doneCount = project.tasks.filter((t) => t.done && !t.archived).length
   const totalCount = project.tasks.filter((t) => !t.archived).length
   const progress = totalCount === 0 ? 0 : doneCount / totalCount
@@ -246,7 +247,7 @@ export function ProjectCardBody({
       className={cn(
         'flex flex-col overflow-hidden rounded-lg border bg-card shadow-sm transition-shadow',
         ghost && 'rotate-1 shadow-xl ring-2 ring-signal/40',
-        listIsOver && 'ring-2 ring-proj/50',
+        listIsOver && 'ring-2 ring-signal/60 bg-signal/5 shadow-md',
       )}
     >
       {/* identity bar + progress */}
@@ -391,7 +392,15 @@ export function ProjectCardBody({
       </Dialog>
     </div>
   )
-}
+},
+(prev, next) =>
+  // The drag handle (attributes+listeners) is re-allocated every render but
+  // never meaningfully changes — comparing the real inputs lets a project's
+  // body skip re-rendering (and re-rendering all its task rows) mid-drag.
+  prev.project === next.project &&
+  prev.showDone === next.showDone &&
+  prev.ghost === next.ghost,
+)
 
 export function ProjectCard({
   project,
@@ -400,6 +409,7 @@ export function ProjectCard({
   project: ProjectWithTasks
   showDone: boolean
 }) {
+  const isDraggingBoard = useDragActive()
   const {
     attributes,
     listeners,
@@ -415,7 +425,10 @@ export function ProjectCard({
   return (
     <div
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition: isDraggingBoard ? 'none' : transition,
+      }}
       className={cn(isDragging && 'opacity-30')}
     >
       <ProjectCardBody
