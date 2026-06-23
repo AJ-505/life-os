@@ -19,8 +19,7 @@
     "lint": "eslint",
     "format": "prettier --write . && eslint --fix",
     "check": "prettier --check .",
-    "school:sync": "tsx scripts/school-sync.ts",
-    "trello:migrate": "tsx scripts/trello-migrate.ts"
+    "school:sync": "tsx scripts/school-sync.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

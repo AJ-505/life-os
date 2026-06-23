@@ -20,15 +20,3 @@ export const BoardUIContext = createContext<BoardUIApi>({
 export function useBoardUI() {
   return useContext(BoardUIContext)
 }
-
-/**
- * Whether a board drag is in progress. Kept separate from BoardUIContext so
- * that starting/ending a drag only re-renders the thin sortable wrappers that
- * read it — not every memoized row body (which consumes BoardUIContext, whose
- * identity must stay stable across a drag).
- */
-export const DragActiveContext = createContext(false)
-
-export function useDragActive() {
-  return useContext(DragActiveContext)
-}

@@ -207,16 +207,20 @@ body::after {
     transparent 1px
   );
   background-size: 26px 26px;
-  /* promote the gradient to its own compositor layer so card ring/shadow
-     repaints during a drag don't repaint the whole desk surface */
-  transform: translateZ(0);
+  /* NB: no `transform`/`will-change` here. This element is the horizontal
+     scroll container *and* an ancestor of every draggable, so a transform on it
+     becomes a containing block that throws off dnd-kit's pointer/rect math —
+     the cause of the wonky drop targeting on the leftmost cards. */
 }
 
-/* While a drag is in flight, freeze every transition inside the board so
-   hover/ring/shadow/progress animations can't pile repaints onto each pointer
-   move. Scoped to the canvas → portaled menus/dialogs are unaffected. */
+/* While a drag is in flight, freeze the paint-heavy hover/ring/shadow/progress
+   transitions so they can't pile repaints onto each pointer move. Deliberately
+   NOT `!important`: the sortable wrappers set their transform transition via an
+   inline style, which (without `!important` here) still wins — so the "make
+   room here" gap keeps animating while everything else holds still. Scoped to
+   the canvas → portaled menus/dialogs are unaffected. */
 .board-canvas[data-dragging] * {
-  transition: none !important;
+  transition: none;
 }
 
 /* mono micro-labels: the "OS chrome" voice */

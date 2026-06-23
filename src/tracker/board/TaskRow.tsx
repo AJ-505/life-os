@@ -10,7 +10,7 @@ import { Checkbox } from '#/design-system/ui/checkbox'
 import { POSITION_GAP } from '../types'
 import { useSetTaskFocus, useUpdateTask } from '../queries'
 import { taskId } from './board-logic'
-import { useBoardUI, useDragActive } from './board-ui'
+import { useBoardUI } from './board-ui'
 
 import type { TaskNode } from './board-logic'
 import type { Task } from '../types'
@@ -127,7 +127,6 @@ function SubtaskRows({ nodes }: { nodes: Array<TaskNode> }) {
 
 /** A sortable top-level task row; its subtask tree rides along inside it. */
 export function TaskRow({ node }: { node: TaskNode }) {
-  const isDraggingBoard = useDragActive()
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({
       id: taskId(node.task.id),
@@ -139,7 +138,10 @@ export function TaskRow({ node }: { node: TaskNode }) {
       ref={setNodeRef}
       style={{
         transform: CSS.Transform.toString(transform),
-        transition: isDraggingBoard ? 'none' : transition,
+        // The active row follows the cursor → no transition (it'd lag behind
+        // the overlay). Displaced siblings keep dnd-kit's transform transition
+        // so the "make room here" gap animates instead of snapping.
+        transition: isDragging ? 'none' : transition,
       }}
       className={cn(isDragging && 'opacity-30')}
       {...attributes}

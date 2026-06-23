@@ -53,7 +53,6 @@ import {
   useUpdateProject,
 } from '../queries'
 import { listId, projId, taskId, taskTree } from './board-logic'
-import { useDragActive } from './board-ui'
 import { TaskRow } from './TaskRow'
 
 import type { ProjectWithTasks } from '../types'
@@ -409,7 +408,6 @@ export function ProjectCard({
   project: ProjectWithTasks
   showDone: boolean
 }) {
-  const isDraggingBoard = useDragActive()
   const {
     attributes,
     listeners,
@@ -427,7 +425,10 @@ export function ProjectCard({
       ref={setNodeRef}
       style={{
         transform: CSS.Transform.toString(transform),
-        transition: isDraggingBoard ? 'none' : transition,
+        // The active card follows the cursor → no transition (it'd lag behind
+        // the overlay). Displaced siblings keep dnd-kit's transform transition
+        // so the "make room here" gap animates instead of snapping.
+        transition: isDragging ? 'none' : transition,
       }}
       className={cn(isDragging && 'opacity-30')}
     >

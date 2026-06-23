@@ -143,7 +143,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Desktop sidebar */}
       <aside
         className={cn(
-          'hidden shrink-0 flex-col justify-between border-r border-sidebar-border bg-sidebar p-3 transition-[width] duration-200 md:flex',
+          'hidden shrink-0 flex-col justify-between border-r border-sidebar-border bg-sidebar p-3 md:flex',
           collapsed ? 'w-16 items-center' : 'w-52',
         )}
       >

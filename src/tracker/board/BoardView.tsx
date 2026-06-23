@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   DndContext,
+  MeasuringFrequency,
   MeasuringStrategy,
   PointerSensor,
   TouchSensor,
@@ -55,9 +56,14 @@ import {
 } from './board-logic'
 import { ProjectCard } from './ProjectCard'
 import { TaskDetails } from './TaskDetails'
-import { BoardUIContext, DragActiveContext } from './board-ui'
+import { BoardUIContext } from './board-ui'
 
-import type { CollisionDetection, DragEndEvent, DragStartEvent } from '@dnd-kit/core'
+import type {
+  CollisionDetection,
+  DragEndEvent,
+  DragStartEvent,
+  DroppableContainer,
+} from '@dnd-kit/core'
 import type { BoardData, ProjectWithTasks, Task } from '../types'
 
 type DragKind = 'proj' | 'task' | 'fitem' | null
@@ -71,29 +77,40 @@ type DragKind = 'proj' | 'task' | 'fitem' | null
  */
 function collisionFor(kind: DragKind): CollisionDetection {
   return (args) => {
-    // Filter candidates by the droppable's own `data.type` (O(1) per item) so
-    // we never parse drag-id strings on every pointer move.
-    const byType = (...types: Array<string>) =>
-      args.droppableContainers.filter((c) =>
-        types.includes(c.data.current?.type as string),
-      )
-    const hit = (cs: typeof args.droppableContainers) => {
+    // One pass over the droppables: bucket them by their declared `data.type`
+    // and index them by id. The droppable count grows with every task and card,
+    // and collision detection runs on *every* pointer move — so rescanning the
+    // whole list (once per `byType` call, several times per move) was the hot
+    // path. Group once, then read from the buckets.
+    const buckets = new Map<string, Array<DroppableContainer>>()
+    const byId = new Map<string | number, DroppableContainer>()
+    for (const c of args.droppableContainers) {
+      byId.set(c.id, c)
+      const t = c.data.current?.type as string | undefined
+      if (!t) continue
+      const b = buckets.get(t)
+      if (b) b.push(c)
+      else buckets.set(t, [c])
+    }
+    const get = (...types: Array<string>): Array<DroppableContainer> =>
+      types.length === 1
+        ? buckets.get(types[0]) ?? []
+        : types.flatMap((t) => buckets.get(t) ?? [])
+    const hit = (cs: Array<DroppableContainer>) => {
       const scoped = { ...args, droppableContainers: cs }
       const p = pointerWithin(scoped)
       return p.length > 0 ? p : rectIntersection(scoped)
     }
-    const containerOf = (id: string | number) =>
-      args.droppableContainers.find((c) => c.id === id)
 
     // Projects are big rectangles → pointer/rect works best.
-    if (kind === 'proj') return hit(byType('proj', 'col'))
+    if (kind === 'proj') return hit(get('proj', 'col'))
 
     if (kind === 'fitem') {
       const within = closestCenter({
         ...args,
-        droppableContainers: byType('fitem'),
+        droppableContainers: get('fitem'),
       })
-      return within.length > 0 ? within : hit(byType('focuszone'))
+      return within.length > 0 ? within : hit(get('focuszone'))
     }
 
     if (kind === 'task') {
@@ -101,26 +118,24 @@ function collisionFor(kind: DragKind): CollisionDetection {
       // Resolving the *container* first is what makes in-project reordering and
       // cross-project moves land where you actually release, instead of
       // snapping to the globally-nearest task anywhere on the board.
-      const top = hit(byType('list', 'focuszone')).at(0)
-      const container = top ? containerOf(top.id) : undefined
+      const top = hit(get('list', 'focuszone')).at(0)
+      const container = top ? byId.get(top.id) : undefined
       if (!container) {
         // Anywhere else on a project card (its header/edges) → drop into it.
-        const onCard = hit(byType('proj')).at(0)
+        const onCard = hit(get('proj')).at(0)
         return onCard ? [{ id: onCard.id }] : []
       }
       if (container.data.current?.type === 'focuszone') {
         const within = closestCenter({
           ...args,
-          droppableContainers: byType('fitem'),
+          droppableContainers: get('fitem'),
         })
         return within.length > 0 ? within : [{ id: container.id }]
       }
       // Pass 2 — the closest task row *within that project only*.
       const projectId = container.data.current?.projectId
-      const rows = args.droppableContainers.filter(
-        (c) =>
-          c.data.current?.type === 'task' &&
-          c.data.current.projectId === projectId,
+      const rows = get('task').filter(
+        (c) => c.data.current?.projectId === projectId,
       )
       const within = closestCenter({ ...args, droppableContainers: rows })
       return within.length > 0 ? within : [{ id: container.id }]
@@ -212,7 +227,7 @@ function NewProjectDialog({
   )
 }
 
-function BoardColumn({
+const BoardColumn = memo(function BoardColumn({
   col,
   board,
   showDone,
@@ -225,7 +240,7 @@ function BoardColumn({
   isGhost?: boolean
   onAddProject: (col: number) => void
 }) {
-  const projects = columnProjects(board, col)
+  const projects = useMemo(() => columnProjects(board, col), [board, col])
   const { setNodeRef, isOver } = useDroppable({
     id: colId(col),
     data: { type: 'col', col },
@@ -261,7 +276,7 @@ function BoardColumn({
       </button>
     </div>
   )
-}
+})
 
 function GhostProjectCard({
   project,
@@ -572,11 +587,19 @@ export function BoardView() {
 
   return (
     <BoardUIContext.Provider value={boardUI}>
-     <DragActiveContext.Provider value={activeDrag !== null}>
       <DndContext
         sensors={sensors}
         collisionDetection={collisionDetection}
-        measuring={{ droppable: { strategy: MeasuringStrategy.WhileDragging } }}
+        measuring={{
+          droppable: {
+            strategy: MeasuringStrategy.WhileDragging,
+            // Without an explicit frequency, the partial config drops dnd-kit's
+            // default `Optimized` and re-measures every droppable far more
+            // aggressively — pinning it back stops the leftmost/scrolled-away
+            // cards from working off stale rects after a horizontal scroll.
+            frequency: MeasuringFrequency.Optimized,
+          },
+        }}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
         onDragCancel={() => {
@@ -705,7 +728,6 @@ export function BoardView() {
           ) : null}
         </FastDragOverlay>
       </DndContext>
-     </DragActiveContext.Provider>
     </BoardUIContext.Provider>
   )
 }
