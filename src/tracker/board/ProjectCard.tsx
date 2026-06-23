@@ -417,7 +417,9 @@ export function ProjectCard({
     isDragging,
   } = useSortable({
     id: projId(project.id),
-    data: { type: 'proj', projectId: project.id },
+    // `col` lets cross-column collision detection group cards by column without
+    // a board lookup (see collisionFor in BoardView).
+    data: { type: 'proj', projectId: project.id, col: project.gridCol },
   })
 
   return (

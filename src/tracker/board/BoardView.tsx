@@ -102,8 +102,34 @@ function collisionFor(kind: DragKind): CollisionDetection {
       return p.length > 0 ? p : rectIntersection(scoped)
     }
 
-    // Projects are big rectangles → pointer/rect works best.
-    if (kind === 'proj') return hit(get('proj', 'col'))
+    if (kind === 'proj') {
+      const colHit = hit(get('col')).at(0)
+      const colC = colHit ? byId.get(colHit.id) : undefined
+      const y = args.pointerCoordinates?.y
+      if (!colC || y == null) return hit(get('proj', 'col'))
+      const colNum = colC.data.current?.col
+      // Same column: the sortable is already shifting cards to open a gap where
+      // you're hovering, so the plain pointer/rect hit lands exactly right.
+      if (colNum === args.active.data.current?.col) return hit(get('proj', 'col'))
+      // Cross column the target's cards *don't* shift (sortable only animates
+      // within the source context), so the pointer sits in dead space between
+      // cards and the sole hit is the column → the drop appended to the end.
+      // Resolve by geometry instead: insert before the first card whose
+      // vertical midpoint is below the pointer (or append, i.e. target the
+      // column itself, when the pointer is below them all).
+      const cards = get('proj')
+        .filter((c) => c.data.current?.col === colNum)
+        .sort(
+          (a, b) =>
+            (args.droppableRects.get(a.id)?.top ?? 0) -
+            (args.droppableRects.get(b.id)?.top ?? 0),
+        )
+      const before = cards.find((c) => {
+        const r = args.droppableRects.get(c.id)
+        return r != null && y < r.top + r.height / 2
+      })
+      return before ? [{ id: before.id }] : [{ id: colC.id }]
+    }
 
     if (kind === 'fitem') {
       const within = closestCenter({
@@ -340,10 +366,12 @@ type ActiveDrag =
 function FastDragOverlay({
   active,
   offsetRef,
+  initialRef,
   children,
 }: {
   active: ActiveDrag | null
   offsetRef: React.RefObject<{ x: number; y: number }>
+  initialRef: React.RefObject<{ x: number; y: number }>
   children: React.ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -352,6 +380,13 @@ function FastDragOverlay({
 
   useEffect(() => {
     if (!active) return
+    // The portal node is recreated fresh each drag (we render null between
+    // drags), so seed it at the grabbed item's original position. Otherwise it
+    // renders at its `top:0;left:0` default and flashes at the top-left corner
+    // for the frame before the first pointermove lands.
+    if (ref.current) {
+      ref.current.style.transform = `translate3d(${initialRef.current.x}px, ${initialRef.current.y}px, 0)`
+    }
     const onMove = (e: PointerEvent) => {
       pos.current = { x: e.clientX, y: e.clientY }
       if (!raf.current) {
@@ -370,9 +405,17 @@ function FastDragOverlay({
     window.addEventListener('pointermove', onMove, { passive: true })
     return () => {
       window.removeEventListener('pointermove', onMove)
-      if (raf.current) cancelAnimationFrame(raf.current)
+      if (raf.current) {
+        cancelAnimationFrame(raf.current)
+        // CRITICAL: reset the handle. The guard above is `if (!raf.current)`;
+        // if a drag ends with a frame still pending, cancelling without
+        // resetting leaves a stale non-zero id, so every *subsequent* drag's
+        // guard fails, no transform is ever applied, and the (freshly mounted)
+        // overlay stays pinned at the top-left until a full page reload.
+        raf.current = 0
+      }
     }
-  }, [active, offsetRef])
+  }, [active, offsetRef, initialRef])
 
   if (!active) return null
 
@@ -408,6 +451,7 @@ export function BoardView() {
   const [openTaskId, setOpenTaskId] = useState<string | null>(null)
   const hoveredRef = useRef<string | null>(null)
   const grabOffset = useRef({ x: 10, y: 10 })
+  const initialPos = useRef({ x: 0, y: 0 })
   const [dragKind, setDragKind] = useState<DragKind>(null)
   const collisionDetection = useMemo(() => collisionFor(dragKind), [dragKind])
 
@@ -505,6 +549,9 @@ export function BoardView() {
       activator && 'clientX' in activator && rect
         ? { x: activator.clientX - rect.left, y: activator.clientY - rect.top }
         : { x: 10, y: 10 }
+    // The item's starting top-left, so the overlay can be seeded there before
+    // the first pointermove (prevents a top-left flash on a fresh portal node).
+    initialPos.current = rect ? { x: rect.left, y: rect.top } : { x: 0, y: 0 }
     if (parsed.kind === 'proj') {
       const project = board.find((p) => p.id === parsed.key)
       if (project) setActiveDrag({ type: 'proj', project })
@@ -712,7 +759,11 @@ export function BoardView() {
           />
         ) : null}
 
-        <FastDragOverlay active={activeDrag} offsetRef={grabOffset}>
+        <FastDragOverlay
+          active={activeDrag}
+          offsetRef={grabOffset}
+          initialRef={initialPos}
+        >
           {activeDrag?.type === 'proj' ? (
             <div className="w-[280px]">
               <GhostProjectCard project={activeDrag.project} />
