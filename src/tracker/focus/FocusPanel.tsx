@@ -53,7 +53,7 @@ export const FocusItemBody = memo(function FocusItemBody({
       <div className="min-w-0 flex-1">
         <p
           className={cn(
-            'text-sm leading-snug',
+            'whitespace-pre-wrap break-words text-sm leading-snug',
             task.done && 'text-muted-foreground line-through decoration-border',
           )}
         >
