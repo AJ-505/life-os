@@ -53,7 +53,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <Toaster position="bottom-center" closeButton richColors />
         <UpdateWatcher />
         <TanStackDevtools
-          config={{ position: 'bottom-right' }}
+          config={{ position: 'bottom-left' }}
           plugins={[
             {
               name: 'Tanstack Router',

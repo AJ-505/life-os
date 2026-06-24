@@ -191,7 +191,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Menu className="size-5" />
             </Button>
           </SheetTrigger>
-          <SheetContent side="left" className="flex w-64 flex-col justify-between bg-sidebar p-3 pt-12">
+          <SheetContent
+            side="left"
+            noAnimation
+            className="flex w-64 flex-col justify-between bg-sidebar p-3 pt-12"
+          >
             <NavLinks onNavigate={() => setMobileNavOpen(false)} />
             <SidebarFooter />
           </SheetContent>
