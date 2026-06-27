@@ -15,7 +15,13 @@ import { useBoardUI } from './board-ui'
 import type { TaskNode } from './board-logic'
 import type { Task } from '../types'
 
-export function DueChip({ due, done }: { due: Date | string; done?: boolean }) {
+export function DueChip({
+  due,
+  done,
+}: {
+  due: number | Date | string
+  done?: boolean
+}) {
   const date = new Date(due)
   const overdue = !done && isPast(date) && !isToday(date)
   return (

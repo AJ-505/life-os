@@ -140,7 +140,7 @@ export function ProjectEditDialog({
                   onSelect={(d) =>
                     updateProject.mutate({
                       id: project.id,
-                      targetDate: d ? d.toISOString() : null,
+                      targetDate: d ? d.getTime() : null,
                     })
                   }
                 />

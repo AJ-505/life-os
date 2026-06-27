@@ -1,7 +1,9 @@
 import { useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useConvex } from 'convex/react'
+import { useConvexMutation } from '@convex-dev/react-query'
 import { HardDriveDownload, HardDriveUpload } from 'lucide-react'
 
+import { api } from '../../convex/_generated/api'
 import { Button } from '#/design-system/ui/button'
 import {
   Dialog,
@@ -12,19 +14,18 @@ import {
   DialogTitle,
 } from '#/design-system/ui/dialog'
 
-import { exportBackup, importBackup } from './server'
-
-import type { BackupFile } from './server'
+import type { BackupFile } from './types'
 
 export function BackupControls() {
-  const queryClient = useQueryClient()
+  const convex = useConvex()
+  const importBackup = useConvexMutation(api.backup.importBackup)
   const fileRef = useRef<HTMLInputElement>(null)
   const [pendingImport, setPendingImport] = useState<BackupFile | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const handleExport = async () => {
-    const data = await exportBackup()
+    const data = await convex.query(api.backup.exportBackup, {})
     const blob = new Blob([JSON.stringify(data, null, 2)], {
       type: 'application/json',
     })
@@ -53,8 +54,9 @@ export function BackupControls() {
     if (!pendingImport) return
     setBusy(true)
     try {
-      await importBackup({ data: pendingImport })
-      await queryClient.invalidateQueries({ queryKey: ['board'] })
+      // Convex reactivity pushes the restored board to every open tab — no
+      // manual cache invalidation needed.
+      await importBackup(pendingImport)
       setPendingImport(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Import failed')
@@ -93,9 +95,7 @@ export function BackupControls() {
           e.target.value = ''
         }}
       />
-      {error ? (
-        <p className="px-2 text-xs text-destructive">{error}</p>
-      ) : null}
+      {error ? <p className="px-2 text-xs text-destructive">{error}</p> : null}
 
       <Dialog
         open={pendingImport !== null}

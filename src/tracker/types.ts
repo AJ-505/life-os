@@ -1,9 +1,40 @@
-import type { InferSelectModel } from 'drizzle-orm'
-import type { projects, tasks } from './schema'
+/**
+ * The tracker domain types. These intentionally mirror the shape returned by
+ * the Convex `getBoard` query (see `convex/tracker.ts`): string `id`s as the
+ * app-facing identity and timestamps as epoch-ms numbers (Convex stores
+ * numbers, and that's the one shape both the UI and optimistic updates share).
+ */
+export interface Project {
+  id: string
+  name: string
+  color: string
+  status: ProjectStatus
+  collapsed: boolean
+  gridCol: number
+  gridRow: number
+  targetDate: number | null
+  createdAt: number
+  finishedAt: number | null
+  shelvedAt: number | null
+}
 
-export type Project = InferSelectModel<typeof projects>
-export type Task = InferSelectModel<typeof tasks>
-export type ProjectStatus = Project['status']
+export interface Task {
+  id: string
+  projectId: string
+  parentId: string | null
+  title: string
+  notes: string | null
+  position: number
+  done: boolean
+  doneAt: number | null
+  archived: boolean
+  dueAt: number | null
+  inFocus: boolean
+  focusOrder: number
+  createdAt: number
+}
+
+export type ProjectStatus = 'active' | 'shelved' | 'done'
 
 export type ProjectWithTasks = Project & { tasks: Array<Task> }
 export type TaskWithProject = Task & { project: Project }
@@ -26,7 +57,7 @@ export const PROJECT_COLORS = [
 export type ProjectColor = (typeof PROJECT_COLORS)[number]
 
 /** Client-generated id so creates can be optimistic (the row exists locally
- *  before the server confirms). The DB accepts the same uuid. */
+ *  before the server confirms). Convex stores the same uuid string. */
 export function newId(): string {
   return globalThis.crypto.randomUUID()
 }
@@ -40,10 +71,7 @@ export function positionAfter(items: Array<{ position: number }>): number {
 }
 
 /** Midpoint position for inserting at `index` into an ordered list. */
-export function positionAt(
-  ordered: Array<number>,
-  index: number,
-): number {
+export function positionAt(ordered: Array<number>, index: number): number {
   if (ordered.length === 0) return POSITION_GAP
   if (index <= 0) return ordered[0] - POSITION_GAP
   if (index >= ordered.length) return ordered[ordered.length - 1] + POSITION_GAP

@@ -209,7 +209,7 @@ export function TaskDetails({
                     onSelect={(d) =>
                       updateTask.mutate({
                         id: task.id,
-                        dueAt: d ? d.toISOString() : null,
+                        dueAt: d ? d.getTime() : null,
                       })
                     }
                   />

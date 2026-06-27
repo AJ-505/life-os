@@ -12,13 +12,16 @@ import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
 
 import { THEME_INIT_SCRIPT, ThemeProvider } from '#/design-system'
 import { AppShell, UpdateWatcher } from '#/shell'
+import { AuthGate } from '#/auth'
 
 import appCss from '../styles.css?url'
 
 import type { QueryClient } from '@tanstack/react-query'
+import type { ConvexReactClient } from 'convex/react'
 
 interface MyRouterContext {
   queryClient: QueryClient
+  convexClient: ConvexReactClient
 }
 
 export const Route = createRootRouteWithContext<MyRouterContext>()({
@@ -35,12 +38,22 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
     scripts: [{ children: THEME_INIT_SCRIPT }],
   }),
   shellComponent: RootDocument,
-  component: () => (
-    <AppShell>
-      <Outlet />
-    </AppShell>
-  ),
+  component: RootComponent,
 })
+
+/** The entire app lives behind a signed-in identity. AuthGate (client-only,
+ *  inside the document body) resolves the shoo identity and renders the board
+ *  only when authenticated — no per-route guards, no SSR token dance. */
+function RootComponent() {
+  const { convexClient } = Route.useRouteContext()
+  return (
+    <AuthGate client={convexClient}>
+      <AppShell>
+        <Outlet />
+      </AppShell>
+    </AuthGate>
+  )
+}
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (

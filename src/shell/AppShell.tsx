@@ -20,6 +20,7 @@ import {
   TooltipTrigger,
 } from '#/design-system/ui/tooltip'
 import { BackupControls } from '#/backup'
+import { SignOutButton } from '#/auth'
 
 const NAV = [
   { to: '/', label: 'Board', icon: LayoutGrid },
@@ -104,8 +105,10 @@ function SidebarFooter({ collapsed }: { collapsed?: boolean }) {
     <div className="flex flex-col gap-3">
       <BackupControls />
       <Separator />
+      <SignOutButton />
+      <Separator />
       <div className="flex items-center justify-between px-2 pb-1">
-        <span className="os-label">local · v1</span>
+        <span className="os-label">cloud · v1</span>
         <ModeToggle />
       </div>
     </div>
