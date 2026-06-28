@@ -2,13 +2,10 @@ import { LogOut } from 'lucide-react'
 
 import { Button } from '#/design-system/ui/button'
 
-import { forgetAuth, signOut } from './shoo'
+import { signOut } from './shoo'
 
 export function SignOutButton() {
   const handleSignOut = () => {
-    // Clear the remembered-login marker before the reload so AuthGate doesn't
-    // immediately start a Shoo re-auth round-trip.
-    forgetAuth()
     signOut()
   }
   return (
