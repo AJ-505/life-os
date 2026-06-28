@@ -11,7 +11,7 @@ import { Toaster } from 'sonner'
 import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
 
 import { THEME_INIT_SCRIPT, ThemeProvider } from '#/design-system'
-import { AppShell, UpdateWatcher } from '#/shell'
+import { AppShell } from '#/shell'
 import { AuthGate } from '#/auth'
 
 import appCss from '../styles.css?url'
@@ -64,7 +64,6 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body>
         <ThemeProvider>{children}</ThemeProvider>
         <Toaster position="bottom-center" closeButton richColors />
-        <UpdateWatcher />
         <TanStackDevtools
           config={{ position: 'bottom-left' }}
           plugins={[
