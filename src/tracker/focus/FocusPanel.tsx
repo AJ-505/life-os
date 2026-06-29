@@ -91,7 +91,10 @@ function FocusItem({ task, project }: { task: Task; project: Project }) {
         transform: CSS.Transform.toString(transform),
         transition: isDragging ? 'none' : transition,
       }}
-      className={cn(isDragging && 'opacity-30')}
+      className={cn(
+        'select-none [-webkit-touch-callout:none]',
+        isDragging && 'opacity-30',
+      )}
       {...attributes}
       {...listeners}
     >

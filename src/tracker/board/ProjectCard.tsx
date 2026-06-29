@@ -273,7 +273,7 @@ export const ProjectCardBody = memo(function ProjectCardBody({
       </div>
 
       <div
-        className="flex cursor-grab items-center gap-1 px-2 py-2 active:cursor-grabbing"
+        className="flex cursor-grab select-none items-center gap-1 px-2 py-2 [-webkit-touch-callout:none] active:cursor-grabbing"
         {...(dragHandle ?? {})}
       >
         <button

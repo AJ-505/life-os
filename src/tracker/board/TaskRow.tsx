@@ -149,7 +149,12 @@ export function TaskRow({ node }: { node: TaskNode }) {
         // so the "make room here" gap animates instead of snapping.
         transition: isDragging ? 'none' : transition,
       }}
-      className={cn(isDragging && 'opacity-30')}
+      // select-none + touch-callout suppression stop iOS from hijacking the
+      // long-press with its text-selection magnifier before the drag starts.
+      className={cn(
+        'select-none [-webkit-touch-callout:none]',
+        isDragging && 'opacity-30',
+      )}
       {...attributes}
       {...listeners}
     >

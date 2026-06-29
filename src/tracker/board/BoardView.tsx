@@ -4,7 +4,7 @@ import {
   DndContext,
   MeasuringFrequency,
   MeasuringStrategy,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   closestCenter,
   pointerWithin,
@@ -456,10 +456,15 @@ export function BoardView() {
   const [dragKind, setDragKind] = useState<DragKind>(null)
   const collisionDetection = useMemo(() => collisionFor(dragKind), [dragKind])
 
+  // Mouse and touch get *separate* sensors so they never fight. A single
+  // PointerSensor would also catch touch (touch fires pointer events), letting
+  // it pre-empt the TouchSensor's long-press and break dragging on mobile.
+  // MouseSensor is mouse-only — desktop keeps the exact 5px-distance feel —
+  // while TouchSensor owns touch: hold 250ms to drag, swipe sooner to scroll.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 200, tolerance: 8 },
+      activationConstraint: { delay: 250, tolerance: 5 },
     }),
   )
 
