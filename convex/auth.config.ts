@@ -1,20 +1,22 @@
+import type { AuthConfig } from 'convex/server'
+
 /**
- * Convex trusts shoo (https://shoo.dev) as a custom JWT issuer — no client
- * secret, no Google Console. shoo signs ES256 id_tokens and publishes a JWKS;
- * Convex validates the signature, issuer, and audience on every request.
+ * Convex trusts Clerk as the JWT issuer. With Clerk's native Convex integration
+ * (Clerk dashboard → Configure → Integrations → Convex → Activate), every Clerk
+ * session token carries `aud: "convex"`, so there is no hand-built JWT template
+ * to maintain. Convex fetches Clerk's JWKS, then validates the signature, issuer
+ * and audience on every request.
  *
- * The audience is shoo's origin-scoped value: `origin:<your app origin>`.
- * Defaults to the dev origin; set SHOO_AUD on the deployment for prod:
- *   npx convex env set SHOO_AUD origin:https://your-domain
+ * `CLERK_JWT_ISSUER_DOMAIN` is the Clerk Frontend API URL (e.g.
+ * `https://verb-noun-00.clerk.accounts.dev` in dev). It must be set on the
+ * Convex deployment — NOT in .env.local:
+ *   npx convex env set CLERK_JWT_ISSUER_DOMAIN https://<your>.clerk.accounts.dev
  */
 export default {
   providers: [
     {
-      type: 'customJwt',
-      issuer: 'https://shoo.dev',
-      jwks: 'https://shoo.dev/.well-known/jwks.json',
-      algorithm: 'ES256',
-      applicationID: process.env.SHOO_AUD ?? 'origin:http://localhost:3000',
+      domain: process.env.CLERK_JWT_ISSUER_DOMAIN!,
+      applicationID: 'convex',
     },
   ],
-}
+} satisfies AuthConfig

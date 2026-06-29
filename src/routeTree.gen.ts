@@ -10,13 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TimelineRouteImport } from './routes/timeline'
+import { Route as SsoCallbackRouteImport } from './routes/sso-callback'
 import { Route as LibraryRouteImport } from './routes/library'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ShooCallbackRouteImport } from './routes/shoo.callback'
 
 const TimelineRoute = TimelineRouteImport.update({
   id: '/timeline',
   path: '/timeline',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SsoCallbackRoute = SsoCallbackRouteImport.update({
+  id: '/sso-callback',
+  path: '/sso-callback',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LibraryRoute = LibraryRouteImport.update({
@@ -29,44 +34,39 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ShooCallbackRoute = ShooCallbackRouteImport.update({
-  id: '/shoo/callback',
-  path: '/shoo/callback',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/library': typeof LibraryRoute
+  '/sso-callback': typeof SsoCallbackRoute
   '/timeline': typeof TimelineRoute
-  '/shoo/callback': typeof ShooCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/library': typeof LibraryRoute
+  '/sso-callback': typeof SsoCallbackRoute
   '/timeline': typeof TimelineRoute
-  '/shoo/callback': typeof ShooCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/library': typeof LibraryRoute
+  '/sso-callback': typeof SsoCallbackRoute
   '/timeline': typeof TimelineRoute
-  '/shoo/callback': typeof ShooCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/library' | '/timeline' | '/shoo/callback'
+  fullPaths: '/' | '/library' | '/sso-callback' | '/timeline'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/library' | '/timeline' | '/shoo/callback'
-  id: '__root__' | '/' | '/library' | '/timeline' | '/shoo/callback'
+  to: '/' | '/library' | '/sso-callback' | '/timeline'
+  id: '__root__' | '/' | '/library' | '/sso-callback' | '/timeline'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LibraryRoute: typeof LibraryRoute
+  SsoCallbackRoute: typeof SsoCallbackRoute
   TimelineRoute: typeof TimelineRoute
-  ShooCallbackRoute: typeof ShooCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -76,6 +76,13 @@ declare module '@tanstack/react-router' {
       path: '/timeline'
       fullPath: '/timeline'
       preLoaderRoute: typeof TimelineRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sso-callback': {
+      id: '/sso-callback'
+      path: '/sso-callback'
+      fullPath: '/sso-callback'
+      preLoaderRoute: typeof SsoCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/library': {
@@ -92,21 +99,14 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/shoo/callback': {
-      id: '/shoo/callback'
-      path: '/shoo/callback'
-      fullPath: '/shoo/callback'
-      preLoaderRoute: typeof ShooCallbackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LibraryRoute: LibraryRoute,
+  SsoCallbackRoute: SsoCallbackRoute,
   TimelineRoute: TimelineRoute,
-  ShooCallbackRoute: ShooCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

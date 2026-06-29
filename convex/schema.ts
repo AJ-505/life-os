@@ -8,8 +8,8 @@ import { v } from 'convex/values'
  * - done:    finished, shows up in the Accomplished view
  * Permanent removal is a hard delete (cascades to tasks in the mutation).
  *
- * Everything is scoped by `userId` — the shoo identity subject (a stable
- * per-app string id, `ctx.auth.getUserIdentity().subject`). Each account is a
+ * Everything is scoped by `userId` — the Clerk identity subject (the Clerk
+ * user id, `ctx.auth.getUserIdentity().subject`). Each account is a
  * fully private LifeOS. The string `id` (client-generated uuid) is kept as the
  * app-facing identity — relationships are string refs (`projectId`,
  * `parentId`) so the UI and optimistic updates never learn about Convex's

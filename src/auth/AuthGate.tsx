@@ -1,15 +1,7 @@
-import { useEffect, useState } from 'react'
-import {
-  Authenticated,
-  AuthLoading,
-  ConvexProviderWithAuth,
-  Unauthenticated,
-} from 'convex/react'
+import { Authenticated, AuthLoading, Unauthenticated } from 'convex/react'
 
 import { LoginScreen } from './LoginScreen'
-import { useAuth } from './shoo'
 
-import type { ConvexReactClient } from 'convex/react'
 import type { ReactNode } from 'react'
 
 function LoadingScreen({ label = 'Loading your board…' }: { label?: string }) {
@@ -21,19 +13,15 @@ function LoadingScreen({ label = 'Loading your board…' }: { label?: string }) 
   )
 }
 
-export function AuthGate({
-  client,
-  children,
-}: {
-  client: ConvexReactClient
-  children: ReactNode
-}) {
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
-  if (!mounted) return <LoadingScreen />
-
+/**
+ * Gates the whole app on a Convex-validated Clerk identity. The provider
+ * (ConvexProviderWithClerk) lives in the root route; these helpers read its
+ * auth state. <AuthLoading> covers both Clerk loading and the Convex token
+ * handshake, so there's no SSR/hydration flicker.
+ */
+export function AuthGate({ children }: { children: ReactNode }) {
   return (
-    <ConvexProviderWithAuth client={client} useAuth={useAuth}>
+    <>
       <AuthLoading>
         <LoadingScreen />
       </AuthLoading>
@@ -41,6 +29,6 @@ export function AuthGate({
         <LoginScreen />
       </Unauthenticated>
       <Authenticated>{children}</Authenticated>
-    </ConvexProviderWithAuth>
+    </>
   )
 }

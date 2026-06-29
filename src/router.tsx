@@ -2,6 +2,7 @@ import { createRouter as createTanStackRouter } from '@tanstack/react-router'
 import { QueryClient, notifyManager } from '@tanstack/react-query'
 import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query'
 import { ConvexQueryClient } from '@convex-dev/react-query'
+import { ConvexProvider } from 'convex/react'
 
 import { routeTree } from './routeTree.gen'
 
@@ -26,17 +27,28 @@ export function getRouter() {
   })
   convexQueryClient.connect(queryClient)
 
-  // The Convex client is handed to the root route, which mounts the auth
-  // provider (ConvexProviderWithAuth) *inside* the document body after
-  // hydration — see src/auth/AuthGate.tsx. It is NOT a router `Wrap`, because
-  // Wrap envelops the whole HTML shell and shoo's browser-only auth adapter
-  // would then blank the document (and its stylesheet) during SSR.
+  // The root route mounts ClerkProvider → ConvexProviderWithClerk (which wires
+  // Clerk's token into Convex). The `Wrap` ConvexProvider here makes the same
+  // Convex client available at the router level (loaders, pending/error
+  // components) before that component renders; both share the one client, so
+  // there's a single WebSocket and the auth set by ConvexProviderWithClerk
+  // applies everywhere. `convexQueryClient` is threaded through context so the
+  // root `beforeLoad` can set the Clerk token on the SSR HTTP client.
   const router = createTanStackRouter({
     routeTree,
-    context: { queryClient, convexClient: convexQueryClient.convexClient },
+    context: {
+      queryClient,
+      convexClient: convexQueryClient.convexClient,
+      convexQueryClient,
+    },
     scrollRestoration: true,
     defaultPreload: 'intent',
     defaultPreloadStaleTime: 0,
+    Wrap: ({ children }) => (
+      <ConvexProvider client={convexQueryClient.convexClient}>
+        {children}
+      </ConvexProvider>
+    ),
   })
 
   setupRouterSsrQueryIntegration({ router, queryClient })

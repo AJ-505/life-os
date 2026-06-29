@@ -1,8 +1,8 @@
 import type { MutationCtx, QueryCtx } from './_generated/server'
 
-/** Every public function starts here: derive the caller from the verified shoo
- *  identity (the JWT `subject`, validated by Convex against shoo's JWKS — never
- *  from arguments) and reject anonymous access. */
+/** Every public function starts here: derive the caller from the verified Clerk
+ *  identity (the JWT `subject` — the Clerk user id — validated by Convex against
+ *  Clerk's JWKS, never from arguments) and reject anonymous access. */
 export async function requireUserId(
   ctx: QueryCtx | MutationCtx,
 ): Promise<string> {

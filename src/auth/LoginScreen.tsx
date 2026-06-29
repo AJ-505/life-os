@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSignIn } from '@clerk/tanstack-react-start/legacy'
 import { toast } from 'sonner'
 
 import { Button } from '#/design-system/ui/button'
@@ -10,19 +11,25 @@ import {
   CardTitle,
 } from '#/design-system/ui/card'
 
-import { signIn } from './shoo'
-
 /**
- * The whole app sits behind this. shoo handles Google sign-in end to end
- * (PKCE + redirect + token), so there's nothing to configure — one button.
+ * The whole app sits behind this. One button kicks off Clerk's Google OAuth
+ * redirect; Clerk bounces back to /sso-callback (see routes/sso-callback.tsx),
+ * which finishes the handshake and lands on `/`. Enabling Google itself is a
+ * Clerk dashboard toggle (User & authentication → SSO connections → Google).
  */
 export function LoginScreen() {
+  const { signIn, isLoaded } = useSignIn()
   const [busy, setBusy] = useState(false)
 
   const google = async () => {
+    if (!isLoaded) return
     setBusy(true)
     try {
-      await signIn() // redirects to shoo, then back to /shoo/callback
+      await signIn.authenticateWithRedirect({
+        strategy: 'oauth_google',
+        redirectUrl: '/sso-callback',
+        redirectUrlComplete: '/',
+      })
     } catch {
       toast.error('Could not start Google sign-in.')
       setBusy(false)
@@ -37,7 +44,11 @@ export function LoginScreen() {
           <CardDescription>Sign in to your board</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button className="w-full" disabled={busy} onClick={google}>
+          <Button
+            className="w-full"
+            disabled={busy || !isLoaded}
+            onClick={google}
+          >
             {busy ? 'Redirecting…' : 'Continue with Google'}
           </Button>
         </CardContent>
