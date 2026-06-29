@@ -777,7 +777,11 @@ export function BoardView() {
           <Crosshair className="size-5" />
         </Button>
         <Sheet open={mobileFocusOpen} onOpenChange={setMobileFocusOpen}>
-          <SheetContent side="right" className="w-[88vw] max-w-sm p-0 pt-8">
+          <SheetContent
+            side="right"
+            noAnimation
+            className="w-[88vw] max-w-sm p-0 pt-8"
+          >
             <FocusPanel board={board} />
           </SheetContent>
         </Sheet>
