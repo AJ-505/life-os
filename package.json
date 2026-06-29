@@ -6,7 +6,7 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "vite dev --port 3000",
+    "dev": "concurrently -n client,convex -c blue,green -p \"[{name}]\" \"vite dev --port 3000\" \"convex dev\"",
     "convex": "convex dev",
     "generate-routes": "tsr generate",
     "build": "vite build",
@@ -66,6 +66,7 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.1",
     "babel-plugin-react-compiler": "^1.0.0",
+    "concurrently": "^10.0.3",
     "dotenv": "^17.3.1",
     "eslint": "^9.20.0",
     "jsdom": "^28.1.0",
