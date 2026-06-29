@@ -51,6 +51,10 @@ export function LoginScreen() {
           >
             {busy ? 'Redirecting…' : 'Continue with Google'}
           </Button>
+          {/* Clerk mounts its bot-protection (Smart CAPTCHA) widget here during
+              the custom sign-in flow. Without this element Clerk warns and falls
+              back to an invisible widget. */}
+          <div id="clerk-captcha" />
         </CardContent>
       </Card>
     </div>
