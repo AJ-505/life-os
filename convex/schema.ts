@@ -35,7 +35,10 @@ export default defineSchema({
     shelvedAt: v.union(v.number(), v.null()),
   })
     .index('by_user', ['userId'])
-    .index('id', ['id']),
+    // The app-facing `id` is only unique *per user* (client-generated uuids,
+    // and migrations can leave the same id under an old + new userId), so
+    // ownership lookups must scope by userId — never the bare `id` alone.
+    .index('by_user_id', ['userId', 'id']),
 
   tasks: defineTable({
     userId: v.string(),
@@ -55,5 +58,5 @@ export default defineSchema({
   })
     .index('by_user', ['userId'])
     .index('by_project', ['projectId'])
-    .index('id', ['id']),
+    .index('by_user_id', ['userId', 'id']),
 })

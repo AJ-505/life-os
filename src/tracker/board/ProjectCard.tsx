@@ -199,16 +199,31 @@ function AddTaskInput({ project }: { project: ProjectWithTasks }) {
   }
 
   return (
-    <div className="flex items-center gap-1.5 px-1 pt-1">
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit()
+      }}
+      className="flex items-center gap-1.5 px-1 pt-1"
+    >
       <Plus className="size-3.5 shrink-0 text-muted-foreground" />
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && submit()}
+        enterKeyHint="done"
         placeholder="Add a task"
         className="w-full bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground/70"
       />
-    </div>
+      {title.trim() && (
+        <button
+          type="submit"
+          aria-label="Add task"
+          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <Plus className="size-4" />
+        </button>
+      )}
+    </form>
   )
 }
 

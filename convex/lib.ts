@@ -20,11 +20,9 @@ export async function getOwnedProject(
 ) {
   const project = await ctx.db
     .query('projects')
-    .withIndex('id', (q) => q.eq('id', id))
+    .withIndex('by_user_id', (q) => q.eq('userId', userId).eq('id', id))
     .unique()
-  if (!project || project.userId !== userId) {
-    throw new Error('Project not found')
-  }
+  if (!project) throw new Error('Project not found')
   return project
 }
 
@@ -36,10 +34,8 @@ export async function getOwnedTask(
 ) {
   const task = await ctx.db
     .query('tasks')
-    .withIndex('id', (q) => q.eq('id', id))
+    .withIndex('by_user_id', (q) => q.eq('userId', userId).eq('id', id))
     .unique()
-  if (!task || task.userId !== userId) {
-    throw new Error('Task not found')
-  }
+  if (!task) throw new Error('Task not found')
   return task
 }

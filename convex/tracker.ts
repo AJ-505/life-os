@@ -98,7 +98,7 @@ export const createProject = mutation({
     // optimistic retry already landed — treat as success, not an error.
     const existing = await ctx.db
       .query('projects')
-      .withIndex('id', (q) => q.eq('id', args.id))
+      .withIndex('by_user_id', (q) => q.eq('userId', userId).eq('id', args.id))
       .unique()
     if (existing) return
     await ctx.db.insert('projects', {
@@ -201,7 +201,7 @@ export const createTask = mutation({
     await getOwnedProject(ctx, userId, args.projectId)
     const existing = await ctx.db
       .query('tasks')
-      .withIndex('id', (q) => q.eq('id', args.id))
+      .withIndex('by_user_id', (q) => q.eq('userId', userId).eq('id', args.id))
       .unique()
     if (existing) return
     await ctx.db.insert('tasks', {
