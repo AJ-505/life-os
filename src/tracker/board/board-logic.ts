@@ -106,15 +106,18 @@ export function focusTasks(board: BoardData): Array<Task & { project: ProjectWit
 }
 
 /**
- * Where should a dragged project land? We insert it *before* the project
- * being hovered (deriving the slot from that project's id rather than a
- * sortable index, which is off-by-one whenever the dragged item starts ahead
- * of its target). Dropping on a column appends to that column.
+ * Where should a dragged project land? We derive the slot from the hovered
+ * project's id (not a sortable index, which is off-by-one whenever the dragged
+ * item starts ahead of its target). `side` says whether the drop fell on the
+ * top half ('before') or bottom half ('after') of the hovered card, so placing
+ * something clearly below a project actually lands it below. Dropping on a
+ * column appends to that column.
  */
 export function projectDrop(
   board: BoardData,
   activeProjectId: string,
   over: { kind: 'proj' | 'col'; key: string },
+  side: 'before' | 'after' = 'before',
 ): { gridCol: number; gridRow: number } | null {
   if (over.kind === 'col') {
     const col = Number(over.key)
@@ -131,23 +134,28 @@ export function projectDrop(
   const rows = columnProjects(board, col).filter(
     (p) => p.id !== activeProjectId,
   )
-  const index = rows.findIndex((p) => p.id === over.key)
+  const base = rows.findIndex((p) => p.id === over.key)
+  // Dropped-on-bottom-half → insert after the hovered card (index + 1). Since
+  // `rows` already excludes the dragged project, this index is collision-free.
+  const index = base === -1 ? rows.length : base + (side === 'after' ? 1 : 0)
   return {
     gridCol: col,
     gridRow: positionAt(
       rows.map((p) => p.gridRow),
-      index === -1 ? rows.length : index,
+      index,
     ),
   }
 }
 
-/** Where should a dragged task land? Inserts before the hovered task, or at
- *  the end when dropped on the list/empty area. */
+/** Where should a dragged task land? Inserts before or after the hovered task
+ *  per `side` (which half it was dropped on), or at the end when dropped on the
+ *  list/empty area. */
 export function taskDrop(
   board: BoardData,
   activeTaskId: string,
   over: { kind: 'task' | 'list'; key: string },
   showDone: boolean,
+  side: 'before' | 'after' = 'before',
 ): { projectId: string; position: number } | null {
   if (over.kind === 'list') {
     const project = board.find((p) => p.id === over.key)
@@ -167,31 +175,34 @@ export function taskDrop(
   const items = visibleTasks(project, showDone).filter(
     (t) => t.id !== activeTaskId,
   )
-  const index = items.findIndex((t) => t.id === over.key)
+  const base = items.findIndex((t) => t.id === over.key)
+  const index = base === -1 ? items.length : base + (side === 'after' ? 1 : 0)
   return {
     projectId: project.id,
     position: positionAt(
       items.map((t) => t.position),
-      index === -1 ? items.length : index,
+      index,
     ),
   }
 }
 
-/** focusOrder for dropping into the focus panel; inserts before the hovered
- *  item, or at the end when dropped on the zone itself. */
+/** focusOrder for dropping into the focus panel; inserts before or after the
+ *  hovered item per `side`, or at the end when dropped on the zone itself. */
 export function focusDrop(
   board: BoardData,
   activeTaskId: string,
   over: { kind: 'fitem' | 'focuszone'; key: string },
+  side: 'before' | 'after' = 'before',
 ): number {
   const items = focusTasks(board).filter((t) => t.id !== activeTaskId)
   if (over.kind === 'focuszone' || over.key === activeTaskId || items.length === 0) {
     const last = items.at(-1)
     return last ? last.focusOrder + POSITION_GAP : POSITION_GAP
   }
-  const index = items.findIndex((t) => t.id === over.key)
+  const base = items.findIndex((t) => t.id === over.key)
+  const index = base === -1 ? items.length : base + (side === 'after' ? 1 : 0)
   return positionAt(
     items.map((t) => t.focusOrder),
-    index === -1 ? items.length : index,
+    index,
   )
 }

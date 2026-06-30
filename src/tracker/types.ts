@@ -70,7 +70,18 @@ export function positionAfter(items: Array<{ position: number }>): number {
   return Math.max(...items.map((i) => i.position)) + POSITION_GAP
 }
 
-/** Midpoint position for inserting at `index` into an ordered list. */
+/**
+ * Midpoint position for inserting at `index` into an ordered list.
+ *
+ * NOTE — precision drift: inserting repeatedly into the *same* gap keeps
+ * halving the distance between two neighbours ((a + b) / 2), so after ~50
+ * insertions in one spot the two positions converge to the same float and
+ * order becomes ambiguous. It's not a concern in normal use (gaps start at
+ * POSITION_GAP = 1024 and inserts spread out), but if two items ever end up
+ * with near-equal positions, that's the cause. The fix is to occasionally
+ * renormalise a column/list back to clean POSITION_GAP multiples
+ * (1024, 2048, 3072…) rather than to widen this function.
+ */
 export function positionAt(ordered: Array<number>, index: number): number {
   if (ordered.length === 0) return POSITION_GAP
   if (index <= 0) return ordered[0] - POSITION_GAP

@@ -49,10 +49,12 @@ import {
   colId,
   columnProjects,
   focusDrop,
+  focusTasks,
   parseDragId,
   projId,
   projectDrop,
   taskDrop,
+  visibleTasks,
 } from './board-logic'
 import { ProjectCard } from './ProjectCard'
 import { TaskDetails } from './TaskDetails'
@@ -608,6 +610,29 @@ export function BoardView() {
     let dst = parseDragId(over.id)
     if (!src || !dst) return
 
+    // Before or after the hovered item? `verticalListSortingStrategy` decides
+    // the live gap purely by *direction* within the sortable list (drag down
+    // past an item → land after it; drag up → before it), never by pixel
+    // midpoint. To land exactly where the preview shows — no snap/jank on
+    // release — we mirror that: same-list reorders use index direction.
+    const dirSide = (
+      orderedIds: Array<string>,
+      overKey: string,
+    ): 'before' | 'after' | null => {
+      const ai = orderedIds.indexOf(src.key)
+      const oi = orderedIds.indexOf(overKey)
+      if (ai === -1 || oi === -1) return null
+      return ai < oi ? 'after' : 'before'
+    }
+    // Cross-list drops (active isn't in the target list) have no direction, so
+    // fall back to which half of the hovered item the cursor ended on.
+    const activeRect = a.rect.current.translated
+    const rectSide: 'before' | 'after' =
+      activeRect &&
+      activeRect.top + activeRect.height / 2 > over.rect.top + over.rect.height / 2
+        ? 'after'
+        : 'before'
+
     if (src.kind === 'proj') {
       let target: { gridCol: number; gridRow: number } | null = null
       if (dst.kind === 'col') {
@@ -624,7 +649,22 @@ export function BoardView() {
           projKey = findTask(dst.key)?.project.id ?? null
         }
         if (!projKey || projKey === src.key) return
-        target = projectDrop(board, src.key, { kind: 'proj', key: projKey })
+        // side only applies when hovering a project card directly; over a
+        // task/list interior `over.rect` isn't a project box, so keep 'before'.
+        const proj = board.find((p) => p.id === projKey)
+        const orderedProjects = proj
+          ? columnProjects(board, proj.gridCol).map((p) => p.id)
+          : []
+        const projSide =
+          dst.kind === 'proj'
+            ? dirSide(orderedProjects, projKey) ?? rectSide
+            : 'before'
+        target = projectDrop(
+          board,
+          src.key,
+          { kind: 'proj', key: projKey },
+          projSide,
+        )
       }
       if (target) moveProject.mutate({ id: src.key, ...target })
       return
@@ -632,20 +672,35 @@ export function BoardView() {
 
     if (src.kind === 'task') {
       if (dst.kind === 'focuszone' || dst.kind === 'fitem') {
-        const focusOrder = focusDrop(board, src.key, {
-          kind: dst.kind,
-          key: dst.key,
-        })
+        // task → focus is always a cross-list move (the task isn't in the focus
+        // list yet), so there's no direction — the rect half is the right cue.
+        const focusOrder = focusDrop(
+          board,
+          src.key,
+          { kind: dst.kind, key: dst.key },
+          dst.kind === 'fitem' ? rectSide : 'before',
+        )
         setFocus.mutate({ id: src.key, inFocus: true, focusOrder })
         return
       }
       if (dst.kind === 'proj') dst = { kind: 'list', key: dst.key }
       if (dst.kind !== 'task' && dst.kind !== 'list') return
+      const { kind: dstKind, key: dstKey } = dst
+      const overProj =
+        dstKind === 'task'
+          ? board.find((p) => p.tasks.some((t) => t.id === dstKey))
+          : null
+      const orderedTasks = overProj
+        ? visibleTasks(overProj, showDone).map((t) => t.id)
+        : []
+      const taskSide =
+        dstKind === 'task' ? dirSide(orderedTasks, dstKey) ?? rectSide : 'before'
       const target = taskDrop(
         board,
         src.key,
-        { kind: dst.kind, key: dst.key },
+        { kind: dstKind, key: dstKey },
         showDone,
+        taskSide,
       )
       if (target) moveTask.mutate({ id: src.key, ...target })
       return
@@ -653,10 +708,17 @@ export function BoardView() {
 
     if (src.kind === 'fitem') {
       if (dst.kind !== 'focuszone' && dst.kind !== 'fitem') return
-      const focusOrder = focusDrop(board, src.key, {
-        kind: dst.kind,
-        key: dst.key,
-      })
+      const orderedFocus = focusTasks(board).map((t) => t.id)
+      const focusSide =
+        dst.kind === 'fitem'
+          ? dirSide(orderedFocus, dst.key) ?? rectSide
+          : 'before'
+      const focusOrder = focusDrop(
+        board,
+        src.key,
+        { kind: dst.kind, key: dst.key },
+        focusSide,
+      )
       setFocus.mutate({ id: src.key, inFocus: true, focusOrder })
     }
   }
