@@ -197,6 +197,11 @@ body::after {
   pointer-events: none;
   z-index: 50;
   opacity: 0.035;
+  /* Own compositor layer. This sits above the whole app, so without it every
+     repaint anywhere (each keystroke in a field, caret blinks) also invalidates
+     and redraws the grain — a real chunk of typing latency. */
+  will-change: transform;
+  transform: translateZ(0);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
@@ -221,6 +226,13 @@ body::after {
    the canvas → portaled menus/dialogs are unaffected. */
 .board-canvas[data-dragging] * {
   transition: none;
+}
+
+/* Mandatory snap re-snaps the container on every dnd-kit autoscroll step, so
+   dragging a card toward another column on mobile hurls the board to a column
+   edge. Snapping is a browsing affordance — suspend it while a drag is live. */
+.board-canvas[data-dragging] {
+  scroll-snap-type: none;
 }
 
 /* mono micro-labels: the "OS chrome" voice */

@@ -149,7 +149,8 @@ export function projectDrop(
 
 /** Where should a dragged task land? Inserts before or after the hovered task
  *  per `side` (which half it was dropped on), or at the end when dropped on the
- *  list/empty area. */
+ *  list/empty area. `showDone` is the board-wide switch; each project's own
+ *  `showDone` override is OR-ed in so the math matches what the card renders. */
 export function taskDrop(
   board: BoardData,
   activeTaskId: string,
@@ -160,7 +161,7 @@ export function taskDrop(
   if (over.kind === 'list') {
     const project = board.find((p) => p.id === over.key)
     if (!project) return null
-    const items = visibleTasks(project, showDone).filter(
+    const items = visibleTasks(project, showDone || project.showDone).filter(
       (t) => t.id !== activeTaskId,
     )
     const last = items.at(-1)
@@ -172,7 +173,7 @@ export function taskDrop(
   if (over.key === activeTaskId) return null
   const project = board.find((p) => p.tasks.some((t) => t.id === over.key))
   if (!project) return null
-  const items = visibleTasks(project, showDone).filter(
+  const items = visibleTasks(project, showDone || project.showDone).filter(
     (t) => t.id !== activeTaskId,
   )
   const base = items.findIndex((t) => t.id === over.key)

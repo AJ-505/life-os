@@ -17,6 +17,7 @@ function shapeProject(p: Doc<'projects'>) {
     color: p.color,
     status: p.status,
     collapsed: p.collapsed,
+    showDone: p.showDone ?? false,
     gridCol: p.gridCol,
     gridRow: p.gridRow,
     targetDate: p.targetDate,
@@ -124,6 +125,7 @@ export const updateProject = mutation({
     name: v.optional(v.string()),
     color: v.optional(v.string()),
     collapsed: v.optional(v.boolean()),
+    showDone: v.optional(v.boolean()),
     targetDate: v.optional(v.union(v.number(), v.null())),
   },
   handler: async (ctx, args) => {

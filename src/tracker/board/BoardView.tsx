@@ -691,7 +691,7 @@ export function BoardView() {
           ? board.find((p) => p.tasks.some((t) => t.id === dstKey))
           : null
       const orderedTasks = overProj
-        ? visibleTasks(overProj, showDone).map((t) => t.id)
+        ? visibleTasks(overProj, showDone || overProj.showDone).map((t) => t.id)
         : []
       const taskSide =
         dstKind === 'task' ? dirSide(orderedTasks, dstKey) ?? rectSide : 'before'
@@ -723,7 +723,19 @@ export function BoardView() {
     }
   }
 
-  const openTask = openTaskId ? findTask(openTaskId)?.task ?? null : null
+  // Hold the last-seen task across renders: a transient board state (an
+  // optimistic update rolling back a beat before the server value arrives) can
+  // momentarily lose the task, and letting `openTask` flip null would unmount
+  // and remount the dialog — the backdrop blinks light/dark and in-progress
+  // edits are wiped. The dialog only truly closes via onClose.
+  const lastOpenTask = useRef<Task | null>(null)
+  const foundOpenTask = openTaskId ? findTask(openTaskId)?.task ?? null : null
+  if (foundOpenTask) lastOpenTask.current = foundOpenTask
+  const openTask =
+    foundOpenTask ??
+    (openTaskId && lastOpenTask.current?.id === openTaskId
+      ? lastOpenTask.current
+      : null)
 
   return (
     <BoardUIContext.Provider value={boardUI}>

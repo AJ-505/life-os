@@ -13,6 +13,8 @@ import {
   Check,
   ChevronDown,
   CircleCheckBig,
+  Eye,
+  EyeOff,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -98,6 +100,15 @@ export function ProjectEditDialog({
   const [name, setName] = useState(project.name)
   const [color, setColor] = useState(project.color)
 
+  const save = () => {
+    updateProject.mutate({
+      id: project.id,
+      name: name.trim() || project.name,
+      color,
+    })
+    onClose()
+  }
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-sm">
@@ -107,7 +118,11 @@ export function ProjectEditDialog({
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <Label className="os-label">Name</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} />
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && save()}
+            />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label className="os-label">Color</Label>
@@ -163,17 +178,7 @@ export function ProjectEditDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button
-            size="sm"
-            onClick={() => {
-              updateProject.mutate({
-                id: project.id,
-                name: name.trim() || project.name,
-                color,
-              })
-              onClose()
-            }}
-          >
+          <Button size="sm" onClick={save}>
             Save
           </Button>
         </DialogFooter>
@@ -250,7 +255,11 @@ export const ProjectCardBody = memo(function ProjectCardBody({
     disabled: ghost,
   })
 
-  const nodes = useMemo(() => taskTree(project, showDone), [project, showDone])
+  const showDoneHere = showDone || project.showDone
+  const nodes = useMemo(
+    () => taskTree(project, showDoneHere),
+    [project, showDoneHere],
+  )
   const doneCount = project.tasks.filter((t) => t.done && !t.archived).length
   const totalCount = project.tasks.filter((t) => !t.archived).length
   const progress = totalCount === 0 ? 0 : doneCount / totalCount
@@ -318,6 +327,21 @@ export const ProjectCardBody = memo(function ProjectCardBody({
           <DropdownMenuContent align="end" className="w-44">
             <DropdownMenuItem onClick={() => setEditing(true)}>
               <Pencil /> Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() =>
+                updateProject.mutate({ id: project.id, showDone: !project.showDone })
+              }
+            >
+              {project.showDone ? (
+                <>
+                  <EyeOff /> Hide done
+                </>
+              ) : (
+                <>
+                  <Eye /> Show done
+                </>
+              )}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem

@@ -27,6 +27,9 @@ export default defineSchema({
       v.literal('done'),
     ),
     collapsed: v.boolean(),
+    // Per-project "show done" override; the board-wide switch still applies.
+    // Optional so pre-existing rows don't need a migration.
+    showDone: v.optional(v.boolean()),
     gridCol: v.number(),
     gridRow: v.number(),
     targetDate: v.union(v.number(), v.null()),

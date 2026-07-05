@@ -48,6 +48,7 @@ export function useCreateProject() {
           color: args.color,
           status: 'active',
           collapsed: false,
+          showDone: false,
           gridCol: args.gridCol,
           gridRow: args.gridRow,
           targetDate: null,

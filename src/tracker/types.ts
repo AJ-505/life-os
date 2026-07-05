@@ -10,6 +10,8 @@ export interface Project {
   color: string
   status: ProjectStatus
   collapsed: boolean
+  /** Per-project override; done tasks show when this OR the board switch is on. */
+  showDone: boolean
   gridCol: number
   gridRow: number
   targetDate: number | null

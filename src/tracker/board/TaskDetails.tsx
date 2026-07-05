@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useRef, useState } from 'react'
 import { format } from 'date-fns'
 import { Archive, CalendarIcon, Crosshair, Plus, Trash2, X } from 'lucide-react'
 
@@ -133,29 +133,49 @@ export function TaskDetails({
   const setFocus = useSetTaskFocus()
   const deleteTask = useDeleteTask()
 
-  const [title, setTitle] = useState(task.title)
-  const [notes, setNotes] = useState(task.notes ?? '')
-
-  useEffect(() => {
-    if (open) {
-      setTitle(task.title)
-      setNotes(task.notes ?? '')
-    }
-  }, [open, task.id])
+  // Title/notes are uncontrolled (committed on blur/close). Controlled state
+  // re-rendered the whole dialog on every keystroke, which made typing in the
+  // notes field visibly lag.
+  const titleRef = useRef<HTMLInputElement>(null)
+  const notesRef = useRef<HTMLTextAreaElement>(null)
+  const closingRef = useRef(false)
 
   const project = board.find((p) => p.id === task.projectId)
   const activeProjects = board.filter((p) => p.status === 'active')
 
-  const commitText = () => {
-    const t = title.trim()
-    const n = notes.trim()
-    if (t !== task.title || n !== (task.notes ?? '')) {
-      updateTask.mutate({ id: task.id, title: t || task.title, notes: n || null })
+  const readFields = () => ({
+    title: titleRef.current?.value.trim() ?? task.title,
+    notes: notesRef.current?.value.trim() ?? (task.notes ?? ''),
+  })
+
+  const commitFields = (f: { title: string; notes: string }) => {
+    if (f.title !== task.title || f.notes !== (task.notes ?? '')) {
+      updateTask.mutate({
+        id: task.id,
+        title: f.title || task.title,
+        notes: f.notes || null,
+      })
     }
   }
 
+  const commitText = () => {
+    if (closingRef.current) return
+    commitFields(readFields())
+  }
+
+  // Close first, write one tick later: committing in the same tick batches the
+  // board-wide optimistic update into the unmount commit, so the dialog hung
+  // around until the whole board re-rendered — Done/Enter felt sluggish. The
+  // fields are read before unmount (the refs die with it).
+  const close = () => {
+    const f = readFields()
+    closingRef.current = true
+    onClose()
+    setTimeout(() => commitFields(f), 0)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && (commitText(), onClose())}>
+    <Dialog open={open} onOpenChange={(o) => !o && close()}>
       <DialogContent className="max-w-md" data-proj={project?.color}>
         <DialogHeader>
           <DialogTitle className="sr-only">Task details</DialogTitle>
@@ -167,20 +187,27 @@ export function TaskDetails({
 
         <div className="flex flex-col gap-4">
           <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            ref={titleRef}
+            key={task.id}
+            defaultValue={task.title}
             onBlur={commitText}
-            className="border-0 border-b border-border bg-transparent px-0 text-base font-medium shadow-none focus-visible:ring-0"
+            onKeyDown={(e) => e.key === 'Enter' && close()}
+            className="h-auto border-0 border-b border-border bg-transparent px-2 py-2 text-base font-medium shadow-none focus-visible:ring-0"
             aria-label="Task title"
           />
 
           <Textarea
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
+            ref={notesRef}
+            key={task.id}
+            defaultValue={task.notes ?? ''}
             onBlur={commitText}
             placeholder="Notes…"
-            rows={3}
-            className="resize-none"
+            rows={4}
+            // field-sizing-fixed + no spellcheck: both re-run on every
+            // keystroke (intrinsic re-measure / text re-scan) and made typing
+            // long notes lag. Fixed height, scrolls inside, drag to enlarge.
+            spellCheck={false}
+            className="field-sizing-fixed max-h-64 resize-y"
           />
 
           <div className="grid grid-cols-2 gap-3">
@@ -311,7 +338,7 @@ export function TaskDetails({
               Delete
             </Button>
           </div>
-          <Button size="sm" onClick={() => (commitText(), onClose())}>
+          <Button size="sm" onClick={close}>
             Done
           </Button>
         </DialogFooter>
