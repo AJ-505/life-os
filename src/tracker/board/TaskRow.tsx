@@ -120,7 +120,7 @@ export const TaskRowBody = memo(function TaskRowBody({
 
 function SubtaskRows({ nodes }: { nodes: Array<TaskNode> }) {
   return (
-    <div className="ml-3.5 flex flex-col border-l border-border/60 pl-0.5">
+    <div className="ml-3.5 min-w-0 flex flex-col border-l border-border/60 pl-0.5">
       {nodes.map((n) => (
         <div key={n.task.id}>
           <TaskRowBody task={n.task} subtask />
