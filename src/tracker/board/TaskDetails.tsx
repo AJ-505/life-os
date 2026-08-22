@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import type { MutableRefObject } from 'react'
 import { format } from 'date-fns'
 import { Archive, CalendarIcon, Crosshair, Plus, Trash2, X } from 'lucide-react'
 
@@ -41,34 +42,72 @@ import {
 
 import type { BoardData, Task } from '../types'
 
-function Subtasks({ parent, board }: { parent: Task; board: BoardData }) {
+/**
+ * Capture-now / write-later. Optimistic board patches must not run in the same
+ * turn as dialog unmount — React batches them and Done waits on a full board
+ * reconcile. Call the outer fn while the DOM is still up; run the thunk after
+ * onClose (setTimeout 0).
+ */
+type DeferredWrite = () => void
+type CaptureWrite = () => DeferredWrite | null
+
+function Subtasks({
+  parent,
+  board,
+  closingRef,
+  draftCaptureRef,
+}: {
+  parent: Task
+  board: BoardData
+  closingRef: MutableRefObject<boolean>
+  draftCaptureRef: MutableRefObject<CaptureWrite | null>
+}) {
   const createTask = useCreateTask()
   const updateTask = useUpdateTask()
   const deleteTask = useDeleteTask()
-  const [title, setTitle] = useState('')
+  const draftRef = useRef<HTMLInputElement>(null)
 
   const project = board.find((p) => p.id === parent.projectId)
   const children = (project?.tasks ?? [])
     .filter((t) => t.parentId === parent.id && !t.archived)
     .sort((a, b) => a.position - b.position)
+  const childrenRef = useRef(children)
+  childrenRef.current = children
 
-  const add = () => {
-    const t = title.trim()
-    if (!t) return
+  const commitDraft = (title: string) => {
     createTask.mutate({
       id: newId(),
       projectId: parent.projectId,
       parentId: parent.id,
-      title: t,
-      position: positionAfter(children),
+      title,
+      position: positionAfter(childrenRef.current),
     })
-    setTitle('')
+  }
+
+  const takeDraft = (): string => {
+    const t = draftRef.current?.value.trim() ?? ''
+    if (draftRef.current) draftRef.current.value = ''
+    return t
+  }
+
+  const add = () => {
+    const t = takeDraft()
+    if (t) commitDraft(t)
+  }
+
+  draftCaptureRef.current = () => {
+    const t = takeDraft()
+    if (!t) return null
+    return () => commitDraft(t)
   }
 
   return (
     <div className="flex flex-col gap-1.5">
       <Label className="os-label">
-        Subtasks{children.length > 0 ? ` · ${children.filter((c) => c.done).length}/${children.length}` : ''}
+        Subtasks
+        {children.length > 0
+          ? ` · ${children.filter((c) => c.done).length}/${children.length}`
+          : ''}
       </Label>
       <div className="flex flex-col gap-0.5">
         {children.map((c) => (
@@ -84,35 +123,71 @@ function Subtasks({ parent, board }: { parent: Task; board: BoardData }) {
               aria-label="Done"
               className="rounded-full"
             />
-            <span
+            <input
+              key={c.id}
+              defaultValue={c.title}
+              data-subtask-id={c.id}
+              data-subtask-was={c.title}
+              onBlur={(e) => {
+                const next = e.currentTarget.value.trim()
+                if (!next) {
+                  e.currentTarget.value = c.title
+                  return
+                }
+                if (next === c.title) return
+                // Defer so a close that arms on the same turn can suppress this
+                // write and own it after unmount (no board patch mid-dismiss).
+                const id = c.id
+                setTimeout(() => {
+                  if (closingRef.current) return
+                  updateTask.mutate({ id, title: next })
+                }, 0)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  ;(e.target as HTMLInputElement).blur()
+                }
+              }}
+              aria-label="Subtask title"
               className={cn(
-                'min-w-0 flex-1 truncate text-sm',
+                'min-w-0 flex-1 bg-transparent py-0.5 text-sm outline-none',
                 c.done && 'text-muted-foreground line-through decoration-border',
               )}
-            >
-              {c.title}
-            </span>
+            />
             <button
               type="button"
               aria-label="Delete subtask"
               onClick={() => deleteTask.mutate({ id: c.id })}
-              className="shrink-0 cursor-pointer text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+              className="shrink-0 cursor-pointer text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
             >
               <X className="size-3.5" />
             </button>
           </div>
         ))}
       </div>
-      <div className="flex items-center gap-1.5 px-1">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          add()
+        }}
+        className="flex items-center gap-1.5 px-1"
+      >
         <Plus className="size-3.5 shrink-0 text-muted-foreground" />
         <input
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && add()}
+          ref={draftRef}
+          enterKeyHint="done"
           placeholder="Add a subtask"
           className="w-full bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground/70"
         />
-      </div>
+        <button
+          type="submit"
+          aria-label="Add subtask"
+          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <Plus className="size-4" />
+        </button>
+      </form>
     </div>
   )
 }
@@ -139,6 +214,8 @@ export function TaskDetails({
   const titleRef = useRef<HTMLInputElement>(null)
   const notesRef = useRef<HTMLTextAreaElement>(null)
   const closingRef = useRef(false)
+  const draftCaptureRef = useRef<CaptureWrite | null>(null)
+  const [dueOpen, setDueOpen] = useState(false)
 
   const project = board.find((p) => p.id === task.projectId)
   const activeProjects = board.filter((p) => p.status === 'active')
@@ -159,19 +236,45 @@ export function TaskDetails({
   }
 
   const commitText = () => {
-    if (closingRef.current) return
-    commitFields(readFields())
+    // Capture now (refs still live); write next tick so Done/overlay can arm
+    // closingRef first and take ownership of the write after unmount.
+    const f = readFields()
+    setTimeout(() => {
+      if (closingRef.current) return
+      commitFields(f)
+    }, 0)
   }
 
-  // Close first, write one tick later: committing in the same tick batches the
-  // board-wide optimistic update into the unmount commit, so the dialog hung
-  // around until the whole board re-rendered — Done/Enter felt sluggish. The
-  // fields are read before unmount (the refs die with it).
-  const close = () => {
-    const f = readFields()
+  /** Focused subtask title edit — only needed when blur is suppressed by close. */
+  const captureFocusedSubtask = (): DeferredWrite | null => {
+    const el = document.activeElement
+    if (!(el instanceof HTMLInputElement)) return null
+    const id = el.dataset.subtaskId
+    if (!id) return null
+    const was = el.dataset.subtaskWas ?? ''
+    const next = el.value.trim()
+    if (!next || next === was) return null
+    return () => updateTask.mutate({ id, title: next })
+  }
+
+  // Mark closing on pointerdown (before blur). Otherwise the focused field's
+  // blur fires an optimistic board patch in the same turn as unmount and Done
+  // waits on a full board re-render — the opposite of "feels instant".
+  const armClose = () => {
     closingRef.current = true
+  }
+
+  const close = () => {
+    closingRef.current = true
+    const f = readFields()
+    const writeSubtask = captureFocusedSubtask()
+    const writeDraft = draftCaptureRef.current?.() ?? null
     onClose()
-    setTimeout(() => commitFields(f), 0)
+    setTimeout(() => {
+      writeSubtask?.()
+      writeDraft?.()
+      commitFields(f)
+    }, 0)
   }
 
   return (
@@ -213,13 +316,13 @@ export function TaskDetails({
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <Label className="os-label">Due</Label>
-              <Popover>
+              <Popover open={dueOpen} onOpenChange={setDueOpen}>
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     size="sm"
                     className={cn(
-                      'justify-start gap-2 font-mono text-xs',
+                      'w-[9.5rem] justify-start gap-2 font-mono text-xs',
                       !task.dueAt && 'text-muted-foreground',
                     )}
                   >
@@ -229,31 +332,37 @@ export function TaskDetails({
                       : 'No date'}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
+                <PopoverContent
+                  className="w-auto p-0"
+                  align="start"
+                  side="bottom"
+                  sideOffset={4}
+                >
                   <Calendar
                     mode="single"
                     selected={task.dueAt ? new Date(task.dueAt) : undefined}
-                    onSelect={(d) =>
+                    onSelect={(d) => {
+                      setDueOpen(false)
                       updateTask.mutate({
                         id: task.id,
                         dueAt: d ? d.getTime() : null,
                       })
-                    }
+                    }}
                   />
-                  {task.dueAt ? (
-                    <div className="border-t p-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="w-full"
-                        onClick={() =>
-                          updateTask.mutate({ id: task.id, dueAt: null })
-                        }
-                      >
-                        Clear date
-                      </Button>
-                    </div>
-                  ) : null}
+                  <div className="border-t p-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full"
+                      disabled={!task.dueAt}
+                      onClick={() => {
+                        setDueOpen(false)
+                        updateTask.mutate({ id: task.id, dueAt: null })
+                      }}
+                    >
+                      Clear date
+                    </Button>
+                  </div>
                 </PopoverContent>
               </Popover>
             </div>
@@ -286,7 +395,12 @@ export function TaskDetails({
             </div>
           </div>
 
-          <Subtasks parent={task} board={board} />
+          <Subtasks
+            parent={task}
+            board={board}
+            closingRef={closingRef}
+            draftCaptureRef={draftCaptureRef}
+          />
 
           <div className="flex items-center justify-between rounded-md border px-3 py-2">
             <span className="flex items-center gap-2 text-sm">
@@ -317,9 +431,13 @@ export function TaskDetails({
               variant="ghost"
               size="sm"
               className="gap-1.5 text-muted-foreground"
+              onPointerDown={armClose}
               onClick={() => {
-                updateTask.mutate({ id: task.id, archived: !task.archived })
+                const archived = !task.archived
                 onClose()
+                setTimeout(() => {
+                  updateTask.mutate({ id: task.id, archived })
+                }, 0)
               }}
             >
               <Archive className="size-3.5" />
@@ -329,16 +447,19 @@ export function TaskDetails({
               variant="ghost"
               size="sm"
               className="gap-1.5 text-destructive hover:text-destructive"
+              onPointerDown={armClose}
               onClick={() => {
-                deleteTask.mutate({ id: task.id })
                 onClose()
+                setTimeout(() => {
+                  deleteTask.mutate({ id: task.id })
+                }, 0)
               }}
             >
               <Trash2 className="size-3.5" />
               Delete
             </Button>
           </div>
-          <Button size="sm" onClick={close}>
+          <Button size="sm" onPointerDown={armClose} onClick={close}>
             Done
           </Button>
         </DialogFooter>

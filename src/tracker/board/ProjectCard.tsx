@@ -99,6 +99,7 @@ export function ProjectEditDialog({
   const updateProject = useUpdateProject()
   const [name, setName] = useState(project.name)
   const [color, setColor] = useState(project.color)
+  const [targetOpen, setTargetOpen] = useState(false)
 
   const save = () => {
     updateProject.mutate({
@@ -130,13 +131,13 @@ export function ProjectEditDialog({
           </div>
           <div className="flex flex-col gap-1.5">
             <Label className="os-label">Target date</Label>
-            <Popover>
+            <Popover open={targetOpen} onOpenChange={setTargetOpen}>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
                   size="sm"
                   className={cn(
-                    'justify-start gap-2 font-mono text-xs',
+                    'w-[9.5rem] justify-start gap-2 font-mono text-xs',
                     !project.targetDate && 'text-muted-foreground',
                   )}
                 >
@@ -146,33 +147,39 @@ export function ProjectEditDialog({
                     : 'No target'}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
+              <PopoverContent
+                className="w-auto p-0"
+                align="start"
+                side="bottom"
+                sideOffset={4}
+              >
                 <Calendar
                   mode="single"
                   selected={
                     project.targetDate ? new Date(project.targetDate) : undefined
                   }
-                  onSelect={(d) =>
+                  onSelect={(d) => {
+                    setTargetOpen(false)
                     updateProject.mutate({
                       id: project.id,
                       targetDate: d ? d.getTime() : null,
                     })
-                  }
+                  }}
                 />
-                {project.targetDate ? (
-                  <div className="border-t p-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="w-full"
-                      onClick={() =>
-                        updateProject.mutate({ id: project.id, targetDate: null })
-                      }
-                    >
-                      Clear target
-                    </Button>
-                  </div>
-                ) : null}
+                <div className="border-t p-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full"
+                    disabled={!project.targetDate}
+                    onClick={() => {
+                      setTargetOpen(false)
+                      updateProject.mutate({ id: project.id, targetDate: null })
+                    }}
+                  >
+                    Clear target
+                  </Button>
+                </div>
               </PopoverContent>
             </Popover>
           </div>
