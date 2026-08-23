@@ -50,6 +50,11 @@ import type { BoardData, Task } from '../types'
  */
 type DeferredWrite = () => void
 type CaptureWrite = () => DeferredWrite | null
+type PendingWrites = {
+  fields: { title: string; notes: string }
+  subtask: DeferredWrite | null
+  draft: DeferredWrite | null
+}
 
 function Subtasks({
   parent,
@@ -214,6 +219,7 @@ export function TaskDetails({
   const titleRef = useRef<HTMLInputElement>(null)
   const notesRef = useRef<HTMLTextAreaElement>(null)
   const closingRef = useRef(false)
+  const pendingRef = useRef<PendingWrites | null>(null)
   const draftCaptureRef = useRef<CaptureWrite | null>(null)
   const [dueOpen, setDueOpen] = useState(false)
 
@@ -257,24 +263,40 @@ export function TaskDetails({
     return () => updateTask.mutate({ id, title: next })
   }
 
-  // Mark closing on pointerdown (before blur). Otherwise the focused field's
-  // blur fires an optimistic board patch in the same turn as unmount and Done
-  // waits on a full board re-render — the opposite of "feels instant".
+  const collectPending = (): PendingWrites => ({
+    fields: readFields(),
+    subtask: captureFocusedSubtask(),
+    draft: draftCaptureRef.current?.() ?? null,
+  })
+
+  // Pointerdown fires before the browser moves focus to the clicked button, so
+  // this is the last turn where document.activeElement can still be an edited
+  // subtask input. Capture here; the click handler only closes.
   const armClose = () => {
+    closingRef.current = true
+    pendingRef.current = collectPending()
+  }
+
+  // Suppress-only variant for actions whose field writes are moot (delete).
+  const armSuppress = () => {
     closingRef.current = true
   }
 
-  const close = () => {
+  const closeWith = (after?: () => void) => {
     closingRef.current = true
-    const f = readFields()
-    const writeSubtask = captureFocusedSubtask()
-    const writeDraft = draftCaptureRef.current?.() ?? null
+    const p = pendingRef.current ?? collectPending()
+    pendingRef.current = null
     onClose()
     setTimeout(() => {
-      writeSubtask?.()
-      writeDraft?.()
-      commitFields(f)
+      p.subtask?.()
+      p.draft?.()
+      commitFields(p.fields)
+      after?.()
     }, 0)
+  }
+
+  const close = () => {
+    closeWith()
   }
 
   return (
@@ -432,13 +454,11 @@ export function TaskDetails({
               size="sm"
               className="gap-1.5 text-muted-foreground"
               onPointerDown={armClose}
-              onClick={() => {
-                const archived = !task.archived
-                onClose()
-                setTimeout(() => {
-                  updateTask.mutate({ id: task.id, archived })
-                }, 0)
-              }}
+              onClick={() =>
+                closeWith(() => {
+                  updateTask.mutate({ id: task.id, archived: !task.archived })
+                })
+              }
             >
               <Archive className="size-3.5" />
               {task.archived ? 'Unarchive' : 'Archive'}
@@ -447,8 +467,9 @@ export function TaskDetails({
               variant="ghost"
               size="sm"
               className="gap-1.5 text-destructive hover:text-destructive"
-              onPointerDown={armClose}
+              onPointerDown={armSuppress}
               onClick={() => {
+                closingRef.current = true
                 onClose()
                 setTimeout(() => {
                   deleteTask.mutate({ id: task.id })
