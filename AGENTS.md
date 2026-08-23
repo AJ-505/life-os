@@ -11,3 +11,10 @@ Convex agent skills for common tasks can be installed by running
 `npx convex ai-files install`.
 
 <!-- convex-ai-end -->
+
+## Artefacts
+
+Never write reports, debriefs, plans, inquiries, or proofs into this repo.
+They go in `~/code/aisandbox/life-os/` (`reports/`, `debriefs/`, `plans/`,
+`inquiries/`, `proofs/`). Artefacts are grouped by project at the aisandbox
+root, never inside the project's own repository.

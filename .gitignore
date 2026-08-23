@@ -15,3 +15,10 @@ todos.json
 # Convex tsc artifacts (Convex bundles with esbuild; tsc must not emit)
 convex/*.js
 convex/*.js.map
+
+# Agent artefacts live in ~/code/aisandbox/life-os/, never in this repo
+reports/
+debriefs/
+plans/
+inquiries/
+proofs/
