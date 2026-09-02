@@ -299,9 +299,41 @@ export function TaskDetails({
     closeWith()
   }
 
+  // X / overlay / Escape means discard edits. No field, subtask, draft
+  // changes are persisted.
+  const cancel = () => {
+    closingRef.current = true
+    pendingRef.current = null
+    // Clear any draft input so typed text does not leak into next open
+    const draftEl = document.querySelector<HTMLInputElement>(
+      'input[placeholder="Add a subtask"]',
+    )
+    if (draftEl) draftEl.value = ''
+    onClose()
+    setTimeout(() => {
+      closingRef.current = false
+    }, 0)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && close()}>
-      <DialogContent className="max-w-md" data-proj={project?.color}>
+    <Dialog open={open} onOpenChange={(o) => !o && cancel()}>
+      <DialogContent
+        showCloseButton={false}
+        className="max-w-md"
+        data-proj={project?.color}
+      >
+        <button
+          type="button"
+          aria-label="Close"
+          onPointerDown={() => {
+            closingRef.current = true
+          }}
+          onClick={cancel}
+          className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+        >
+          <X className="size-4" />
+          <span className="sr-only">Close</span>
+        </button>
         <DialogHeader>
           <DialogTitle className="sr-only">Task details</DialogTitle>
           <span className="os-label flex items-center gap-1.5">

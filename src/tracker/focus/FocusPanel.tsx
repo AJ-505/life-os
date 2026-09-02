@@ -16,6 +16,7 @@ import { ScrollArea } from '#/design-system/ui/scroll-area'
 import { useSetTaskFocus, useUpdateTask } from '../queries'
 import { focusItemId, focusTasks } from '../board/board-logic'
 import { DueChip } from '../board/TaskRow'
+import { useBoardUI } from '../board/board-ui'
 
 import type { BoardData, Project, Task } from '../types'
 
@@ -30,10 +31,13 @@ export const FocusItemBody = memo(function FocusItemBody({
 }) {
   const updateTask = useUpdateTask()
   const setFocus = useSetTaskFocus()
+  const { openTask, setHovered } = useBoardUI()
 
   return (
     <div
       data-proj={project.color}
+      onMouseEnter={() => setHovered(task.id)}
+      onMouseLeave={() => setHovered(null)}
       className={cn(
         'group/focus relative flex cursor-grab items-start gap-2 rounded-md border bg-card py-2 pl-3 pr-2 shadow-sm transition-colors hover:border-proj/40 active:cursor-grabbing',
         dragging && 'shadow-lg ring-2 ring-signal/40',
@@ -51,14 +55,17 @@ export const FocusItemBody = memo(function FocusItemBody({
         className="mt-0.5 rounded-full"
       />
       <div className="min-w-0 flex-1">
-        <p
+        <button
+          type="button"
+          onClick={() => openTask(task.id)}
+          onPointerDown={(e) => e.stopPropagation()}
           className={cn(
-            'whitespace-pre-wrap break-words text-sm leading-snug',
+            'block w-full cursor-pointer whitespace-pre-wrap break-words text-left text-sm leading-snug',
             task.done && 'text-muted-foreground line-through decoration-border',
           )}
         >
           {task.title}
-        </p>
+        </button>
         <p className="mt-0.5 truncate font-mono text-[10px] uppercase tracking-wider text-proj/80">
           {project.name}
         </p>
