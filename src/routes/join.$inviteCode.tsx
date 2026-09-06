@@ -7,6 +7,7 @@ import { ComingSoon } from '#/design-system'
 import { SPACES_ENABLED } from '#/feature-flags'
 import { Badge } from '#/design-system/ui/badge'
 import { useJoinSpace } from '#/spaces/queries'
+import { joinResult as joinResultSchema, localSpaces as localSpacesSchema } from '#/spaces/validation'
 
 export const Route = createFileRoute('/join/$inviteCode')({
   component: JoinComponent,
@@ -34,20 +35,27 @@ function JoinComponent() {
     join.mutate(
       { inviteCode },
       {
-        onSuccess: (data: { id: string; name: string; inviteCode: string }) => {
-          const spaceId =
-            (data as unknown as { id: string; spaceId?: string }).id ??
-            (data as unknown as { spaceId: string }).spaceId
-          const name = data.name
+        onSuccess: (data: unknown) => {
+          const parsedJoin = joinResultSchema.safeParse(data)
+          const spaceId = parsedJoin.success
+            ? (parsedJoin.data.id ?? parsedJoin.data.spaceId)
+            : undefined
+          if (!parsedJoin.success || !spaceId) {
+            setErrorMsg('Failed to join')
+            setPhase('error')
+            return
+          }
+          const name = parsedJoin.data.name
           // Persist locally so Spaces selector shows it even before Convex sync (fallback path)
           try {
             const raw = localStorage.getItem('lifeos-local-spaces')
+            const parsedLocal = localSpacesSchema.safeParse(raw ? JSON.parse(raw) : [])
             const arr: Array<{
               id: string
               name: string
               inviteCode: string
               createdAt: number
-            }> = raw ? JSON.parse(raw) : []
+            }> = parsedLocal.success ? parsedLocal.data : []
             if (!arr.some((s) => s.id === spaceId)) {
               arr.push({
                 id: spaceId,
@@ -74,8 +82,9 @@ function JoinComponent() {
         },
       },
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inviteCode])
+    // phase and join listed so no suppression comment opts this effect out
+    // of the compiler. Re-runs are guarded by phase above and no-op.
+  }, [inviteCode, phase, join])
 
   if (!SPACES_ENABLED) {
     return (
@@ -83,7 +92,7 @@ function JoinComponent() {
         <div className="w-full max-w-md">
           <ComingSoon
             title="Spaces"
-            description="Shared spaces are on their way."
+            description="Collaborative boards you share with others."
           />
         </div>
       </div>

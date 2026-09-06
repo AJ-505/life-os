@@ -1,4 +1,3 @@
-import { memo } from 'react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { format, isPast, isToday } from 'date-fns'
@@ -43,7 +42,7 @@ export function DueChip({
   )
 }
 
-export const TaskRowBody = memo(function TaskRowBody({
+export function TaskRowBody({
   task,
   showProject,
   dragging,
@@ -119,7 +118,7 @@ export const TaskRowBody = memo(function TaskRowBody({
       </button>
     </div>
   )
-})
+}
 
 function SubtaskRows({ nodes }: { nodes: Array<TaskNode> }) {
   return (

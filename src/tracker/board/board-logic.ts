@@ -98,11 +98,23 @@ export function descendantIds(tasks: Array<Task>, id: string): Array<string> {
   return out
 }
 
-export function focusTasks(board: BoardData): Array<Task & { project: ProjectWithTasks }> {
-  return activeProjects(board)
-    .flatMap((p) => p.tasks.map((t) => ({ ...t, project: p })))
-    .filter((t) => t.inFocus && !t.archived)
-    .sort((a, b) => a.focusOrder - b.focusOrder)
+export type FocusEntry = { task: Task; project: ProjectWithTasks }
+
+/**
+ * In-focus rows, project attached beside the task, not spread onto it.
+ * `{ ...t, project }` allocated a new task-shaped object on every call, so
+ * compiled FocusItemBody saw a new `task` prop on every board patch and
+ * could never skip. `task` here is the board's own object.
+ */
+export function focusTasks(board: BoardData): Array<FocusEntry> {
+  const out: Array<FocusEntry> = []
+  for (const p of activeProjects(board)) {
+    for (const t of p.tasks) {
+      if (t.inFocus && !t.archived) out.push({ task: t, project: p })
+    }
+  }
+  out.sort((a, b) => a.task.focusOrder - b.task.focusOrder)
+  return out
 }
 
 /**
@@ -195,15 +207,15 @@ export function focusDrop(
   over: { kind: 'fitem' | 'focuszone'; key: string },
   side: 'before' | 'after' = 'before',
 ): number {
-  const items = focusTasks(board).filter((t) => t.id !== activeTaskId)
+  const items = focusTasks(board).filter((e) => e.task.id !== activeTaskId)
   if (over.kind === 'focuszone' || over.key === activeTaskId || items.length === 0) {
     const last = items.at(-1)
-    return last ? last.focusOrder + POSITION_GAP : POSITION_GAP
+    return last ? last.task.focusOrder + POSITION_GAP : POSITION_GAP
   }
-  const base = items.findIndex((t) => t.id === over.key)
+  const base = items.findIndex((e) => e.task.id === over.key)
   const index = base === -1 ? items.length : base + (side === 'after' ? 1 : 0)
   return positionAt(
-    items.map((t) => t.focusOrder),
+    items.map((e) => e.task.focusOrder),
     index,
   )
 }

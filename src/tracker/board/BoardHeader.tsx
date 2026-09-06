@@ -1,4 +1,4 @@
-import { memo, useState } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Crosshair, Link as LinkIcon, Plus, Users } from 'lucide-react'
 import { toast } from 'sonner'
@@ -18,6 +18,7 @@ import { Label } from '#/design-system/ui/label'
 import { Switch } from '#/design-system/ui/switch'
 
 import { mySpacesQueryOptions, useCreateSpace } from '#/spaces/queries'
+import { localSpaces } from '#/spaces/validation'
 import { SpacesShareDialog } from '#/spaces/components/SpacesShareDialog'
 import { SPACES_ENABLED } from '#/feature-flags'
 import { newId } from '../types'
@@ -41,7 +42,9 @@ function readLocalSpaces(): Array<LocalSpace> {
   if (typeof window === 'undefined') return []
   try {
     const raw = localStorage.getItem('lifeos-local-spaces')
-    return raw ? (JSON.parse(raw) as Array<LocalSpace>) : []
+    if (!raw) return []
+    const parsed = localSpaces.safeParse(JSON.parse(raw))
+    return parsed.success ? parsed.data : []
   } catch {
     return []
   }
@@ -69,7 +72,7 @@ function writeLocalSpaces(spaces: Array<LocalSpace>) {
  * re-renders. Memoized so board-root renders that don't touch its props
  * (e.g. drag start/end) skip it entirely.
  */
-export const BoardHeader = memo(function BoardHeader({
+export function BoardHeader({
   activeCount,
   openCount,
   showDone,
@@ -142,15 +145,12 @@ export const BoardHeader = memo(function BoardHeader({
       { id, name, inviteCode },
       {
         onSuccess: (code) => {
-          if (typeof code === 'string' && code !== inviteCode) {
-            setLocalSpaces((prev) => {
-              const updated = prev.map((s) =>
-                s.id === id ? { ...s, inviteCode: code } : s,
-              )
-              writeLocalSpaces(updated)
-              return updated
-            })
-          }
+          if (typeof code !== 'string' || code === inviteCode) return
+          const updated = localSpaces.map((s) =>
+            s.id === id ? { ...s, inviteCode: code } : s,
+          )
+          setLocalSpaces(updated)
+          writeLocalSpaces(updated)
         },
         onError: () => {},
       },
@@ -167,11 +167,11 @@ export const BoardHeader = memo(function BoardHeader({
     <>
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2.5 sm:px-4">
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <div className="hidden items-baseline gap-2 sm:flex">
-            <h1 className="text-lg font-bold tracking-tight">
+          <div className="hidden items-center gap-2.5 sm:flex">
+            <h1 className="text-lg font-bold leading-none tracking-tight">
               {selectedSpace ? selectedSpace.name : 'Board'}
             </h1>
-            <span className="os-label hidden lg:inline">
+            <span className="hidden text-sm leading-none text-muted-foreground lg:inline">
               {activeCount} projects · {openCount} open tasks
             </span>
           </div>
@@ -222,7 +222,7 @@ export const BoardHeader = memo(function BoardHeader({
               onCheckedChange={onShowDoneChange}
               aria-label="Show completed tasks"
             />
-            <span className="os-label hidden sm:inline">done</span>
+            <span className="os-label hidden sm:inline">Done</span>
           </label>
           <Button
             size="sm"
@@ -288,4 +288,4 @@ export const BoardHeader = memo(function BoardHeader({
       ) : null}
     </>
   )
-})
+}

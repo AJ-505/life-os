@@ -1,4 +1,3 @@
-import { memo, useMemo } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -20,7 +19,7 @@ import { useBoardUI } from '../board/board-ui'
 
 import type { BoardData, Project, Task } from '../types'
 
-export const FocusItemBody = memo(function FocusItemBody({
+export function FocusItemBody({
   task,
   project,
   dragging,
@@ -82,7 +81,7 @@ export const FocusItemBody = memo(function FocusItemBody({
       </button>
     </div>
   )
-})
+}
 
 function FocusItem({ task, project }: { task: Task; project: Project }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
@@ -118,10 +117,10 @@ export function FocusPanel({
   onClose?: () => void
 }) {
   const setFocus = useSetTaskFocus()
-  const items = useMemo(() => focusTasks(board), [board])
-  const doneItems = useMemo(() => items.filter((t) => t.done), [items])
-  const openCount = useMemo(() => items.filter((t) => !t.done).length, [items])
-  const itemIds = useMemo(() => items.map((t) => focusItemId(t.id)), [items])
+  const items = focusTasks(board)
+  const doneItems = items.filter((e) => e.task.done)
+  const openCount = items.filter((e) => !e.task.done).length
+  const itemIds = items.map((e) => focusItemId(e.task.id))
 
   const { setNodeRef, isOver } = useDroppable({
     id: 'focuszone',
@@ -145,8 +144,8 @@ export function FocusPanel({
               size="sm"
               className="h-6 px-2 text-xs text-muted-foreground"
               onClick={() =>
-                doneItems.forEach((t) =>
-                  setFocus.mutate({ id: t.id, inFocus: false }),
+                doneItems.forEach((e) =>
+                  setFocus.mutate({ id: e.task.id, inFocus: false }),
                 )
               }
             >
@@ -180,8 +179,8 @@ export function FocusPanel({
             items={itemIds}
             strategy={verticalListSortingStrategy}
           >
-            {items.map((t) => (
-              <FocusItem key={t.id} task={t} project={t.project} />
+            {items.map((e) => (
+              <FocusItem key={e.task.id} task={e.task} project={e.project} />
             ))}
           </SortableContext>
           {items.length === 0 ? (

@@ -1,4 +1,3 @@
-import { useCallback, useMemo } from 'react'
 import { useUser } from '@clerk/tanstack-react-start'
 import { useAction } from 'convex/react'
 
@@ -53,7 +52,7 @@ export type CalendarConnection =
 export function useGoogleCalendar() {
   const { user, isLoaded } = useUser()
 
-  const connection: CalendarConnection = useMemo(() => {
+  const connection: CalendarConnection = (() => {
     if (!isLoaded) return { status: 'loading' }
     const accounts = (user as ClerkUser | null | undefined)?.externalAccounts
     const google = accounts?.find((a) => a.provider?.includes('google'))
@@ -61,14 +60,14 @@ export function useGoogleCalendar() {
     return google.approvedScopes?.includes(CALENDAR_SCOPE)
       ? { status: 'connected' }
       : { status: 'needs_scope' }
-  }, [user, isLoaded])
+  })()
 
   /**
    * No consent URL back from Clerk is a real failure and is reported as one.
    * The old code caught that case and recorded "connected" anyway, which is
    * how users ended up syncing against a permission they never granted.
    */
-  const connect = useCallback(async () => {
+  const connect = async () => {
     const clerkUser = user as ClerkUser | null | undefined
     if (!clerkUser) throw new Error('Not signed in')
     const redirectUrl = window.location.href
@@ -94,7 +93,7 @@ export function useGoogleCalendar() {
       )
     }
     window.location.href = next.toString()
-  }, [user])
+  }
 
   return { connection, connect }
 }
@@ -126,9 +125,8 @@ export function useSyncTaskToCalendar() {
 
   // Promise-chain style, not async/await with try/catch: a try/catch with
   // value blocks opts the hook out of React Compiler memoization.
-  return useCallback(
-    (taskId: string): Promise<SyncOutcome> =>
-      syncTask({ taskId }).then(
+  return (taskId: string): Promise<SyncOutcome> =>
+    syncTask({ taskId }).then(
         (result): SyncOutcome =>
           result.ok
             ? {
@@ -147,7 +145,5 @@ export function useSyncTaskToCalendar() {
           message: 'Calendar sync failed',
           detail: error instanceof Error ? error.message : String(error),
         }),
-      ),
-    [syncTask],
-  )
+      )
 }

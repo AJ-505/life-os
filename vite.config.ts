@@ -4,8 +4,7 @@ import { devtools } from '@tanstack/devtools-vite'
 import { tanstackStart } from '@tanstack/react-start/plugin/vite'
 import { nitro } from 'nitro/vite'
 
-import viteReact, { reactCompilerPreset } from '@vitejs/plugin-react'
-import babel from '@rolldown/plugin-babel'
+import viteReact from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 const config = defineConfig(({ command }) => ({
@@ -15,10 +14,10 @@ const config = defineConfig(({ command }) => ({
     tailwindcss(),
     tanstackStart(),
     command === 'build' ? nitro() : undefined,
-    viteReact(),
     // React Compiler auto-memoizes components/hooks at build time, so we don't
     // hand-write memo/useMemo/useCallback to keep the board fast under load.
-    babel({ presets: [reactCompilerPreset({ target: '19' })] }),
+    // Native Rust compiler via oxc-transform-react (no Babel chain).
+    viteReact({ compiler: { target: '19' } }),
   ],
 }))
 

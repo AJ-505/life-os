@@ -1,7 +1,6 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
 import { Copy, Link2, Plus, Users, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -15,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '#/design-system/ui/car
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '#/design-system/ui/dialog'
 import { newId } from '#/tracker/types'
 import { mySpacesQueryOptions, useCreateSpace } from '#/spaces/queries'
+import { localSpaces as localSpacesSchema } from '#/spaces/validation'
 import { SpacesShareDialog } from '#/spaces/components/SpacesShareDialog'
 
 export const Route = createFileRoute('/spaces')({
@@ -30,7 +30,7 @@ function SpacesView() {
 
   const [localSpaces, setLocalSpaces] = useState<Array<{ id: string; name: string; inviteCode: string; createdAt: number }>>(() => {
     if (typeof window === 'undefined') return []
-    try { const raw = localStorage.getItem('lifeos-local-spaces'); return raw ? JSON.parse(raw) : [] } catch { return [] }
+    try { const raw = localStorage.getItem('lifeos-local-spaces'); if (!raw) return []; const parsed = localSpacesSchema.safeParse(JSON.parse(raw)); return parsed.success ? parsed.data : [] } catch { return [] }
   })
   const { data: fetched } = useQuery({ ...mySpacesQueryOptions, retry: false })
   const spaces = fetched && fetched.length > 0 ? fetched : localSpaces
@@ -49,13 +49,10 @@ function SpacesView() {
     toast.success(`Space “${n}” created`)
     createSpace.mutate({ id, name: n, inviteCode }, {
       onSuccess: (code) => {
-        if (typeof code === 'string' && code !== inviteCode) {
-          setLocalSpaces(prev => {
-            const upd = prev.map(s => s.id === id ? { ...s, inviteCode: code } : s)
-            try { localStorage.setItem('lifeos-local-spaces', JSON.stringify(upd)) } catch {}
-            return upd
-          })
-        }
+        if (typeof code !== 'string' || code === inviteCode) return
+        const upd = localSpaces.map(s => s.id === id ? { ...s, inviteCode: code } : s)
+        setLocalSpaces(upd)
+        try { localStorage.setItem('lifeos-local-spaces', JSON.stringify(upd)) } catch {}
       },
     })
   }
@@ -78,7 +75,7 @@ function SpacesView() {
           <div className="mx-auto max-w-3xl">
             <ComingSoon
               title="Spaces"
-              description="Collaborative boards are on their way."
+              description="Collaborative boards you share with others."
             />
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   DndContext,
@@ -66,6 +66,29 @@ import type {
 import type { BoardData, ProjectWithTasks, Task } from '../types'
 
 type DragKind = 'proj' | 'task' | 'fitem' | null
+
+/**
+ * Module scope, not in BoardView: dnd-kit memoizes its context values on
+ * these option identities (`useSensor` deps on `options`, context deps on
+ * `activators` and `measuringConfiguration`). Inline literals rebuilt both
+ * contexts on EVERY board render, re-rendering every sortable row, card,
+ * and column on each F press — work the React Compiler cannot skip, because
+ * context changes force consumers. These never vary, so they live here.
+ */
+const mouseSensorOptions = { activationConstraint: { distance: 5 } }
+const touchSensorOptions = {
+  activationConstraint: { delay: 250, tolerance: 5 },
+}
+const dndMeasuring = {
+  droppable: {
+    strategy: MeasuringStrategy.WhileDragging,
+    // Without an explicit frequency, the partial config drops dnd-kit's
+    // default `Optimized` and re-measures every droppable far more
+    // aggressively — pinning it back stops the leftmost/scrolled-away
+    // cards from working off stale rects after a horizontal scroll.
+    frequency: MeasuringFrequency.Optimized,
+  },
+}
 
 /**
  * The board nests droppables three deep (column ▸ task list ▸ task rows).
@@ -255,7 +278,7 @@ function NewProjectDialog({
   )
 }
 
-const BoardColumn = memo(function BoardColumn({
+function BoardColumn({
   col,
   board,
   showDone,
@@ -268,7 +291,7 @@ const BoardColumn = memo(function BoardColumn({
   isGhost?: boolean
   onAddProject: (col: number) => void
 }) {
-  const projects = useMemo(() => columnProjects(board, col), [board, col])
+  const projects = columnProjects(board, col)
   const { setNodeRef, isOver } = useDroppable({
     id: colId(col),
     data: { type: 'col', col },
@@ -304,7 +327,7 @@ const BoardColumn = memo(function BoardColumn({
       </button>
     </div>
   )
-})
+}
 
 function GhostProjectCard({ project }: { project: ProjectWithTasks }) {
   const doneCount = project.tasks.filter((t) => t.done && !t.archived).length
@@ -454,22 +477,29 @@ export function BoardView() {
 
   const [showDone, setShowDone] = useLocalFlag('lifeos-show-done', false)
   const [focusOpen, setFocusOpen] = useLocalFlag('lifeos-focus-open', true)
+  // The keybinding handler in TaskDetailsHost closes over `toggleFocus`.
+  // Reading the flag through a ref keeps that handler's identity off the
+  // flag's identity, so the host's context value (and every row consuming
+  // it) stays stable across panel open/close renders.
+  const focusOpenRef = useRef(focusOpen)
   const [mobileFocusOpen, setMobileFocusOpen] = useState(false)
   const [newProjectCol, setNewProjectCol] = useState<number | null>(null)
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null)
   const grabOffset = useRef({ x: 10, y: 10 })
   const initialPos = useRef({ x: 0, y: 0 })
   const [dragKind, setDragKind] = useState<DragKind>(null)
-  const collisionDetection = useMemo(() => collisionFor(dragKind), [dragKind])
+  const collisionDetection = collisionFor(dragKind)
 
-  const toggleFocus = useCallback(
-    () => setFocusOpen(!focusOpen),
-    [focusOpen, setFocusOpen],
-  )
-  const closeFocus = useCallback(
-    () => setFocusOpen(false),
-    [setFocusOpen],
-  )
+  const toggleFocus = () => setFocusOpen(!focusOpenRef.current)
+  const closeFocus = () => setFocusOpen(false)
+
+  // Keybinding handlers in TaskDetailsHost close over `toggleFocus`, so its
+  // identity must not ride the flag. An effect (not render) keeps the ref in
+  // sync: render-time ref writes opt this component out of compiler
+  // memoization.
+  useEffect(() => {
+    focusOpenRef.current = focusOpen
+  }, [focusOpen])
 
   // Mouse and touch get *separate* sensors so they never fight. A single
   // PointerSensor would also catch touch (touch fires pointer events), letting
@@ -477,42 +507,32 @@ export function BoardView() {
   // MouseSensor is mouse-only — desktop keeps the exact 5px-distance feel —
   // while TouchSensor owns touch: hold 250ms to drag, swipe sooner to scroll.
   const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, {
-      activationConstraint: { delay: 250, tolerance: 5 },
-    }),
+    useSensor(MouseSensor, mouseSensorOptions),
+    useSensor(TouchSensor, touchSensorOptions),
   )
 
-  const columns = useMemo(() => boardColumns(board), [board])
+  const columns = boardColumns(board)
   const ghostCol = (columns.at(-1) ?? -1) + 1
   // Memoized so HeaderStats math below only recomputes when the board changes,
   // not on every dialog/drag/focus render at this root.
-  const active = useMemo(() => activeProjects(board), [board])
-  const openCount = useMemo(
-    () =>
-      active.reduce(
-        (n, p) => n + p.tasks.filter((t) => !t.done && !t.archived).length,
-        0,
-      ),
-    [active],
+  const active = activeProjects(board)
+  const openCount = active.reduce(
+    (n, p) => n + p.tasks.filter((t) => !t.done && !t.archived).length,
+    0,
   )
 
   // Drag-only task lookup. Keybindings own a separate copy inside
   // TaskDetailsHost — intentionally duplicated to keep hover/keys out of this
   // root, and never passed into memoized rows.
-  const findTask = useCallback(
-    (id: string) => {
-      for (const p of board) {
-        const t = p.tasks.find((x) => x.id === id)
-        if (t) return { task: t, project: p }
-      }
-      return null
-    },
-    [board],
-  )
+  const findTask = (id: string) => {
+    for (const p of board) {
+      const t = p.tasks.find((x) => x.id === id)
+      if (t) return { task: t, project: p }
+    }
+    return null
+  }
 
-  const onDragStart = useCallback(
-    (e: DragStartEvent) => {
+  const onDragStart = (e: DragStartEvent) => {
       const parsed = parseDragId(e.active.id)
       if (!parsed) return
       // Remember where inside the item the pointer grabbed, so the overlay can
@@ -544,12 +564,9 @@ export function BoardView() {
           })
         setDragKind('fitem')
       }
-    },
-    [board, findTask],
-  )
+    }
 
-  const onDragEnd = useCallback(
-    (e: DragEndEvent) => {
+  const onDragEnd = (e: DragEndEvent) => {
     setActiveDrag(null)
     setDragKind(null)
     const { active: a, over } = e
@@ -659,7 +676,7 @@ export function BoardView() {
 
     if (src.kind === 'fitem') {
       if (dst.kind !== 'focuszone' && dst.kind !== 'fitem') return
-      const orderedFocus = focusTasks(board).map((t) => t.id)
+      const orderedFocus = focusTasks(board).map((e) => e.task.id)
       const focusSide =
         dst.kind === 'fitem'
           ? (dirSide(orderedFocus, dst.key) ?? rectSide)
@@ -672,30 +689,19 @@ export function BoardView() {
       )
       setFocus.mutate({ id: src.key, inFocus: true, focusOrder })
       }
-    },
-    [board, findTask, moveProject, moveTask, setFocus, showDone],
-  )
+    }
 
-  const onDragCancel = useCallback(() => {
+  const onDragCancel = () => {
     setActiveDrag(null)
     setDragKind(null)
-  }, [])
+  }
 
   return (
     <TaskDetailsHost board={board} onToggleFocus={toggleFocus}>
       <DndContext
         sensors={sensors}
         collisionDetection={collisionDetection}
-        measuring={{
-          droppable: {
-            strategy: MeasuringStrategy.WhileDragging,
-            // Without an explicit frequency, the partial config drops dnd-kit's
-            // default `Optimized` and re-measures every droppable far more
-            // aggressively — pinning it back stops the leftmost/scrolled-away
-            // cards from working off stale rects after a horizontal scroll.
-            frequency: MeasuringFrequency.Optimized,
-          },
-        }}
+        measuring={dndMeasuring}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
         onDragCancel={onDragCancel}

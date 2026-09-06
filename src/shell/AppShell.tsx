@@ -14,7 +14,7 @@ import {
 import { toast } from 'sonner'
 
 import { ComingSoon, ModeToggle, cn, useLocalFlag } from '#/design-system'
-import { CALENDAR_ENABLED, SPACES_ENABLED } from '#/feature-flags'
+import { CALENDAR_ENABLED } from '#/feature-flags'
 import { Button } from '#/design-system/ui/button'
 import {
   Dialog,
@@ -51,11 +51,6 @@ import { useGoogleCalendar } from '#/settings/googleCalendar'
 
 const NAV = [
   { to: '/', label: 'Board', icon: LayoutGrid },
-  // Spaces ships behind a flag (see `#/feature-flags`): the page, the join
-  // route, and this link all hide together until it is ready.
-  ...(SPACES_ENABLED
-    ? [{ to: '/spaces', label: 'Spaces', icon: Users } as const]
-    : []),
   { to: '/timeline', label: 'Timeline', icon: CalendarRange },
   { to: '/library', label: 'Library', icon: LibraryIcon },
 ] as const
@@ -82,46 +77,54 @@ function NavLinks({
   onNavigate?: () => void
   collapsed?: boolean
 }) {
-  return (
-    <nav className="flex flex-col gap-1">
-      {NAV.map(({ to, label, icon: Icon }) => {
-        const link = (
-          <Link
-            key={to}
-            to={to}
-            onClick={onNavigate}
-            className="no-underline"
-            activeOptions={{ exact: to === '/' }}
-          >
-            {({ isActive }) => (
-              <span
-                className={cn(
-                  'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
-                  collapsed && 'justify-center px-0',
-                  isActive
-                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                    : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
-                )}
-              >
-                <Icon
-                  className={cn('size-4', isActive && 'text-signal')}
-                  strokeWidth={isActive ? 2.4 : 2}
-                />
-                {!collapsed ? label : null}
-              </span>
+  const item = (to: string, label: string, Icon: typeof Users) => {
+    const link = (
+      <Link
+        key={to}
+        to={to}
+        onClick={onNavigate}
+        className="no-underline"
+        activeOptions={{ exact: to === '/' }}
+      >
+        {({ isActive }) => (
+          <span
+            className={cn(
+              'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
+              collapsed && 'justify-center px-0',
+              isActive
+                ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
             )}
-          </Link>
-        )
-        return collapsed ? (
-          <Tooltip key={to}>
-            <TooltipTrigger asChild>{link}</TooltipTrigger>
-            <TooltipContent side="right">{label}</TooltipContent>
-          </Tooltip>
-        ) : (
-          link
-        )
-      })}
-    </nav>
+          >
+            <Icon
+              className={cn('size-4', isActive && 'text-signal')}
+              strokeWidth={isActive ? 2.4 : 2}
+            />
+            {!collapsed ? label : null}
+          </span>
+        )}
+      </Link>
+    )
+    return collapsed ? (
+      <Tooltip key={to}>
+        <TooltipTrigger asChild>{link}</TooltipTrigger>
+        <TooltipContent side="right">{label}</TooltipContent>
+      </Tooltip>
+    ) : (
+      link
+    )
+  }
+  return (
+    <>
+      <nav className="flex flex-col gap-1 mb-5">
+        {NAV.map(({ to, label, icon: Icon }) => item(to, label, Icon))}
+      </nav>
+      {/* Spaces teaser: its own group below the main nav. It stays
+          visible while Spaces is gated and lands on the ComingSoon page. */}
+      <nav className="flex flex-col gap-1" aria-label="Spaces">
+        {item('/spaces', 'Spaces', Users)}
+      </nav>
+    </>
   )
 }
 
@@ -356,7 +359,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ) : null}
           </div>
           {!collapsed ? (
-            <p className="os-label -mt-4 px-2">everything, in one place</p>
+            <p className="-mt-4 px-2 text-sm text-muted-foreground">Everything, in one place.</p>
           ) : null}
           {collapsed ? (
             <Button

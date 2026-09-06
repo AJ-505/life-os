@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { useSetTaskFocus } from '../queries'
 import { BoardUIContext } from './board-ui'
@@ -28,28 +28,54 @@ export function TaskDetailsHost({
   children: React.ReactNode
 }) {
   const [openTaskId, setOpenTaskId] = useState<string | null>(null)
+  // Last-seen task for the transient-loss fallback below. Declared up here
+  // (not beside its reader) so no function captures it before its
+  // declaration, which the compiler rejects.
+  const [lastOpenTask, setLastOpenTask] = useState<Task | null>(null)
   const hoveredRef = useRef<string | null>(null)
   const setFocus = useSetTaskFocus()
+  // Board snapshot for the TEMP-PROBE below. A ref (synced in an effect)
+  // rather than `board` itself: reading `board` inside `openTask` would make
+  // the compiler cache `openTask` on `board`, rebuilding `boardUI` on every
+  // patch and re-rendering every row — the exact regression being measured.
+  const boardRef = useRef(board)
+  useEffect(() => {
+    boardRef.current = board
+  }, [board])
 
-  const findTask = useCallback(
-    (id: string) => {
-      for (const p of board) {
-        const t = p.tasks.find((x) => x.id === id)
-        if (t) return { task: t, project: p }
-      }
-      return null
-    },
-    [board],
-  )
+  // Task id -> index of flattened visible rows. Rebuilt only when the board
+  // identity changes, so `findTask` below closes over a Map, not a nested
+  // scan: O(1) per press instead of O(projects x tasks).
+  const index = (() => {
+    const m = new Map<string, { task: Task; project: (typeof board)[number] }>()
+    for (const p of board) {
+      for (const t of p.tasks) m.set(t.id, { task: t, project: p })
+    }
+    return m
+  })()
 
-  const openTask = useCallback((id: string) => setOpenTaskId(id), [])
-  const setHovered = useCallback((id: string | null) => {
+  // Must not read `board` / `index`. The compiler caches this function
+  // forever (sentinel), then caches `boardUI` forever. Capturing `findTask`
+  // made `boardUI` a new object on every board patch, so every context
+  // consumer (every task row) re-rendered on F. The dialog still gets the
+  // task on the same click render via `foundOpenTask` below.
+  const openTask = (id: string) => {
+    // TEMP-PROBE(?perf=1): click timestamp + board scale for scaling analysis.
+    // Reads `boardRef`, never `board`: keeps this function sentinel-stable.
+    if (
+      typeof window !== 'undefined' &&
+      window.location.search.includes('perf')
+    ) {
+      performance.mark(`task-open-${id}`)
+      ;(window as unknown as { __perfBoardTasks?: number }).__perfBoardTasks =
+        boardRef.current.reduce((n, p) => n + p.tasks.length, 0)
+    }
+    setOpenTaskId(id)
+  }
+  const setHovered = (id: string | null) => {
     hoveredRef.current = id
-  }, [])
-  const boardUI = useMemo(
-    () => ({ openTask, setHovered }),
-    [openTask, setHovered],
-  )
+  }
+  const boardUI = { openTask, setHovered }
 
   // Trello-style keybindings: hover a task, hit a key.
   useEffect(() => {
@@ -72,7 +98,7 @@ export function TaskDetailsHost({
 
       const id = hoveredRef.current
       if (!id) return
-      const found = findTask(id)
+      const found = index.get(id)
       if (!found) return
 
       if (e.key === 'e' || e.key === 'Enter') {
@@ -80,6 +106,26 @@ export function TaskDetailsHost({
         setOpenTaskId(id)
       } else if (e.key === 'f') {
         e.preventDefault()
+        // TEMP-PROBE(?perf=1): F-to-first-paint + scale (project vs board).
+        const perfOn =
+          typeof window !== 'undefined' &&
+          window.location.search.includes('perf')
+        if (perfOn) {
+          performance.mark(`task-focus-${id}`)
+          const projSize = found.project.tasks.length
+          requestAnimationFrame(() =>
+            requestAnimationFrame(() => {
+              const m = performance
+                .getEntriesByName(`task-focus-${id}`)
+                .pop()
+              if (m) {
+                console.log(
+                  `[perf] f-press ${Math.round(performance.now() - m.startTime)}ms projectTasks=${projSize}`,
+                )
+              }
+            }),
+          )
+        }
         setFocus.mutate({
           id,
           inFocus: !found.task.inFocus,
@@ -89,7 +135,7 @@ export function TaskDetailsHost({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [findTask, onToggleFocus, setFocus])
+  }, [index, onToggleFocus, setFocus])
 
   // Hold the last-seen task across renders: a transient board state (an
   // optimistic update rolling back a beat before the server value arrives) can
@@ -101,8 +147,7 @@ export function TaskDetailsHost({
   // render: ref access during render opts this whole host out of React
   // Compiler memoization. Same-id snapshots are kept as-is so a board patch
   // while the dialog is open doesn't cost an extra host render.
-  const [lastOpenTask, setLastOpenTask] = useState<Task | null>(null)
-  const foundOpenTask = openTaskId ? findTask(openTaskId)?.task ?? null : null
+  const foundOpenTask = openTaskId ? (index.get(openTaskId)?.task ?? null) : null
   useEffect(() => {
     if (foundOpenTask) {
       setLastOpenTask((prev) =>

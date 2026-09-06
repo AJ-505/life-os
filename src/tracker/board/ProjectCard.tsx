@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -239,7 +239,7 @@ function AddTaskInput({ project }: { project: ProjectWithTasks }) {
   )
 }
 
-export const ProjectCardBody = memo(function ProjectCardBody({
+export function ProjectCardBody({
   project,
   showDone,
   dragHandle,
@@ -263,10 +263,7 @@ export const ProjectCardBody = memo(function ProjectCardBody({
   })
 
   const showDoneHere = showDone || project.showDone
-  const nodes = useMemo(
-    () => taskTree(project, showDoneHere),
-    [project, showDoneHere],
-  )
+  const nodes = taskTree(project, showDoneHere)
   const doneCount = project.tasks.filter((t) => t.done && !t.archived).length
   const totalCount = project.tasks.filter((t) => !t.archived).length
   const progress = totalCount === 0 ? 0 : doneCount / totalCount
@@ -437,15 +434,7 @@ export const ProjectCardBody = memo(function ProjectCardBody({
       </Dialog>
     </div>
   )
-},
-(prev, next) =>
-  // The drag handle (attributes+listeners) is re-allocated every render but
-  // never meaningfully changes — comparing the real inputs lets a project's
-  // body skip re-rendering (and re-rendering all its task rows) mid-drag.
-  prev.project === next.project &&
-  prev.showDone === next.showDone &&
-  prev.ghost === next.ghost,
-)
+}
 
 export function ProjectCard({
   project,

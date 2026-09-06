@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react'
+import type * as React from 'react'
 
 import { useLocalNumber } from '#/design-system'
 import { FocusPanel } from '../focus/FocusPanel'
@@ -12,7 +12,7 @@ import type { BoardData } from '../types'
  * the whole board canvas. Memoized so unrelated board-root renders (e.g. drag
  * start/end) skip the panel when neither `board` nor `onClose` changed.
  */
-export const ResizableFocusPanel = memo(function ResizableFocusPanel({
+export function ResizableFocusPanel({
   board,
   onClose,
 }: {
@@ -23,28 +23,25 @@ export const ResizableFocusPanel = memo(function ResizableFocusPanel({
 
   // Drag the panel's left edge to resize it. The panel is anchored right, so
   // dragging left (smaller clientX) widens it.
-  const startFocusResize = useCallback(
-    (e: React.PointerEvent) => {
-      e.preventDefault()
-      const startX = e.clientX
-      const startW = focusWidth
-      const max = Math.min(720, window.innerWidth - 360)
-      const clamp = (w: number) => Math.max(280, Math.min(max, w))
-      document.body.style.cursor = 'col-resize'
-      document.body.style.userSelect = 'none'
-      const onMove = (ev: PointerEvent) =>
-        setFocusWidth(clamp(startW + (startX - ev.clientX)))
-      const onUp = () => {
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
-        window.removeEventListener('pointermove', onMove)
-        window.removeEventListener('pointerup', onUp)
-      }
-      window.addEventListener('pointermove', onMove)
-      window.addEventListener('pointerup', onUp)
-    },
-    [focusWidth, setFocusWidth],
-  )
+  const startFocusResize = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = focusWidth
+    const max = Math.min(720, window.innerWidth - 360)
+    const clamp = (w: number) => Math.max(280, Math.min(max, w))
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    const onMove = (ev: PointerEvent) =>
+      setFocusWidth(clamp(startW + (startX - ev.clientX)))
+    const onUp = () => {
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }
 
   return (
     <aside
@@ -65,4 +62,4 @@ export const ResizableFocusPanel = memo(function ResizableFocusPanel({
       <FocusPanel board={board} onClose={onClose} />
     </aside>
   )
-})
+}

@@ -1,3 +1,4 @@
+import 'zod/compile'
 import { createRouter as createTanStackRouter } from '@tanstack/react-router'
 import { QueryClient, notifyManager } from '@tanstack/react-query'
 import { setupRouterSsrQueryIntegration } from '@tanstack/react-router-ssr-query'

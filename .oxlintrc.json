@@ -1,0 +1,5 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "import", "oxc"],
+  "ignorePatterns": ["convex/_generated/**", "dist/**", "**/routeTree.gen.ts"]
+}

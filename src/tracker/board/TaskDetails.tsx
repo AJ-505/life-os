@@ -11,6 +11,7 @@ import { Checkbox } from '#/design-system/ui/checkbox'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -211,6 +212,74 @@ function Subtasks({
   )
 }
 
+/**
+ * Clerk + calendar-settings subscriptions live here, not in TaskDetails.
+ * CALENDAR_ENABLED is off by default; putting the hooks in the parent meant
+ * every task click still ran useUser + a Convex settings query, then threw
+ * the result away for ComingSoon. A settings update also rebuilt the 225-slot
+ * dialog. This child only mounts when the flag is on.
+ */
+function TaskCalendarFields({
+  localDueAt,
+  localAddToCal,
+  onAddToCal,
+  localReminder,
+  onReminder,
+}: {
+  localDueAt: number | null
+  localAddToCal: boolean
+  onAddToCal: (v: boolean) => void
+  localReminder: number
+  onReminder: (v: number) => void
+}) {
+  const { data: calendarSettings } = useQuery(calendarSettingsQueryOptions)
+  const { connection } = useGoogleCalendar()
+  const calendarReady =
+    connection.status === 'connected' && (calendarSettings?.syncEnabled ?? false)
+  const calendarHint = !calendarSettings?.syncEnabled
+    ? 'Turn on calendar sync in Settings'
+    : connection.status === 'needs_scope'
+      ? 'Reconnect Google to grant calendar access'
+      : connection.status !== 'connected'
+        ? 'Connect Google in Settings'
+        : !localDueAt
+          ? 'Set a date first'
+          : ''
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md border px-3 py-2.5">
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-2">
+          <Switch
+            checked={localDueAt ? localAddToCal : false}
+            disabled={!localDueAt || !calendarReady}
+            onCheckedChange={onAddToCal}
+          />
+          <Label className="text-sm font-medium">Add to calendar</Label>
+        </span>
+        <span className="text-xs text-muted-foreground">{calendarHint}</span>
+      </div>
+      <div className="flex items-center justify-between">
+        <Label className="text-sm font-medium">Reminder</Label>
+        <Select
+          value={String(localReminder)}
+          onValueChange={(v) => onReminder(Number(v))}
+        >
+          <SelectTrigger size="sm" className="w-[180px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="5">5 minutes before</SelectItem>
+            <SelectItem value="15">15 minutes before</SelectItem>
+            <SelectItem value="30">30 minutes before</SelectItem>
+            <SelectItem value="60">60 minutes before</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  )
+}
+
 export function TaskDetails({
   task,
   board,
@@ -239,11 +308,11 @@ export function TaskDetails({
 
   const project = board.find((p) => p.id === task.projectId)
   const activeProjects = board.filter((p) => p.status === 'active')
+  // Only read for the default reminder minutes. Clerk connection state and
+  // hints stay in TaskCalendarFields so the common open path (flag off)
+  // never touches useUser.
   const { data: calendarSettings } = useQuery(calendarSettingsQueryOptions)
-  const { connection } = useGoogleCalendar()
   const syncToCalendar = useSyncTaskToCalendar()
-  const calendarReady =
-    connection.status === 'connected' && (calendarSettings?.syncEnabled ?? false)
   const defaultReminder = calendarSettings?.defaultReminderMinutes ?? 15
 
   // Local 24h time + due state — committed only on Done (optimistic close, single toast)
@@ -263,25 +332,31 @@ export function TaskDetails({
     setLocalReminder(task.reminderMinutes ?? defaultReminder)
     setLocalAddToCal(task.addToCalendar)
     setTimeInput(task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00')
-  }, [
-    task.id,
-    task.dueAt,
-    task.reminderMinutes,
-    task.addToCalendar,
-    defaultReminder,
-  ])
+  }, [task.id, task.dueAt, task.reminderMinutes, task.addToCalendar, defaultReminder])
 
-  // Says which of the three preconditions is actually missing, rather than
-  // "Connect calendar first" for all of them.
-  const calendarHint = !calendarSettings?.syncEnabled
-    ? 'Turn on calendar sync in Settings'
-    : connection.status === 'needs_scope'
-      ? 'Reconnect Google to grant calendar access'
-      : connection.status !== 'connected'
-        ? 'Connect Google in Settings'
-        : !localDueAt
-          ? 'Set a date first'
-          : ''
+  // TEMP-PROBE(?perf=1): click-to-dialog-paint. Double rAF lands after the
+  // browser paints the mounted dialog. Deleted after the scaling analysis.
+  useEffect(() => {
+    if (
+      typeof window === 'undefined' ||
+      !window.location.search.includes('perf')
+    )
+      return
+    const id = task.id
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const marks = performance.getEntriesByName(`task-open-${id}`)
+        const m = marks[marks.length - 1]
+        if (!m) return
+        const boardTasks = (
+          window as unknown as { __perfBoardTasks?: number }
+        ).__perfBoardTasks
+        console.log(
+          `[perf] task-open ${Math.round(performance.now() - m.startTime)}ms boardTasks=${boardTasks ?? '?'} projectId=${task.projectId}`,
+        )
+      }),
+    )
+  }, [task.id, task.projectId])
 
   const parseTime24 = (s: string): { h: number; m: number } | null => {
     const m = s.trim().match(/^(\d{1,2}):(\d{2})$/)
@@ -458,6 +533,10 @@ export function TaskDetails({
       >
         <DialogHeader>
           <DialogTitle className="sr-only">Task details</DialogTitle>
+          <DialogDescription className="sr-only">
+            Edit this task's title, notes, due date, project, subtasks, and
+            focus state.
+          </DialogDescription>
           <span className="os-label flex items-center gap-1.5">
             <span className="size-2 rounded-full bg-proj" />
             {project?.name}
@@ -467,7 +546,7 @@ export function TaskDetails({
         <div className="flex flex-col gap-4">
           <Input
             ref={titleRef}
-            key={task.id}
+            key={`${task.id}-title`}
             defaultValue={task.title}
             onBlur={commitText}
             onKeyDown={(e) => e.key === 'Enter' && close()}
@@ -477,7 +556,7 @@ export function TaskDetails({
 
           <Textarea
             ref={notesRef}
-            key={task.id}
+            key={`${task.id}-notes`}
             defaultValue={task.notes ?? ''}
             onBlur={commitText}
             placeholder="Notes…"
@@ -609,43 +688,18 @@ export function TaskDetails({
           </div>
 
           {CALENDAR_ENABLED ? (
-          <div className="flex flex-col gap-2 rounded-md border px-3 py-2.5">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <Switch
-                  checked={localDueAt ? localAddToCal : false}
-                  disabled={!localDueAt || !calendarReady}
-                  onCheckedChange={setLocalAddToCal}
-                />
-                <Label className="text-sm font-medium">Add to calendar</Label>
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {calendarHint}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium">Reminder</Label>
-              <Select
-                value={String(localReminder)}
-                onValueChange={(v) => setLocalReminder(Number(v))}
-              >
-              <SelectTrigger size="sm" className="w-[180px] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="5">5 minutes before</SelectItem>
-                <SelectItem value="15">15 minutes before</SelectItem>
-                <SelectItem value="30">30 minutes before</SelectItem>
-                <SelectItem value="60">60 minutes before</SelectItem>
-              </SelectContent>
-            </Select>
-            </div>
-          </div>
+            <TaskCalendarFields
+              localDueAt={localDueAt}
+              localAddToCal={localAddToCal}
+              onAddToCal={setLocalAddToCal}
+              localReminder={localReminder}
+              onReminder={setLocalReminder}
+            />
           ) : (
-          <ComingSoon
-            title="Calendar sync"
-            description="Google Calendar integration is on its way."
-          />
+            <ComingSoon
+              title="Calendar sync"
+              description="Google Calendar integration is on its way."
+            />
           )}
 
           <Subtasks

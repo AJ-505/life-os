@@ -15,6 +15,7 @@ import {
 } from '#/design-system/ui/dialog'
 
 import type { BackupFile } from './types'
+import { backupFile as backupFileSchema } from '#/spaces/validation'
 
 export function BackupControls() {
   const convex = useConvex()
@@ -39,15 +40,18 @@ export function BackupControls() {
 
   const handleFile = async (file: File) => {
     setError(null)
+    let obj: unknown
     try {
-      const parsed = JSON.parse(await file.text()) as Partial<BackupFile>
-      if (parsed.app !== 'lifeos' || !parsed.projects || !parsed.tasks) {
-        throw new Error('bad file')
-      }
-      setPendingImport(parsed as BackupFile)
+      obj = JSON.parse(await file.text())
     } catch {
-      setError('That file is not a LifeOS backup.')
+      obj = null
     }
+    const parsed = backupFileSchema.safeParse(obj)
+    if (!parsed.success) {
+      setError('That file is not a LifeOS backup.')
+      return
+    }
+    setPendingImport(parsed.data)
   }
 
   const confirmImport = async () => {
@@ -60,9 +64,8 @@ export function BackupControls() {
       setPendingImport(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Import failed')
-    } finally {
-      setBusy(false)
     }
+    setBusy(false)
   }
 
   return (

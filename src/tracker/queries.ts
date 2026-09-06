@@ -34,7 +34,7 @@ function withBoard(
 /* -------------------------------------------------------- optimistic patches
  * Pure helpers over BoardData, reused inside each mutation's optimistic update.
  * Patch one object in place and leave every untouched object's identity alone
- * so memoized cards skip re-rendering. */
+ * so the compiler can skip unchanged subtrees. */
 
 const patchTask = (board: BoardData, id: string, patch: Partial<Task>): BoardData =>
   board.map((p) =>
