@@ -13,14 +13,11 @@ import {
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
+import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { Check, Crosshair, Plus } from 'lucide-react'
 
-import { cn, useLocalFlag, useLocalNumber } from '#/design-system'
+import { cn, useLocalFlag } from '#/design-system'
 import { Button } from '#/design-system/ui/button'
 import {
   Dialog,
@@ -32,7 +29,6 @@ import {
 import { Input } from '#/design-system/ui/input'
 import { Label } from '#/design-system/ui/label'
 import { Sheet, SheetContent } from '#/design-system/ui/sheet'
-import { Switch } from '#/design-system/ui/switch'
 
 import { PROJECT_COLORS, newId, positionAfter } from '../types'
 import {
@@ -57,8 +53,9 @@ import {
   visibleTasks,
 } from './board-logic'
 import { ProjectCard } from './ProjectCard'
-import { TaskDetails } from './TaskDetails'
-import { BoardUIContext } from './board-ui'
+import { BoardHeader } from './BoardHeader'
+import { ResizableFocusPanel } from './ResizableFocusPanel'
+import { TaskDetailsHost } from './TaskDetailsHost'
 
 import type {
   CollisionDetection,
@@ -96,7 +93,7 @@ function collisionFor(kind: DragKind): CollisionDetection {
     }
     const get = (...types: Array<string>): Array<DroppableContainer> =>
       types.length === 1
-        ? buckets.get(types[0]) ?? []
+        ? (buckets.get(types[0]) ?? [])
         : types.flatMap((t) => buckets.get(t) ?? [])
     const hit = (cs: Array<DroppableContainer>) => {
       const scoped = { ...args, droppableContainers: cs }
@@ -112,7 +109,8 @@ function collisionFor(kind: DragKind): CollisionDetection {
       const colNum = colC.data.current?.col
       // Same column: the sortable is already shifting cards to open a gap where
       // you're hovering, so the plain pointer/rect hit lands exactly right.
-      if (colNum === args.active.data.current?.col) return hit(get('proj', 'col'))
+      if (colNum === args.active.data.current?.col)
+        return hit(get('proj', 'col'))
       // Cross column the target's cards *don't* shift (sortable only animates
       // within the source context), so the pointer sits in dead space between
       // cards and the sole hit is the column → the drop appended to the end.
@@ -239,7 +237,9 @@ function NewProjectDialog({
                       'ring-2 ring-ring ring-offset-2 ring-offset-card',
                   )}
                 >
-                  {color === c ? <Check className="size-3.5 text-white" /> : null}
+                  {color === c ? (
+                    <Check className="size-3.5 text-white" />
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -306,11 +306,7 @@ const BoardColumn = memo(function BoardColumn({
   )
 })
 
-function GhostProjectCard({
-  project,
-}: {
-  project: ProjectWithTasks
-}) {
+function GhostProjectCard({ project }: { project: ProjectWithTasks }) {
   const doneCount = project.tasks.filter((t) => t.done && !t.archived).length
   const totalCount = project.tasks.filter((t) => !t.archived).length
   const progress = totalCount === 0 ? 0 : doneCount / totalCount
@@ -338,11 +334,22 @@ function GhostProjectCard({
   )
 }
 
-function GhostTaskRow({ task, showProject }: { task: Task; showProject?: string }) {
+function GhostTaskRow({
+  task,
+  showProject,
+}: {
+  task: Task
+  showProject?: string
+}) {
   return (
     <div className="flex cursor-grab items-start gap-2 rounded-md border border-border bg-card px-2 py-1.5 text-sm shadow-lg">
       <div className="mt-0.5 size-4 shrink-0 rounded-full border border-muted-foreground/40" />
-      <span className={cn('min-w-0 flex-1 text-left leading-snug', task.done && 'text-muted-foreground line-through decoration-border')}>
+      <span
+        className={cn(
+          'min-w-0 flex-1 text-left leading-snug',
+          task.done && 'text-muted-foreground line-through decoration-border',
+        )}
+      >
         {task.title}
         {showProject ? (
           <span className="mt-0.5 block truncate font-mono text-[10px] uppercase tracking-wider text-proj">
@@ -447,16 +454,22 @@ export function BoardView() {
 
   const [showDone, setShowDone] = useLocalFlag('lifeos-show-done', false)
   const [focusOpen, setFocusOpen] = useLocalFlag('lifeos-focus-open', true)
-  const [focusWidth, setFocusWidth] = useLocalNumber('lifeos-focus-width', 320)
   const [mobileFocusOpen, setMobileFocusOpen] = useState(false)
   const [newProjectCol, setNewProjectCol] = useState<number | null>(null)
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null)
-  const [openTaskId, setOpenTaskId] = useState<string | null>(null)
-  const hoveredRef = useRef<string | null>(null)
   const grabOffset = useRef({ x: 10, y: 10 })
   const initialPos = useRef({ x: 0, y: 0 })
   const [dragKind, setDragKind] = useState<DragKind>(null)
   const collisionDetection = useMemo(() => collisionFor(dragKind), [dragKind])
+
+  const toggleFocus = useCallback(
+    () => setFocusOpen(!focusOpen),
+    [focusOpen, setFocusOpen],
+  )
+  const closeFocus = useCallback(
+    () => setFocusOpen(false),
+    [setFocusOpen],
+  )
 
   // Mouse and touch get *separate* sensors so they never fight. A single
   // PointerSensor would also catch touch (touch fires pointer events), letting
@@ -472,7 +485,9 @@ export function BoardView() {
 
   const columns = useMemo(() => boardColumns(board), [board])
   const ghostCol = (columns.at(-1) ?? -1) + 1
-  const active = activeProjects(board)
+  // Memoized so HeaderStats math below only recomputes when the board changes,
+  // not on every dialog/drag/focus render at this root.
+  const active = useMemo(() => activeProjects(board), [board])
   const openCount = useMemo(
     () =>
       active.reduce(
@@ -482,6 +497,9 @@ export function BoardView() {
     [active],
   )
 
+  // Drag-only task lookup. Keybindings own a separate copy inside
+  // TaskDetailsHost — intentionally duplicated to keep hover/keys out of this
+  // root, and never passed into memoized rows.
   const findTask = useCallback(
     (id: string) => {
       for (const p of board) {
@@ -493,115 +511,45 @@ export function BoardView() {
     [board],
   )
 
-  // Stable UI api so memoized rows never re-render just because the board did
-  // — or because a drag started/ended. The drag-active flag lives in its own
-  // context (consumed only by the thin sortable wrappers), so the heavy,
-  // memoized row bodies stay put across an entire drag.
-  const handleOpenTask = useCallback((id: string) => setOpenTaskId(id), [])
-  const setHovered = useCallback((id: string | null) => {
-    hoveredRef.current = id
-  }, [])
-  const boardUI = useMemo(
-    () => ({ openTask: handleOpenTask, setHovered }),
-    [handleOpenTask, setHovered],
-  )
-
-  // Drag the focus panel's left edge to resize it. The panel is anchored
-  // right, so dragging left (smaller clientX) widens it.
-  const startFocusResize = useCallback(
-    (e: React.PointerEvent) => {
-      e.preventDefault()
-      const startX = e.clientX
-      const startW = focusWidth
-      const max = Math.min(720, window.innerWidth - 360)
-      const clamp = (w: number) => Math.max(280, Math.min(max, w))
-      document.body.style.cursor = 'col-resize'
-      document.body.style.userSelect = 'none'
-      const onMove = (ev: PointerEvent) =>
-        setFocusWidth(clamp(startW + (startX - ev.clientX)))
-      const onUp = () => {
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
-        window.removeEventListener('pointermove', onMove)
-        window.removeEventListener('pointerup', onUp)
+  const onDragStart = useCallback(
+    (e: DragStartEvent) => {
+      const parsed = parseDragId(e.active.id)
+      if (!parsed) return
+      // Remember where inside the item the pointer grabbed, so the overlay can
+      // track the cursor 1:1 (see FastDragOverlay).
+      const activator = e.activatorEvent as PointerEvent | null
+      const rect = e.active.rect.current.initial
+      grabOffset.current =
+        activator && 'clientX' in activator && rect
+          ? { x: activator.clientX - rect.left, y: activator.clientY - rect.top }
+          : { x: 10, y: 10 }
+      // The item's starting top-left, so the overlay can be seeded there before
+      // the first pointermove (prevents a top-left flash on a fresh portal node).
+      initialPos.current = rect ? { x: rect.left, y: rect.top } : { x: 0, y: 0 }
+      if (parsed.kind === 'proj') {
+        const project = board.find((p) => p.id === parsed.key)
+        if (project) setActiveDrag({ type: 'proj', project })
+        setDragKind('proj')
+      } else if (parsed.kind === 'task') {
+        const found = findTask(parsed.key)
+        if (found) setActiveDrag({ type: 'task', task: found.task })
+        setDragKind('task')
+      } else if (parsed.kind === 'fitem') {
+        const found = findTask(parsed.key)
+        if (found)
+          setActiveDrag({
+            type: 'fitem',
+            task: found.task,
+            project: found.project,
+          })
+        setDragKind('fitem')
       }
-      window.addEventListener('pointermove', onMove)
-      window.addEventListener('pointerup', onUp)
     },
-    [focusWidth, setFocusWidth],
+    [board, findTask],
   )
 
-  // Trello-style keybindings: hover a task, hit a key.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement | null
-      if (
-        el &&
-        (el.tagName === 'INPUT' ||
-          el.tagName === 'TEXTAREA' ||
-          el.isContentEditable)
-      )
-        return
-      if (e.metaKey || e.ctrlKey || e.altKey) return
-
-      if (e.key === ']') {
-        e.preventDefault()
-        setFocusOpen(!focusOpen)
-        return
-      }
-
-      const id = hoveredRef.current
-      if (!id) return
-      const found = findTask(id)
-      if (!found) return
-
-      if (e.key === 'e' || e.key === 'Enter') {
-        e.preventDefault()
-        setOpenTaskId(id)
-      } else if (e.key === 'f') {
-        e.preventDefault()
-        setFocus.mutate({
-          id,
-          inFocus: !found.task.inFocus,
-          focusOrder: Date.now() / 1000,
-        })
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [findTask, focusOpen, setFocusOpen, setFocus])
-
-  const onDragStart = (e: DragStartEvent) => {
-    const parsed = parseDragId(e.active.id)
-    if (!parsed) return
-    // Remember where inside the item the pointer grabbed, so the overlay can
-    // track the cursor 1:1 (see FastDragOverlay).
-    const activator = e.activatorEvent as PointerEvent | null
-    const rect = e.active.rect.current.initial
-    grabOffset.current =
-      activator && 'clientX' in activator && rect
-        ? { x: activator.clientX - rect.left, y: activator.clientY - rect.top }
-        : { x: 10, y: 10 }
-    // The item's starting top-left, so the overlay can be seeded there before
-    // the first pointermove (prevents a top-left flash on a fresh portal node).
-    initialPos.current = rect ? { x: rect.left, y: rect.top } : { x: 0, y: 0 }
-    if (parsed.kind === 'proj') {
-      const project = board.find((p) => p.id === parsed.key)
-      if (project) setActiveDrag({ type: 'proj', project })
-      setDragKind('proj')
-    } else if (parsed.kind === 'task') {
-      const found = findTask(parsed.key)
-      if (found) setActiveDrag({ type: 'task', task: found.task })
-      setDragKind('task')
-    } else if (parsed.kind === 'fitem') {
-      const found = findTask(parsed.key)
-      if (found)
-        setActiveDrag({ type: 'fitem', task: found.task, project: found.project })
-      setDragKind('fitem')
-    }
-  }
-
-  const onDragEnd = (e: DragEndEvent) => {
+  const onDragEnd = useCallback(
+    (e: DragEndEvent) => {
     setActiveDrag(null)
     setDragKind(null)
     const { active: a, over } = e
@@ -629,7 +577,8 @@ export function BoardView() {
     const activeRect = a.rect.current.translated
     const rectSide: 'before' | 'after' =
       activeRect &&
-      activeRect.top + activeRect.height / 2 > over.rect.top + over.rect.height / 2
+      activeRect.top + activeRect.height / 2 >
+        over.rect.top + over.rect.height / 2
         ? 'after'
         : 'before'
 
@@ -657,7 +606,7 @@ export function BoardView() {
           : []
         const projSide =
           dst.kind === 'proj'
-            ? dirSide(orderedProjects, projKey) ?? rectSide
+            ? (dirSide(orderedProjects, projKey) ?? rectSide)
             : 'before'
         target = projectDrop(
           board,
@@ -694,7 +643,9 @@ export function BoardView() {
         ? visibleTasks(overProj, showDone || overProj.showDone).map((t) => t.id)
         : []
       const taskSide =
-        dstKind === 'task' ? dirSide(orderedTasks, dstKey) ?? rectSide : 'before'
+        dstKind === 'task'
+          ? (dirSide(orderedTasks, dstKey) ?? rectSide)
+          : 'before'
       const target = taskDrop(
         board,
         src.key,
@@ -711,7 +662,7 @@ export function BoardView() {
       const orderedFocus = focusTasks(board).map((t) => t.id)
       const focusSide =
         dst.kind === 'fitem'
-          ? dirSide(orderedFocus, dst.key) ?? rectSide
+          ? (dirSide(orderedFocus, dst.key) ?? rectSide)
           : 'before'
       const focusOrder = focusDrop(
         board,
@@ -720,25 +671,18 @@ export function BoardView() {
         focusSide,
       )
       setFocus.mutate({ id: src.key, inFocus: true, focusOrder })
-    }
-  }
+      }
+    },
+    [board, findTask, moveProject, moveTask, setFocus, showDone],
+  )
 
-  // Hold the last-seen task across renders: a transient board state (an
-  // optimistic update rolling back a beat before the server value arrives) can
-  // momentarily lose the task, and letting `openTask` flip null would unmount
-  // and remount the dialog — the backdrop blinks light/dark and in-progress
-  // edits are wiped. The dialog only truly closes via onClose.
-  const lastOpenTask = useRef<Task | null>(null)
-  const foundOpenTask = openTaskId ? findTask(openTaskId)?.task ?? null : null
-  if (foundOpenTask) lastOpenTask.current = foundOpenTask
-  const openTask =
-    foundOpenTask ??
-    (openTaskId && lastOpenTask.current?.id === openTaskId
-      ? lastOpenTask.current
-      : null)
+  const onDragCancel = useCallback(() => {
+    setActiveDrag(null)
+    setDragKind(null)
+  }, [])
 
   return (
-    <BoardUIContext.Provider value={boardUI}>
+    <TaskDetailsHost board={board} onToggleFocus={toggleFocus}>
       <DndContext
         sensors={sensors}
         collisionDetection={collisionDetection}
@@ -754,49 +698,20 @@ export function BoardView() {
         }}
         onDragStart={onDragStart}
         onDragEnd={onDragEnd}
-        onDragCancel={() => {
-          setActiveDrag(null)
-          setDragKind(null)
-        }}
+        onDragCancel={onDragCancel}
       >
         <div className="flex min-h-0 flex-1">
           <div className="flex min-w-0 flex-1 flex-col">
-            {/* Header */}
-            <div className="flex shrink-0 items-center justify-between gap-3 border-b px-4 py-2.5">
-              <div className="flex items-baseline gap-3">
-                <h1 className="text-lg font-bold tracking-tight">Board</h1>
-                <span className="os-label hidden sm:inline">
-                  {active.length} projects · {openCount} open
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="flex cursor-pointer items-center gap-1.5">
-                  <Switch
-                    checked={showDone}
-                    onCheckedChange={setShowDone}
-                    aria-label="Show completed tasks"
-                  />
-                  <span className="os-label hidden sm:inline">done</span>
-                </label>
-                <Button
-                  size="sm"
-                  className="gap-1.5 bg-signal text-signal-foreground hover:bg-signal/90"
-                  onClick={() => setNewProjectCol(columns.at(-1) ?? 0)}
-                >
-                  <Plus className="size-4" /> Project
-                </Button>
-                <Button
-                  variant={focusOpen ? 'secondary' : 'ghost'}
-                  size="icon"
-                  className="hidden lg:inline-flex"
-                  aria-label="Toggle focus panel (])"
-                  title="Toggle focus panel  ]"
-                  onClick={() => setFocusOpen(!focusOpen)}
-                >
-                  <Crosshair className={cn('size-4', focusOpen && 'text-signal')} />
-                </Button>
-              </div>
-            </div>
+            <BoardHeader
+              activeCount={active.length}
+              openCount={openCount}
+              showDone={showDone}
+              onShowDoneChange={setShowDone}
+              defaultCol={columns.at(-1) ?? 0}
+              onNewProject={setNewProjectCol}
+              focusOpen={focusOpen}
+              onToggleFocus={toggleFocus}
+            />
 
             {/* Canvas */}
             <div
@@ -824,25 +739,8 @@ export function BoardView() {
             </div>
           </div>
 
-          {/* Desktop focus panel — resizable via its left edge */}
           {focusOpen ? (
-            <aside
-              className="relative hidden shrink-0 border-l bg-sidebar/50 lg:block"
-              style={{ width: focusWidth }}
-            >
-              <div
-                role="separator"
-                aria-orientation="vertical"
-                aria-label="Resize focus panel"
-                onPointerDown={startFocusResize}
-                onDoubleClick={() => setFocusWidth(320)}
-                title="Drag to resize · double-click to reset"
-                className="group absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize"
-              >
-                <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover:bg-signal/50" />
-              </div>
-              <FocusPanel board={board} onClose={() => setFocusOpen(false)} />
-            </aside>
+            <ResizableFocusPanel board={board} onClose={closeFocus} />
           ) : null}
         </div>
 
@@ -872,16 +770,6 @@ export function BoardView() {
           board={board}
         />
 
-        {/* One details dialog for the whole board — not one per card. */}
-        {openTask ? (
-          <TaskDetails
-            task={openTask}
-            board={board}
-            open={true}
-            onClose={() => setOpenTaskId(null)}
-          />
-        ) : null}
-
         <FastDragOverlay
           active={activeDrag}
           offsetRef={grabOffset}
@@ -897,11 +785,14 @@ export function BoardView() {
             </div>
           ) : activeDrag?.type === 'fitem' ? (
             <div className="w-[280px]">
-              <GhostTaskRow task={activeDrag.task} showProject={activeDrag.project.name} />
+              <GhostTaskRow
+                task={activeDrag.task}
+                showProject={activeDrag.project.name}
+              />
             </div>
           ) : null}
         </FastDragOverlay>
       </DndContext>
-    </BoardUIContext.Provider>
+    </TaskDetailsHost>
   )
 }

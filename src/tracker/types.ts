@@ -18,6 +18,8 @@ export interface Project {
   createdAt: number
   finishedAt: number | null
   shelvedAt: number | null
+  /** Null for a private project. Always present: the server normalises it. */
+  spaceId: string | null
 }
 
 export interface Task {
@@ -31,6 +33,11 @@ export interface Task {
   doneAt: number | null
   archived: boolean
   dueAt: number | null
+  reminderMinutes: number | null
+  /** The user's intent to mirror this task onto Google Calendar. Separate from
+   *  `calendarEventId`, which only ever holds a real Google event id. */
+  addToCalendar: boolean
+  calendarEventId: string | null
   inFocus: boolean
   focusOrder: number
   createdAt: number

@@ -24,14 +24,16 @@ type Entry =
   | { kind: 'task'; due: Date; task: Task; project: Project }
   | { kind: 'milestone'; due: Date; project: Project }
 
-const BUCKETS = ['Overdue', 'Today', 'Tomorrow', 'This week', 'Later'] as const
+const BUCKETS = ['Overdue', 'This hour', 'Today', 'Tomorrow', 'This week', 'Later'] as const
 type Bucket = (typeof BUCKETS)[number]
 
 function bucketOf(due: Date): Bucket {
-  if (isToday(due)) return 'Today'
+  const now = new Date()
   if (isPast(due)) return 'Overdue'
+  if (isToday(due) && due.getHours() === now.getHours()) return 'This hour'
+  if (isToday(due)) return 'Today'
   if (isTomorrow(due)) return 'Tomorrow'
-  if (differenceInCalendarDays(due, new Date()) < 7) return 'This week'
+  if (differenceInCalendarDays(due, now) < 7) return 'This week'
   return 'Later'
 }
 

@@ -1,4 +1,5 @@
 export { cn } from './utils'
+export { ComingSoon } from './coming-soon'
 export { useLocalFlag } from './use-local-flag'
 export { useLocalNumber } from './use-local-number'
 export { ThemeProvider, ModeToggle, useTheme, THEME_INIT_SCRIPT } from './theme'

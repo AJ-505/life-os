@@ -1,88 +1,69 @@
-# LifeOS
+# Life OS
 
-Personal life management for many people. A grid board for projects (Trello-style,
-but stackable in 2D and collapsible), a Focus inbox, a native timeline for
-deadlines, and a school-document sync script. Each account is a fully private,
-reactive board that stays in sync across every device you sign in on.
+Everything, in one place.
 
-## Stack
+Life OS is a place to run your life. Projects, tasks, deadlines, and focus — without juggling five different apps.
 
-- **TanStack Start** (React, file-based routes)
-- **Convex Cloud** — the reactive database + backend functions, wired into
-  TanStack Query (`@convex-dev/react-query`)
-- **[shoo](https://shoo.dev)** (`@shoojs/react`) — zero-config Google sign-in.
-  No Google Console, no client secrets: shoo issues an ES256 JWT and Convex
-  trusts it via JWKS (`convex/auth.config.ts`). Each user is the token `subject`.
-- **shadcn/ui** + Tailwind v4, dnd-kit for drag & drop
-- Fonts self-hosted via Fontsource (no CDN calls)
+Live at **https://lifeos-track.vercel.app**
 
-## Running
+---
+
+## What it is
+
+Most people split their life across a task app, a calendar, a notes app, and whatever their team uses for collaboration. Life OS keeps it in one board. Private by default, collaborative when you want it to be.
+
+## Board
+
+The board is a grid of projects. Each project has its own colour, its own tasks, and lives in a column you can rearrange by dragging. Tasks drag between projects and reorder inside them.
+
+Inside a task you get notes, subtasks, a due date with a 24-hour time, and the option to move it to another project. Subtasks are simple checkable items. Everything saves as you go.
+
+Keyboard: hover any task and hit `f` to focus it, `e` to open it. `]` toggles the Focus panel, `[` toggles the sidebar.
+
+## Focus
+
+Focus is a second view of your tasks that doesn't move them out of their projects. Hit the crosshair on any task or drag it to the panel on the right. It stays where it was — Focus just holds a reference. Reorder, check off, or clear done items when you're finished. On mobile it slides in as a sheet.
+
+## Timeline
+
+Every dated task shows up in Timeline, grouped so you can scan what's actually urgent:
+
+**Overdue · This hour · Today · Tomorrow · This week · Later**
+
+Project target dates appear there too. You can check tasks off or add them to Focus without leaving the view.
+
+## Library
+
+Where finished things live:
+
+- **Shelf** — projects you've shelved to get them off the board. Restore or finish them later.
+- **Accomplished** — finished projects and completed tasks grouped by month.
+- **Archived** — tasks you've hidden from a project without deleting them.
+
+No separate archive app. It's all in the sidebar.
+
+## Spaces
+
+Your board is private. When you need to work with others, create a Space. Each Space is a shared board with an invite link at `/join/<code>`. Anyone with the link can join — no member limit. Live sync keeps everyone on the same page.
+
+## Google Calendar
+
+Connect Google Calendar in Settings and dated tasks can push to your calendar. Set a due date and time, pick a reminder (5, 15, 30, or 60 minutes), enable "Add to calendar," and Life OS creates or updates the event. Clear the date and the event is removed. Updates and deletes stay in sync.
+
+## Backup
+
+Export your data as JSON from the sidebar and import it back anytime. The backup is scoped to your account — it only ever contains your projects and tasks.
+
+---
+
+## Running locally
 
 ```bash
-npx convex dev    # first run: log in, provision the dev deployment, codegen.
-                  # leave running — it watches convex/ and syncs functions.
-pnpm dev          # app on http://localhost:3000 (separate terminal)
-pnpm school:sync  # pull all elearning course files into ~/SchoolVault
+pnpm dev    # runs Vite + Convex together (via portless)
 ```
 
-`npx convex dev` writes `CONVEX_DEPLOYMENT` and `VITE_CONVEX_URL` into `.env.local`.
-The only auth config is the token audience (shoo scopes tokens to your origin),
-already set to the dev origin. For a production deployment, set it to your domain:
+`pnpm dev` starts both the app and `convex dev` in one command. It writes `VITE_CONVEX_URL` to `.env.local` on first run. For auth, set your Clerk issuer on the Convex deployment:
 
 ```bash
-npx convex env set SHOO_AUD origin:https://your-domain
+npx convex env set CLERK_JWT_ISSUER_DOMAIN https://<your>.clerk.accounts.dev
 ```
-
-`.env.local` also holds the `ELEARNING_USERNAME` / `ELEARNING_PASSWORD` pair for
-school-sync (a local filesystem script, unrelated to the app database).
-
-## Architecture: vertical slices
-
-Code is organized by feature, not by technical type
-([the vertical codebase](https://tkdodo.eu/blog/the-vertical-codebase)).
-Each vertical exposes a public interface through its `index.ts`; don't deep-import
-across verticals.
-
-```
-convex/            the backend: reactive functions + schema, scoped per user
-  schema.ts          projects/tasks tables, userId-scoped (userId = shoo subject)
-  tracker.ts         all board CRUD; every function gates on ctx auth + ownership
-  backup.ts          per-user export/import (JSON v1, same wire format as before)
-  auth.config.ts     trusts shoo as a custom JWT issuer (JWKS, ES256)
-src/
-  design-system/   shadcn ui kit, theme (light/dark), cn — shared visual language
-  auth/            shoo adapter (shoo.ts), login screen, sign-out
-  tracker/         the whole projects/tasks/focus domain
-    queries.ts       boardQueryOptions + Convex optimistic mutations
-    board/           2D grid board, project cards, dnd logic
-    focus/           focus panel (clone-by-reference inbox)
-    timeline/        deadline buckets across all projects
-    library/         shelf / accomplished / archived views
-  backup/          export & import your own data as JSON
-  shell/           app frame: sidebar, mobile nav
-  routes/          thin glue: route files call into verticals
-```
-
-## Primitives
-
-- **Project**: `active` (on the board) · `shelved` (out of sight *and* out of
-  mind, restorable from Library → Shelf) · `done` (finished; lives in
-  Library → Accomplished) · delete is permanent.
-- **Task**: open/done, archivable (hidden but kept), optional due date & notes.
-- **Focus**: a task toggled into focus *stays in its project* — the focus panel
-  is a view of references, ordered independently, with a project color cue.
-- **Board grid**: columns × stacked rows; positions are fractional numbers so
-  reordering is a single-field patch.
-- **Backup**: sidebar → Export downloads a JSON snapshot of *your* data; Import
-  replaces *your* data with a snapshot (confirmed, destructive). Other accounts
-  are untouched.
-
-## school-sync
-
-`scripts/school-sync.ts` logs into the PAU elearning (Moodle) via the mobile
-web-service API — no browser, no captcha — walks every enrolled course, and
-downloads each file into `~/SchoolVault/<course>/<section>/<module>/`,
-maintaining a `.manifest.json` so re-runs only fetch what changed, plus a
-`README.md` index. Point an AI at that folder and ask away.
-
-`pnpm school:sync -- --dry` previews without downloading.

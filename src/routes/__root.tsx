@@ -104,7 +104,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <ThemeProvider>{children}</ThemeProvider>
         <Toaster position="bottom-center" closeButton richColors />
         <TanStackDevtools
-          config={{ position: 'bottom-left' }}
+          config={{ position: 'bottom-right' }}
           plugins={[
             {
               name: 'Tanstack Router',

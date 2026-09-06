@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { MutableRefObject } from 'react'
 import { format } from 'date-fns'
 import { Archive, CalendarIcon, Crosshair, Plus, Trash2, X } from 'lucide-react'
 
-import { cn } from '#/design-system'
+import { cn, ComingSoon } from '#/design-system'
+import { CALENDAR_ENABLED } from '#/feature-flags'
 import { Button } from '#/design-system/ui/button'
 import { Calendar } from '#/design-system/ui/calendar'
 import { Checkbox } from '#/design-system/ui/checkbox'
@@ -39,6 +40,10 @@ import {
   useSetTaskFocus,
   useUpdateTask,
 } from '../queries'
+import { useQuery } from '@tanstack/react-query'
+import { calendarSettingsQueryOptions } from '#/settings/queries'
+import { useGoogleCalendar, useSyncTaskToCalendar } from '#/settings/googleCalendar'
+import { toast } from 'sonner'
 
 import type { BoardData, Task } from '../types'
 
@@ -77,7 +82,11 @@ function Subtasks({
     .filter((t) => t.parentId === parent.id && !t.archived)
     .sort((a, b) => a.position - b.position)
   const childrenRef = useRef(children)
-  childrenRef.current = children
+  // Effect, not render-time assignment: writing a ref during render opts the
+  // whole component out of React Compiler memoization.
+  useEffect(() => {
+    childrenRef.current = children
+  })
 
   const commitDraft = (title: string) => {
     createTask.mutate({
@@ -100,11 +109,16 @@ function Subtasks({
     if (t) commitDraft(t)
   }
 
-  draftCaptureRef.current = () => {
-    const t = takeDraft()
-    if (!t) return null
-    return () => commitDraft(t)
-  }
+  // Armed in an effect (not during render) for the same compiler reason as
+  // childrenRef above. The closure only reads live refs/DOM at call time, so
+  // running post-commit never serves a stale draft.
+  useEffect(() => {
+    draftCaptureRef.current = () => {
+      const t = takeDraft()
+      if (!t) return null
+      return () => commitDraft(t)
+    }
+  })
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -225,20 +239,83 @@ export function TaskDetails({
 
   const project = board.find((p) => p.id === task.projectId)
   const activeProjects = board.filter((p) => p.status === 'active')
+  const { data: calendarSettings } = useQuery(calendarSettingsQueryOptions)
+  const { connection } = useGoogleCalendar()
+  const syncToCalendar = useSyncTaskToCalendar()
+  const calendarReady =
+    connection.status === 'connected' && (calendarSettings?.syncEnabled ?? false)
+  const defaultReminder = calendarSettings?.defaultReminderMinutes ?? 15
+
+  // Local 24h time + due state — committed only on Done (optimistic close, single toast)
+  const [localDueAt, setLocalDueAt] = useState<number | null>(task.dueAt ?? null)
+  const [localReminder, setLocalReminder] = useState<number>(
+    task.reminderMinutes ?? defaultReminder,
+  )
+  // The toggle reflects stored intent. It used to be derived from
+  // `!!task.calendarEventId`, which the board never returned, so it read false
+  // on every open no matter what the user had saved.
+  const [localAddToCal, setLocalAddToCal] = useState<boolean>(task.addToCalendar)
+  const [timeInput, setTimeInput] = useState<string>(() =>
+    task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00',
+  )
+  useEffect(() => {
+    setLocalDueAt(task.dueAt ?? null)
+    setLocalReminder(task.reminderMinutes ?? defaultReminder)
+    setLocalAddToCal(task.addToCalendar)
+    setTimeInput(task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00')
+  }, [
+    task.id,
+    task.dueAt,
+    task.reminderMinutes,
+    task.addToCalendar,
+    defaultReminder,
+  ])
+
+  // Says which of the three preconditions is actually missing, rather than
+  // "Connect calendar first" for all of them.
+  const calendarHint = !calendarSettings?.syncEnabled
+    ? 'Turn on calendar sync in Settings'
+    : connection.status === 'needs_scope'
+      ? 'Reconnect Google to grant calendar access'
+      : connection.status !== 'connected'
+        ? 'Connect Google in Settings'
+        : !localDueAt
+          ? 'Set a date first'
+          : ''
+
+  const parseTime24 = (s: string): { h: number; m: number } | null => {
+    const m = s.trim().match(/^(\d{1,2}):(\d{2})$/)
+    if (!m) return null
+    const h = Number(m[1]); const min = Number(m[2])
+    if (h < 0 || h > 23 || min < 0 || min > 59) return null
+    return { h, m: min }
+  }
+  const applyTimeToLocal = (timeStr: string) => {
+    if (!localDueAt) return
+    const parsed = parseTime24(timeStr)
+    if (!parsed) return
+    const base = new Date(localDueAt)
+    base.setHours(parsed.h, parsed.m, 0, 0)
+    setLocalDueAt(base.getTime())
+  }
 
   const readFields = () => ({
     title: titleRef.current?.value.trim() ?? task.title,
     notes: notesRef.current?.value.trim() ?? (task.notes ?? ''),
   })
 
-  const commitFields = (f: { title: string; notes: string }) => {
-    if (f.title !== task.title || f.notes !== (task.notes ?? '')) {
-      updateTask.mutate({
-        id: task.id,
-        title: f.title || task.title,
-        notes: f.notes || null,
-      })
-    }
+  const fieldsChanged = (f: { title: string; notes: string }) =>
+    f.title !== task.title || f.notes !== (task.notes ?? '')
+
+  /** Returns the write so callers that need to act *after* it lands (the
+   *  calendar push reads the task back from the server) can wait on it. */
+  const commitFields = (f: { title: string; notes: string }): Promise<unknown> => {
+    if (!fieldsChanged(f)) return Promise.resolve()
+    return updateTask.mutateAsync({
+      id: task.id,
+      title: f.title || task.title,
+      notes: f.notes || null,
+    })
   }
 
   const commitText = () => {
@@ -247,7 +324,9 @@ export function TaskDetails({
     const f = readFields()
     setTimeout(() => {
       if (closingRef.current) return
-      commitFields(f)
+      void commitFields(f).catch(() => {
+        toast.error('Could not save the task')
+      })
     }, 0)
   }
 
@@ -286,11 +365,61 @@ export function TaskDetails({
     closingRef.current = true
     const p = pendingRef.current ?? collectPending()
     pendingRef.current = null
+    // capture due state at close time for deferred commit (optimistic close)
+    const dueAtToCommit = localDueAt
+    const reminderToCommit = localReminder
+    const addToCalToCommit = localAddToCal
+    const changed =
+      dueAtToCommit !== task.dueAt ||
+      reminderToCommit !== task.reminderMinutes ||
+      addToCalToCommit !== task.addToCalendar ||
+      fieldsChanged(p.fields)
+    // A round trip to Google is worth it when the task wants an event, or
+    // when it already has one that now needs updating or removing. Title and
+    // notes count: they are the event's summary and description.
+    const touchesCalendar =
+      changed && (addToCalToCommit || task.calendarEventId !== null)
     onClose()
     setTimeout(() => {
       p.subtask?.()
       p.draft?.()
-      commitFields(p.fields)
+
+      const patch: {
+        dueAt?: number | null
+        reminderMinutes?: number | null
+        addToCalendar?: boolean
+      } = {}
+      if (dueAtToCommit !== task.dueAt) patch.dueAt = dueAtToCommit
+      if (reminderToCommit !== task.reminderMinutes)
+        patch.reminderMinutes = reminderToCommit
+      if (addToCalToCommit !== task.addToCalendar)
+        patch.addToCalendar = addToCalToCommit
+
+      // Both writes go out together, but the calendar push waits for both to
+      // land: it re-reads the task on the server, so starting it early is how
+      // a renamed task used to reach Google under its old title.
+      const written = Promise.all([
+        commitFields(p.fields),
+        Object.keys(patch).length > 0
+          ? updateTask.mutateAsync({ id: task.id, ...patch })
+          : Promise.resolve(),
+      ])
+
+      void written
+        .then(() => (touchesCalendar ? syncToCalendar(task.id) : null))
+        .then((outcome) => {
+          if (!outcome) return
+          if (outcome.ok) {
+            if (!outcome.silent) toast.success(outcome.message)
+          } else {
+            toast.error(outcome.message, { description: outcome.detail })
+          }
+        })
+        .catch((e: unknown) => {
+          toast.error('Could not save the task', {
+            description: e instanceof Error ? e.message : String(e),
+          })
+        })
       after?.()
     }, 0)
   }
@@ -300,10 +429,15 @@ export function TaskDetails({
   }
 
   // X / overlay / Escape means discard edits. No field, subtask, draft
-  // changes are persisted.
+  // or deferred due/calendar changes are persisted.
   const cancel = () => {
     closingRef.current = true
     pendingRef.current = null
+    // Revert deferred due state so a quick reopen shows persisted values
+    setLocalDueAt(task.dueAt ?? null)
+    setLocalReminder(task.reminderMinutes ?? 15)
+    setLocalAddToCal(!!task.calendarEventId)
+    setTimeInput(task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00')
     // Clear any draft input so typed text does not leak into next open
     const draftEl = document.querySelector<HTMLInputElement>(
       'input[placeholder="Add a subtask"]',
@@ -322,18 +456,6 @@ export function TaskDetails({
         className="max-w-md"
         data-proj={project?.color}
       >
-        <button
-          type="button"
-          aria-label="Close"
-          onPointerDown={() => {
-            closingRef.current = true
-          }}
-          onClick={cancel}
-          className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
-        >
-          <X className="size-4" />
-          <span className="sr-only">Close</span>
-        </button>
         <DialogHeader>
           <DialogTitle className="sr-only">Task details</DialogTitle>
           <span className="os-label flex items-center gap-1.5">
@@ -370,55 +492,92 @@ export function TaskDetails({
           <div className="grid grid-cols-2 gap-3">
             <div className="flex flex-col gap-1.5">
               <Label className="os-label">Due</Label>
-              <Popover open={dueOpen} onOpenChange={setDueOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className={cn(
-                      'w-[9.5rem] justify-start gap-2 font-mono text-xs',
-                      !task.dueAt && 'text-muted-foreground',
-                    )}
-                  >
-                    <CalendarIcon className="size-3.5" />
-                    {task.dueAt
-                      ? format(new Date(task.dueAt), 'd MMM yyyy')
-                      : 'No date'}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent
-                  className="w-auto p-0"
-                  align="start"
-                  side="bottom"
-                  sideOffset={4}
-                >
-                  <Calendar
-                    mode="single"
-                    selected={task.dueAt ? new Date(task.dueAt) : undefined}
-                    onSelect={(d) => {
-                      setDueOpen(false)
-                      updateTask.mutate({
-                        id: task.id,
-                        dueAt: d ? d.getTime() : null,
-                      })
-                    }}
-                  />
-                  <div className="border-t p-2">
+              <div className="flex items-center gap-1.5">
+                <Popover open={dueOpen} onOpenChange={setDueOpen}>
+                  <PopoverTrigger asChild>
                     <Button
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
-                      className="w-full"
-                      disabled={!task.dueAt}
-                      onClick={() => {
-                        setDueOpen(false)
-                        updateTask.mutate({ id: task.id, dueAt: null })
-                      }}
+                      className={cn(
+                        'w-[9.5rem] justify-start gap-2 font-mono text-xs',
+                        !localDueAt && 'text-muted-foreground',
+                      )}
                     >
-                      Clear date
+                      <CalendarIcon className="size-3.5" />
+                      {localDueAt
+                        ? format(new Date(localDueAt), 'd MMM yyyy')
+                        : 'No date'}
                     </Button>
-                  </div>
-                </PopoverContent>
-              </Popover>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    className="w-auto p-0"
+                    align="start"
+                    side="bottom"
+                    sideOffset={4}
+                  >
+                    <Calendar
+                      mode="single"
+                      selected={localDueAt ? new Date(localDueAt) : undefined}
+                      onSelect={(d) => {
+                        setDueOpen(false)
+                        if (!d) {
+                          setLocalDueAt(null)
+                          return
+                        }
+                        const timeStr = timeInput || '09:00'
+                        const parsed = parseTime24(timeStr) ?? { h: 9, m: 0 }
+                        const combined = new Date(d)
+                        combined.setHours(parsed.h, parsed.m, 0, 0)
+                        setLocalDueAt(combined.getTime())
+                      }}
+                    />
+                    <div className="border-t p-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full"
+                        disabled={!localDueAt}
+                        onClick={() => {
+                          setDueOpen(false)
+                          setLocalDueAt(null)
+                        }}
+                      >
+                        Clear date
+                      </Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                <Input
+                  value={timeInput}
+                  disabled={!localDueAt}
+                  onChange={(e) => {
+                    // allow typing, keep 24h HH:MM
+                    let v = e.target.value.replace(/[^0-9:]/g, '')
+                    // auto-insert colon
+                    if (v.length === 2 && timeInput.length === 1 && !v.includes(':')) v = v + ':'
+                    if (v.length > 5) v = v.slice(0, 5)
+                    setTimeInput(v)
+                  }}
+                  onBlur={() => {
+                    const parsed = parseTime24(timeInput)
+                    if (!parsed) {
+                      // revert to previous valid
+                      setTimeInput(localDueAt ? format(new Date(localDueAt), 'HH:mm') : '09:00')
+                      return
+                    }
+                    const formatted = String(parsed.h).padStart(2, '0') + ':' + String(parsed.m).padStart(2, '0')
+                    setTimeInput(formatted)
+                    applyTimeToLocal(formatted)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                  }}
+                  placeholder="HH:MM"
+                  className="h-8 w-[5.5rem] border-input bg-transparent px-2 font-mono text-xs shadow-xs"
+                  aria-label="Due time 24h"
+                />
+              </div>
+              <span className="font-mono text-[10px] text-muted-foreground">24h · HH:MM</span>
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -448,6 +607,46 @@ export function TaskDetails({
               </Select>
             </div>
           </div>
+
+          {CALENDAR_ENABLED ? (
+          <div className="flex flex-col gap-2 rounded-md border px-3 py-2.5">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Switch
+                  checked={localDueAt ? localAddToCal : false}
+                  disabled={!localDueAt || !calendarReady}
+                  onCheckedChange={setLocalAddToCal}
+                />
+                <Label className="text-sm font-medium">Add to calendar</Label>
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {calendarHint}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Reminder</Label>
+              <Select
+                value={String(localReminder)}
+                onValueChange={(v) => setLocalReminder(Number(v))}
+              >
+              <SelectTrigger size="sm" className="w-[180px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="5">5 minutes before</SelectItem>
+                <SelectItem value="15">15 minutes before</SelectItem>
+                <SelectItem value="30">30 minutes before</SelectItem>
+                <SelectItem value="60">60 minutes before</SelectItem>
+              </SelectContent>
+            </Select>
+            </div>
+          </div>
+          ) : (
+          <ComingSoon
+            title="Calendar sync"
+            description="Google Calendar integration is on its way."
+          />
+          )}
 
           <Subtasks
             parent={task}
@@ -516,6 +715,22 @@ export function TaskDetails({
             Done
           </Button>
         </DialogFooter>
+        {/* Last in DOM so Radix autofocus lands on the title input, as before.
+            Visually unchanged: absolute top-right. Must keep onPointerDown
+            arming here, ahead of click, so X still discards instead of
+            committing. */}
+        <button
+          type="button"
+          aria-label="Close"
+          onPointerDown={() => {
+            closingRef.current = true
+          }}
+          onClick={cancel}
+          className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+        >
+          <X className="size-4" />
+          <span className="sr-only">Close</span>
+        </button>
       </DialogContent>
     </Dialog>
   )

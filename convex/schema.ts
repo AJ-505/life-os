@@ -36,12 +36,16 @@ export default defineSchema({
     createdAt: v.number(),
     finishedAt: v.union(v.number(), v.null()),
     shelvedAt: v.union(v.number(), v.null()),
+    // Collaborative space association — optional so personal projects keep
+    // working with no migration. When null/undefined the project is private.
+    spaceId: v.optional(v.string()),
   })
     .index('by_user', ['userId'])
     // The app-facing `id` is only unique *per user* (client-generated uuids,
     // and migrations can leave the same id under an old + new userId), so
     // ownership lookups must scope by userId — never the bare `id` alone.
-    .index('by_user_id', ['userId', 'id']),
+    .index('by_user_id', ['userId', 'id'])
+    .index('by_space', ['spaceId']),
 
   tasks: defineTable({
     userId: v.string(),
@@ -55,6 +59,12 @@ export default defineSchema({
     doneAt: v.union(v.number(), v.null()),
     archived: v.boolean(),
     dueAt: v.union(v.number(), v.null()),
+    reminderMinutes: v.optional(v.union(v.number(), v.null())),
+    // The user's *intent* to mirror this task onto Google Calendar. Kept
+    // separate from `calendarEventId` so the intent survives a failed or
+    // pending Google call — the id is only ever a real Google event id.
+    addToCalendar: v.optional(v.boolean()),
+    calendarEventId: v.optional(v.union(v.string(), v.null())),
     inFocus: v.boolean(),
     focusOrder: v.number(),
     createdAt: v.number(),
@@ -62,4 +72,39 @@ export default defineSchema({
     .index('by_user', ['userId'])
     .index('by_project', ['projectId'])
     .index('by_user_id', ['userId', 'id']),
+
+  spaces: defineTable({
+    id: v.string(),
+    ownerId: v.string(),
+    name: v.string(),
+    inviteCode: v.string(),
+    createdAt: v.number(),
+  })
+    .index('by_owner', ['ownerId'])
+    .index('by_inviteCode', ['inviteCode']),
+
+  spaceMembers: defineTable({
+    spaceId: v.string(),
+    userId: v.string(),
+    role: v.union(v.literal('owner'), v.literal('member')),
+    joinedAt: v.number(),
+  })
+    .index('by_space', ['spaceId'])
+    .index('by_user', ['userId'])
+    .index('by_space_user', ['spaceId', 'userId']),
+
+  userSettings: defineTable({
+    userId: v.string(),
+    // Two names for one switch, kept because existing rows have both. The
+    // API surface exposes only `syncEnabled` (see convex/settings.ts) and
+    // writes both fields together.
+    calendarEnabled: v.boolean(),
+    calendarSyncEnabled: v.boolean(),
+    defaultReminderMinutes: v.number(),
+    // Legacy. Whether Google is connected is now read from Clerk (the only
+    // place that actually knows), never from a flag we set ourselves.
+    googleConnected: v.optional(v.boolean()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index('by_user', ['userId']),
 })

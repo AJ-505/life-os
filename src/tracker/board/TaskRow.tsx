@@ -24,6 +24,9 @@ export function DueChip({
 }) {
   const date = new Date(due)
   const overdue = !done && isPast(date) && !isToday(date)
+  const hasTime = date.getHours() !== 0 || date.getMinutes() !== 0
+  const timeStr = hasTime ? format(date, 'h:mm a') : null
+  const dateStr = isToday(date) ? 'today' : format(date, 'd MMM')
   return (
     <span
       className={cn(
@@ -35,7 +38,7 @@ export function DueChip({
             : 'border-border text-muted-foreground',
       )}
     >
-      {isToday(date) ? 'today' : format(date, 'd MMM')}
+      {timeStr ? `${dateStr} ${timeStr}` : dateStr}
     </span>
   )
 }
@@ -131,13 +134,22 @@ function SubtaskRows({ nodes }: { nodes: Array<TaskNode> }) {
   )
 }
 
-/** A sortable top-level task row; its subtask tree rides along inside it. */
 export function TaskRow({ node }: { node: TaskNode }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({
-      id: taskId(node.task.id),
-      data: { type: 'task', taskId: node.task.id, projectId: node.task.projectId },
-    })
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: taskId(node.task.id),
+    data: {
+      type: 'task',
+      taskId: node.task.id,
+      projectId: node.task.projectId,
+    },
+  })
 
   return (
     <div

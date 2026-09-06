@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useMemo } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -118,8 +118,10 @@ export function FocusPanel({
   onClose?: () => void
 }) {
   const setFocus = useSetTaskFocus()
-  const items = focusTasks(board)
-  const doneItems = items.filter((t) => t.done)
+  const items = useMemo(() => focusTasks(board), [board])
+  const doneItems = useMemo(() => items.filter((t) => t.done), [items])
+  const openCount = useMemo(() => items.filter((t) => !t.done).length, [items])
+  const itemIds = useMemo(() => items.map((t) => focusItemId(t.id)), [items])
 
   const { setNodeRef, isOver } = useDroppable({
     id: 'focuszone',
@@ -133,7 +135,7 @@ export function FocusPanel({
           <Crosshair className="size-3.5" />
           Focus
           <span className="rounded-sm bg-signal/15 px-1 font-semibold">
-            {items.filter((t) => !t.done).length}
+            {openCount}
           </span>
         </span>
         <div className="flex items-center gap-1">
@@ -175,7 +177,7 @@ export function FocusPanel({
           )}
         >
           <SortableContext
-            items={items.map((t) => focusItemId(t.id))}
+            items={itemIds}
             strategy={verticalListSortingStrategy}
           >
             {items.map((t) => (

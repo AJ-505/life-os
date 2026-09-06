@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 /**
  * Boolean UI preference persisted in localStorage (layout chrome only —
@@ -10,9 +10,14 @@ export function useLocalFlag(key: string, initial: boolean) {
     const stored = localStorage.getItem(key)
     if (stored !== null) setValue(stored === '1')
   }, [key])
-  const update = (v: boolean) => {
-    setValue(v)
-    localStorage.setItem(key, v ? '1' : '0')
-  }
+  // Stable identity like a useState setter, so memoized children that take
+  // the updater as a prop don't re-render when the parent does.
+  const update = useCallback(
+    (v: boolean) => {
+      setValue(v)
+      localStorage.setItem(key, v ? '1' : '0')
+    },
+    [key],
+  )
   return [value, update] as const
 }

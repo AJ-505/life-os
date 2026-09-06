@@ -1,49 +1,15 @@
 import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
-import { getOwnedProject, getOwnedTask, requireUserId } from './lib'
+import {
+  getOwnedProject,
+  getOwnedTask,
+  requireUserId,
+  shapeProject,
+  shapeTask,
+} from './lib'
 
 import type { Doc } from './_generated/dataModel'
-
-/* ---------------------------------------------------------------- shaping
- * Return exactly the original Drizzle-era field set so `BoardData` and the
- * whole UI (plus the optimistic updates) stay shape-stable. Convex system
- * fields (`_id`, `_creationTime`) and the private `userId` never leave here.
- */
-function shapeProject(p: Doc<'projects'>) {
-  return {
-    id: p.id,
-    name: p.name,
-    color: p.color,
-    status: p.status,
-    collapsed: p.collapsed,
-    showDone: p.showDone ?? false,
-    gridCol: p.gridCol,
-    gridRow: p.gridRow,
-    targetDate: p.targetDate,
-    createdAt: p.createdAt,
-    finishedAt: p.finishedAt,
-    shelvedAt: p.shelvedAt,
-  }
-}
-
-function shapeTask(t: Doc<'tasks'>) {
-  return {
-    id: t.id,
-    projectId: t.projectId,
-    parentId: t.parentId,
-    title: t.title,
-    notes: t.notes,
-    position: t.position,
-    done: t.done,
-    doneAt: t.doneAt,
-    archived: t.archived,
-    dueAt: t.dueAt,
-    inFocus: t.inFocus,
-    focusOrder: t.focusOrder,
-    createdAt: t.createdAt,
-  }
-}
 
 /** Everything for the signed-in user, in one query. Views derive what they
  *  need client-side — exactly like the original `fetchBoard`. */
@@ -225,6 +191,8 @@ export const createTask = mutation({
   },
 })
 
+/** `doneAt` is derived from `done` rather than accepted as an argument, so the
+ *  two can never disagree. */
 export const updateTask = mutation({
   args: {
     id: v.string(),
@@ -233,19 +201,14 @@ export const updateTask = mutation({
     done: v.optional(v.boolean()),
     archived: v.optional(v.boolean()),
     dueAt: v.optional(v.union(v.number(), v.null())),
+    reminderMinutes: v.optional(v.union(v.number(), v.null())),
+    addToCalendar: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
     const task = await getOwnedTask(ctx, userId, args.id)
     const { id: _id, done, ...rest } = args
-    const patch: Partial<{
-      title: string
-      notes: string | null
-      archived: boolean
-      dueAt: number | null
-      done: boolean
-      doneAt: number | null
-    }> = { ...rest }
+    const patch: Partial<Doc<'tasks'>> = { ...rest }
     if (done !== undefined) {
       patch.done = done
       patch.doneAt = done ? Date.now() : null

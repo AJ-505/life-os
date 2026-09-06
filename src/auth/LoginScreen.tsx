@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useSignIn } from '@clerk/tanstack-react-start/legacy'
+import { useSignIn } from '@clerk/tanstack-react-start'
+import { isClerkAPIResponseError } from '@clerk/tanstack-react-start/errors'
 import { toast } from 'sonner'
 
 import { Button } from '#/design-system/ui/button'
@@ -18,22 +19,31 @@ import {
  * Clerk dashboard toggle (User & authentication → SSO connections → Google).
  */
 export function LoginScreen() {
-  const { signIn, isLoaded } = useSignIn()
+  const { signIn, fetchStatus } = useSignIn()
   const [busy, setBusy] = useState(false)
 
+  const isLoading = fetchStatus === 'fetching'
+
   const google = async () => {
-    if (!isLoaded) return
+    if (isLoading) return
     setBusy(true)
-    try {
-      await signIn.authenticateWithRedirect({
-        strategy: 'oauth_google',
-        redirectUrl: '/sso-callback',
-        redirectUrlComplete: '/',
-      })
-    } catch {
-      toast.error('Could not start Google sign-in.')
-      setBusy(false)
+    const { error } = await signIn.sso({
+      strategy: 'oauth_google',
+      redirectUrl: '/',
+      redirectCallbackUrl: '/sso-callback',
+    })
+
+    if (error && isClerkAPIResponseError(error)) {
+      const hasActiveSession = error.errors.some(
+        (err) => err.code === 'session_exists',
+      )
+
+      if (hasActiveSession) {
+        toast.warning('You are already signed in. Redirecting..')
+        window.location.reload()
+      }
     }
+    setBusy(false)
   }
 
   return (
@@ -44,12 +54,12 @@ export function LoginScreen() {
           <CardDescription>Sign in to your board</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button
-            className="w-full"
-            disabled={busy || !isLoaded}
-            onClick={google}
-          >
-            {busy ? 'Redirecting…' : 'Continue with Google'}
+          <Button className="w-full" disabled={isLoading} onClick={google}>
+            {busy
+              ? 'Redirecting…'
+              : isLoading
+                ? 'Setting things up..'
+                : 'Continue with Google'}
           </Button>
           {/* Clerk mounts its bot-protection (Smart CAPTCHA) widget here during
               the custom sign-in flow. Without this element Clerk warns and falls

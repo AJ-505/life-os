@@ -11,8 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TimelineRouteImport } from './routes/timeline'
 import { Route as SsoCallbackRouteImport } from './routes/sso-callback'
+import { Route as SpacesRouteImport } from './routes/spaces'
 import { Route as LibraryRouteImport } from './routes/library'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as JoinInviteCodeRouteImport } from './routes/join.$inviteCode'
 
 const TimelineRoute = TimelineRouteImport.update({
   id: '/timeline',
@@ -22,6 +24,11 @@ const TimelineRoute = TimelineRouteImport.update({
 const SsoCallbackRoute = SsoCallbackRouteImport.update({
   id: '/sso-callback',
   path: '/sso-callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SpacesRoute = SpacesRouteImport.update({
+  id: '/spaces',
+  path: '/spaces',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LibraryRoute = LibraryRouteImport.update({
@@ -34,39 +41,71 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const JoinInviteCodeRoute = JoinInviteCodeRouteImport.update({
+  id: '/join/$inviteCode',
+  path: '/join/$inviteCode',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/library': typeof LibraryRoute
+  '/spaces': typeof SpacesRoute
   '/sso-callback': typeof SsoCallbackRoute
   '/timeline': typeof TimelineRoute
+  '/join/$inviteCode': typeof JoinInviteCodeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/library': typeof LibraryRoute
+  '/spaces': typeof SpacesRoute
   '/sso-callback': typeof SsoCallbackRoute
   '/timeline': typeof TimelineRoute
+  '/join/$inviteCode': typeof JoinInviteCodeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/library': typeof LibraryRoute
+  '/spaces': typeof SpacesRoute
   '/sso-callback': typeof SsoCallbackRoute
   '/timeline': typeof TimelineRoute
+  '/join/$inviteCode': typeof JoinInviteCodeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/library' | '/sso-callback' | '/timeline'
+  fullPaths:
+    | '/'
+    | '/library'
+    | '/spaces'
+    | '/sso-callback'
+    | '/timeline'
+    | '/join/$inviteCode'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/library' | '/sso-callback' | '/timeline'
-  id: '__root__' | '/' | '/library' | '/sso-callback' | '/timeline'
+  to:
+    | '/'
+    | '/library'
+    | '/spaces'
+    | '/sso-callback'
+    | '/timeline'
+    | '/join/$inviteCode'
+  id:
+    | '__root__'
+    | '/'
+    | '/library'
+    | '/spaces'
+    | '/sso-callback'
+    | '/timeline'
+    | '/join/$inviteCode'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LibraryRoute: typeof LibraryRoute
+  SpacesRoute: typeof SpacesRoute
   SsoCallbackRoute: typeof SsoCallbackRoute
   TimelineRoute: typeof TimelineRoute
+  JoinInviteCodeRoute: typeof JoinInviteCodeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -85,6 +124,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SsoCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/spaces': {
+      id: '/spaces'
+      path: '/spaces'
+      fullPath: '/spaces'
+      preLoaderRoute: typeof SpacesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/library': {
       id: '/library'
       path: '/library'
@@ -99,14 +145,23 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/join/$inviteCode': {
+      id: '/join/$inviteCode'
+      path: '/join/$inviteCode'
+      fullPath: '/join/$inviteCode'
+      preLoaderRoute: typeof JoinInviteCodeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LibraryRoute: LibraryRoute,
+  SpacesRoute: SpacesRoute,
   SsoCallbackRoute: SsoCallbackRoute,
   TimelineRoute: TimelineRoute,
+  JoinInviteCodeRoute: JoinInviteCodeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
