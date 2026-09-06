@@ -43,7 +43,10 @@ import {
 } from '../queries'
 import { useQuery } from '@tanstack/react-query'
 import { calendarSettingsQueryOptions } from '#/settings/queries'
-import { useGoogleCalendar, useSyncTaskToCalendar } from '#/settings/googleCalendar'
+import {
+  useGoogleCalendar,
+  useSyncTaskToCalendar,
+} from '#/settings/googleCalendar'
 import { toast } from 'sonner'
 
 import type { BoardData, Task } from '../types'
@@ -172,7 +175,8 @@ function Subtasks({
               aria-label="Subtask title"
               className={cn(
                 'min-w-0 flex-1 bg-transparent py-0.5 text-sm outline-none',
-                c.done && 'text-muted-foreground line-through decoration-border',
+                c.done &&
+                  'text-muted-foreground line-through decoration-border',
               )}
             />
             <button
@@ -235,7 +239,8 @@ function TaskCalendarFields({
   const { data: calendarSettings } = useQuery(calendarSettingsQueryOptions)
   const { connection } = useGoogleCalendar()
   const calendarReady =
-    connection.status === 'connected' && (calendarSettings?.syncEnabled ?? false)
+    connection.status === 'connected' &&
+    (calendarSettings?.syncEnabled ?? false)
   const calendarHint = !calendarSettings?.syncEnabled
     ? 'Turn on calendar sync in Settings'
     : connection.status === 'needs_scope'
@@ -316,14 +321,18 @@ export function TaskDetails({
   const defaultReminder = calendarSettings?.defaultReminderMinutes ?? 15
 
   // Local 24h time + due state — committed only on Done (optimistic close, single toast)
-  const [localDueAt, setLocalDueAt] = useState<number | null>(task.dueAt ?? null)
+  const [localDueAt, setLocalDueAt] = useState<number | null>(
+    task.dueAt ?? null,
+  )
   const [localReminder, setLocalReminder] = useState<number>(
     task.reminderMinutes ?? defaultReminder,
   )
   // The toggle reflects stored intent. It used to be derived from
   // `!!task.calendarEventId`, which the board never returned, so it read false
   // on every open no matter what the user had saved.
-  const [localAddToCal, setLocalAddToCal] = useState<boolean>(task.addToCalendar)
+  const [localAddToCal, setLocalAddToCal] = useState<boolean>(
+    task.addToCalendar,
+  )
   const [timeInput, setTimeInput] = useState<string>(() =>
     task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00',
   )
@@ -332,7 +341,13 @@ export function TaskDetails({
     setLocalReminder(task.reminderMinutes ?? defaultReminder)
     setLocalAddToCal(task.addToCalendar)
     setTimeInput(task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00')
-  }, [task.id, task.dueAt, task.reminderMinutes, task.addToCalendar, defaultReminder])
+  }, [
+    task.id,
+    task.dueAt,
+    task.reminderMinutes,
+    task.addToCalendar,
+    defaultReminder,
+  ])
 
   // TEMP-PROBE(?perf=1): click-to-dialog-paint. Double rAF lands after the
   // browser paints the mounted dialog. Deleted after the scaling analysis.
@@ -348,9 +363,8 @@ export function TaskDetails({
         const marks = performance.getEntriesByName(`task-open-${id}`)
         const m = marks[marks.length - 1]
         if (!m) return
-        const boardTasks = (
-          window as unknown as { __perfBoardTasks?: number }
-        ).__perfBoardTasks
+        const boardTasks = (window as unknown as { __perfBoardTasks?: number })
+          .__perfBoardTasks
         console.log(
           `[perf] task-open ${Math.round(performance.now() - m.startTime)}ms boardTasks=${boardTasks ?? '?'} projectId=${task.projectId}`,
         )
@@ -361,7 +375,8 @@ export function TaskDetails({
   const parseTime24 = (s: string): { h: number; m: number } | null => {
     const m = s.trim().match(/^(\d{1,2}):(\d{2})$/)
     if (!m) return null
-    const h = Number(m[1]); const min = Number(m[2])
+    const h = Number(m[1])
+    const min = Number(m[2])
     if (h < 0 || h > 23 || min < 0 || min > 59) return null
     return { h, m: min }
   }
@@ -376,7 +391,7 @@ export function TaskDetails({
 
   const readFields = () => ({
     title: titleRef.current?.value.trim() ?? task.title,
-    notes: notesRef.current?.value.trim() ?? (task.notes ?? ''),
+    notes: notesRef.current?.value.trim() ?? task.notes ?? '',
   })
 
   const fieldsChanged = (f: { title: string; notes: string }) =>
@@ -384,7 +399,10 @@ export function TaskDetails({
 
   /** Returns the write so callers that need to act *after* it lands (the
    *  calendar push reads the task back from the server) can wait on it. */
-  const commitFields = (f: { title: string; notes: string }): Promise<unknown> => {
+  const commitFields = (f: {
+    title: string
+    notes: string
+  }): Promise<unknown> => {
     if (!fieldsChanged(f)) return Promise.resolve()
     return updateTask.mutateAsync({
       id: task.id,
@@ -568,7 +586,7 @@ export function TaskDetails({
             className="field-sizing-fixed max-h-64 resize-y"
           />
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label className="os-label">Due</Label>
               <div className="flex items-center gap-1.5">
@@ -633,7 +651,12 @@ export function TaskDetails({
                     // allow typing, keep 24h HH:MM
                     let v = e.target.value.replace(/[^0-9:]/g, '')
                     // auto-insert colon
-                    if (v.length === 2 && timeInput.length === 1 && !v.includes(':')) v = v + ':'
+                    if (
+                      v.length === 2 &&
+                      timeInput.length === 1 &&
+                      !v.includes(':')
+                    )
+                      v = v + ':'
                     if (v.length > 5) v = v.slice(0, 5)
                     setTimeInput(v)
                   }}
@@ -641,10 +664,17 @@ export function TaskDetails({
                     const parsed = parseTime24(timeInput)
                     if (!parsed) {
                       // revert to previous valid
-                      setTimeInput(localDueAt ? format(new Date(localDueAt), 'HH:mm') : '09:00')
+                      setTimeInput(
+                        localDueAt
+                          ? format(new Date(localDueAt), 'HH:mm')
+                          : '09:00',
+                      )
                       return
                     }
-                    const formatted = String(parsed.h).padStart(2, '0') + ':' + String(parsed.m).padStart(2, '0')
+                    const formatted =
+                      String(parsed.h).padStart(2, '0') +
+                      ':' +
+                      String(parsed.m).padStart(2, '0')
                     setTimeInput(formatted)
                     applyTimeToLocal(formatted)
                   }}
@@ -656,7 +686,6 @@ export function TaskDetails({
                   aria-label="Due time 24h"
                 />
               </div>
-              <span className="font-mono text-[10px] text-muted-foreground">24h · HH:MM</span>
             </div>
 
             <div className="flex flex-col gap-1.5">
