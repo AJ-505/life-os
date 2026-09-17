@@ -32,6 +32,7 @@ const task: Doc<'tasks'> = {
   inFocus: false,
   focusOrder: 0,
   createdAt: 1,
+  spaceId: 's1',
 }
 
 const project: Doc<'projects'> = {
@@ -64,6 +65,7 @@ describe('shapeTask', () => {
     expect(shaped.reminderMinutes).toBe(30)
     expect(shaped.addToCalendar).toBe(true)
     expect(shaped.calendarEventId).toBe('gcal_abc')
+    expect(shaped.spaceId).toBe('s1')
   })
 
   it('never leaks the owning user or Convex internals', () => {
@@ -74,11 +76,19 @@ describe('shapeTask', () => {
   })
 
   it('normalises absent optionals so the client never sees undefined', () => {
-    const { reminderMinutes, addToCalendar, calendarEventId, ...bare } = task
+    const {
+      reminderMinutes: _reminderMinutes,
+      addToCalendar: _addToCalendar,
+      calendarEventId: _calendarEventId,
+      spaceId: _spaceId,
+      ...bare
+    } = task
     const shaped = shapeTask(bare)
     expect(shaped.reminderMinutes).toBeNull()
     expect(shaped.addToCalendar).toBe(false)
     expect(shaped.calendarEventId).toBeNull()
+    // Absent means personal, and the client sees `null` rather than `undefined`.
+    expect(shaped.spaceId).toBeNull()
   })
 })
 

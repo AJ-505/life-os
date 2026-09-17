@@ -41,6 +41,9 @@ export interface Task {
   inFocus: boolean
   focusOrder: number
   createdAt: number
+  /** The board this task lives on. Null for a personal task. Always present:
+   *  the server normalises it. */
+  spaceId: string | null
 }
 
 export type ProjectStatus = 'active' | 'shelved' | 'done'

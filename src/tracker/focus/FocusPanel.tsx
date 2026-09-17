@@ -38,7 +38,7 @@ export function FocusItemBody({
       onMouseEnter={() => setHovered(task.id)}
       onMouseLeave={() => setHovered(null)}
       className={cn(
-        'group/focus relative flex cursor-grab items-start gap-2 rounded-md border bg-card py-2 pl-3 pr-2 shadow-sm transition-colors hover:border-proj/40 active:cursor-grabbing',
+        'group/focus relative flex w-full min-w-0 cursor-grab items-start gap-2 overflow-hidden rounded-md border bg-card py-2 pl-3 pr-2 shadow-sm transition-colors hover:border-proj/40 active:cursor-grabbing',
         dragging && 'shadow-lg ring-2 ring-signal/40',
       )}
     >
@@ -59,7 +59,10 @@ export function FocusItemBody({
           onClick={() => openTask(task.id)}
           onPointerDown={(e) => e.stopPropagation()}
           className={cn(
-            'block w-full cursor-pointer whitespace-pre-wrap break-words text-left text-sm leading-snug',
+            // `[overflow-wrap:anywhere]` rather than `break-words`: only
+            // `anywhere` shrinks a long unbroken token's min-content width,
+            // which is what kept the x button outside the rail.
+            'block w-full cursor-pointer whitespace-pre-wrap text-left text-sm leading-snug [overflow-wrap:anywhere]',
             task.done && 'text-muted-foreground line-through decoration-border',
           )}
         >
@@ -75,7 +78,7 @@ export function FocusItemBody({
         aria-label="Remove from focus"
         onClick={() => setFocus.mutate({ id: task.id, inFocus: false })}
         onPointerDown={(e) => e.stopPropagation()}
-        className="mt-0.5 shrink-0 cursor-pointer text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/focus:opacity-100"
+        className="mt-0.5 shrink-0 cursor-pointer text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover/focus:opacity-100 focus-visible:opacity-100"
       >
         <X className="size-3.5" />
       </button>
@@ -84,11 +87,17 @@ export function FocusItemBody({
 }
 
 function FocusItem({ task, project }: { task: Task; project: Project }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({
-      id: focusItemId(task.id),
-      data: { type: 'fitem', taskId: task.id },
-    })
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: focusItemId(task.id),
+    data: { type: 'fitem', taskId: task.id },
+  })
 
   return (
     <div
@@ -98,7 +107,7 @@ function FocusItem({ task, project }: { task: Task; project: Project }) {
         transition: isDragging ? 'none' : transition,
       }}
       className={cn(
-        'select-none [-webkit-touch-callout:none]',
+        'min-w-0 select-none [-webkit-touch-callout:none]',
         isDragging && 'opacity-30',
       )}
       {...attributes}
@@ -171,7 +180,7 @@ export function FocusPanel({
         <div
           ref={setNodeRef}
           className={cn(
-            'mx-3 mb-3 flex min-h-40 flex-col gap-1.5 rounded-lg p-1 transition-colors',
+            'mx-3 mb-3 flex min-h-40 min-w-0 flex-col gap-1.5 rounded-lg p-1 transition-colors',
             isOver && 'bg-signal/10 ring-2 ring-signal/30',
           )}
         >
@@ -187,8 +196,9 @@ export function FocusPanel({
             <div className="flex flex-1 flex-col items-center justify-center gap-1 rounded-lg border border-dashed p-6 text-center">
               <Crosshair className="size-5 text-muted-foreground/50" />
               <p className="text-xs text-muted-foreground">
-                Drag tasks here — or hit the <Crosshair className="inline size-3" />{' '}
-                on any task. It stays in its project.
+                Drag tasks here — or hit the{' '}
+                <Crosshair className="inline size-3" /> on any task. It stays in
+                its project.
               </p>
             </div>
           ) : null}

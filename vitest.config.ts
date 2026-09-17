@@ -1,13 +1,33 @@
 import { defineConfig } from 'vitest/config'
 
 /**
- * Kept separate from vite.config.ts: the app config loads TanStack Start,
- * Nitro and the React Compiler babel pass, none of which the pure-logic tests
- * need, and all of which make a test run slow enough to stop being useful.
+ * Two projects, because the two halves need different runtimes.
+ *
+ * The app tests are pure logic under node. The Convex tests load real function
+ * modules through `convex-test`, which needs the edge runtime that Convex
+ * itself uses (see `convex/_generated/ai/guidelines.md`). Keeping vite.config
+ * out of this is deliberate: it loads TanStack Start, Nitro and the React
+ * Compiler pass, none of which the tests need and all of which make a run slow
+ * enough to stop being useful.
  */
 export default defineConfig({
   test: {
-    environment: 'node',
-    include: ['src/**/*.test.ts', 'convex/**/*.test.ts'],
+    projects: [
+      {
+        test: {
+          name: 'app',
+          environment: 'node',
+          include: ['src/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'convex',
+          environment: 'edge-runtime',
+          include: ['convex/**/*.test.ts'],
+          setupFiles: ['./convex/test.setup.ts'],
+        },
+      },
+    ],
   },
 })

@@ -24,7 +24,14 @@ type Entry =
   | { kind: 'task'; due: Date; task: Task; project: Project }
   | { kind: 'milestone'; due: Date; project: Project }
 
-const BUCKETS = ['Overdue', 'This hour', 'Today', 'Tomorrow', 'This week', 'Later'] as const
+const BUCKETS = [
+  'Overdue',
+  'This hour',
+  'Today',
+  'Tomorrow',
+  'This week',
+  'Later',
+] as const
 type Bucket = (typeof BUCKETS)[number]
 
 function bucketOf(due: Date): Bucket {
@@ -41,11 +48,20 @@ function collectEntries(board: BoardData): Map<Bucket, Array<Entry>> {
   const entries: Array<Entry> = []
   for (const p of activeProjects(board)) {
     if (p.targetDate) {
-      entries.push({ kind: 'milestone', due: new Date(p.targetDate), project: p })
+      entries.push({
+        kind: 'milestone',
+        due: new Date(p.targetDate),
+        project: p,
+      })
     }
     for (const t of p.tasks) {
       if (t.dueAt && !t.archived && !t.done) {
-        entries.push({ kind: 'task', due: new Date(t.dueAt), task: t, project: p })
+        entries.push({
+          kind: 'task',
+          due: new Date(t.dueAt),
+          task: t,
+          project: p,
+        })
       }
     }
   }
@@ -116,14 +132,19 @@ function TaskEntry({
         <Crosshair className="size-3.5" />
       </button>
       {open ? (
-        <TaskDetails task={task} board={board} open={open} onClose={() => setOpen(false)} />
+        <TaskDetails
+          task={task}
+          board={board}
+          open={open}
+          onClose={() => setOpen(false)}
+        />
       ) : null}
     </div>
   )
 }
 
 export function TimelineView() {
-  const { data: board } = useSuspenseQuery(boardQueryOptions)
+  const { data: board } = useSuspenseQuery(boardQueryOptions(null))
   const grouped = collectEntries(board)
   const total = [...grouped.values()].reduce((n, l) => n + l.length, 0)
 

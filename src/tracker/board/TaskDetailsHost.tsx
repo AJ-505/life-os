@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
+import { useBoardScope } from '../board-scope'
 import { useSetTaskFocus } from '../queries'
 import { BoardUIContext } from './board-ui'
 import { TaskDetails } from './TaskDetails'
@@ -38,6 +39,8 @@ export function TaskDetailsHost({
   // rather than `board` itself: reading `board` inside `openTask` would make
   // the compiler cache `openTask` on `board`, rebuilding `boardUI` on every
   // patch and re-rendering every row — the exact regression being measured.
+  const spaceId = useBoardScope()
+
   const boardRef = useRef(board)
   useEffect(() => {
     boardRef.current = board
@@ -104,7 +107,7 @@ export function TaskDetailsHost({
       if (e.key === 'e' || e.key === 'Enter') {
         e.preventDefault()
         setOpenTaskId(id)
-      } else if (e.key === 'f') {
+      } else if (e.key === 'f' && spaceId === null) {
         e.preventDefault()
         // TEMP-PROBE(?perf=1): F-to-first-paint + scale (project vs board).
         const perfOn =
@@ -115,9 +118,7 @@ export function TaskDetailsHost({
           const projSize = found.project.tasks.length
           requestAnimationFrame(() =>
             requestAnimationFrame(() => {
-              const m = performance
-                .getEntriesByName(`task-focus-${id}`)
-                .pop()
+              const m = performance.getEntriesByName(`task-focus-${id}`).pop()
               if (m) {
                 console.log(
                   `[perf] f-press ${Math.round(performance.now() - m.startTime)}ms projectTasks=${projSize}`,
@@ -135,7 +136,7 @@ export function TaskDetailsHost({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [index, onToggleFocus, setFocus])
+  }, [index, onToggleFocus, setFocus, spaceId])
 
   // Hold the last-seen task across renders: a transient board state (an
   // optimistic update rolling back a beat before the server value arrives) can
@@ -147,7 +148,9 @@ export function TaskDetailsHost({
   // render: ref access during render opts this whole host out of React
   // Compiler memoization. Same-id snapshots are kept as-is so a board patch
   // while the dialog is open doesn't cost an extra host render.
-  const foundOpenTask = openTaskId ? (index.get(openTaskId)?.task ?? null) : null
+  const foundOpenTask = openTaskId
+    ? (index.get(openTaskId)?.task ?? null)
+    : null
   useEffect(() => {
     if (foundOpenTask) {
       setLastOpenTask((prev) =>

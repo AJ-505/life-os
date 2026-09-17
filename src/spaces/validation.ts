@@ -1,27 +1,32 @@
-import "zod/compile";
-import * as z from "zod";
+import 'zod/compile'
+import * as z from 'zod'
 
-const localSpaceSchema = z.object({
+/** The space row as the server shapes it. */
+export const space = z.object({
   id: z.string(),
+  ownerId: z.string(),
   name: z.string(),
   inviteCode: z.string(),
   createdAt: z.number(),
-});
+})
 
-export const localSpace = localSpaceSchema;
-
-export const localSpaces = z.array(localSpaceSchema);
-
-const joinResultSchema = z.object({
-  id: z.string().optional(),
-  spaceId: z.string().optional(),
-  name: z.string(),
-  inviteCode: z.string().optional(),
-  ownerId: z.string().optional(),
-  createdAt: z.number().optional(),
-});
-
-export const joinResult = joinResultSchema;
+/**
+ * `joinSpaceByCode` returns a discriminated result rather than throwing for the
+ * cases a user can act on, so the join page can tell "that link is wrong" apart
+ * from "you have tried too often" without reading an error string.
+ */
+export const joinResult = z.discriminatedUnion('ok', [
+  z.object({
+    ok: z.literal(true),
+    space,
+    alreadyMember: z.boolean(),
+  }),
+  z.object({
+    ok: z.literal(false),
+    reason: z.enum(['invalid', 'not_found', 'throttled']),
+    retryAfterMinutes: z.number().optional(),
+  }),
+])
 
 const backupProjectSchema = z.object({
   id: z.string(),
@@ -35,7 +40,7 @@ const backupProjectSchema = z.object({
   createdAt: z.string().nullable(),
   finishedAt: z.string().nullable(),
   shelvedAt: z.string().nullable(),
-});
+})
 
 const backupTaskSchema = z.object({
   id: z.string(),
@@ -51,14 +56,18 @@ const backupTaskSchema = z.object({
   inFocus: z.boolean().nullable(),
   focusOrder: z.number().nullable(),
   createdAt: z.string().nullable(),
-});
+  // Optional so a backup written before the calendar work still validates.
+  reminderMinutes: z.number().nullable().optional(),
+  addToCalendar: z.boolean().nullable().optional(),
+  calendarEventId: z.string().nullable().optional(),
+})
 
 const backupFileSchema = z.object({
-  app: z.literal("lifeos"),
+  app: z.literal('lifeos'),
   version: z.literal(1),
   exportedAt: z.string(),
   projects: z.array(backupProjectSchema),
   tasks: z.array(backupTaskSchema),
-});
+})
 
-export const backupFile = backupFileSchema;
+export const backupFile = backupFileSchema

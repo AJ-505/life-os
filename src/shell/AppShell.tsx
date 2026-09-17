@@ -8,6 +8,7 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  Loader2,
   Settings,
   Users,
 } from 'lucide-react'
@@ -47,7 +48,12 @@ import {
   calendarSettingsQueryOptions,
   useUpdateCalendarSettings,
 } from '#/settings/queries'
-import { useGoogleCalendar } from '#/settings/googleCalendar'
+import {
+  useEnsureTimezone,
+  useGoogleCalendar,
+  useSyncTaskToCalendar,
+} from '#/settings/googleCalendar'
+import { boardQueryOptions } from '#/tracker'
 
 const NAV = [
   { to: '/', label: 'Board', icon: LayoutGrid },
@@ -128,18 +134,47 @@ function NavLinks({
   )
 }
 
-function SettingsDialog({ collapsed }: { collapsed?: boolean }) {
-  const [open, setOpen] = useState(false)
-  const { data: settings } = useQuery(calendarSettingsQueryOptions)
-  const updateSettings = useUpdateCalendarSettings()
+/** Writes the browser's IANA zone once, behind the flag. Google needs it or it
+ *  reads our timestamp as a fixed instant and the wall clock shifts. Mounted
+ *  from the shell so it happens before any task can be pushed. */
+function EnsureTimezone() {
+  useEnsureTimezone()
+  return null
+}
 
+/**
+ * The whole calendar surface lives in this child, so a build with the flag off
+ * never mounts it and never runs a settings read. That is the difference
+ * between a gate and a grille: the previous version rendered ComingSoon while
+ * the hooks above it still subscribed.
+ */
+function CalendarSettings() {
+  const { data: settings } = useQuery(calendarSettingsQueryOptions)
+  const { data: board } = useQuery(boardQueryOptions(null))
+  const updateSettings = useUpdateCalendarSettings()
   const { connection, connect } = useGoogleCalendar()
+  const syncToCalendar = useSyncTaskToCalendar()
+  const [resyncing, setResyncing] = useState(false)
+  const [confirmOff, setConfirmOff] = useState(false)
+
   const enabled = settings?.syncEnabled ?? false
   const googleConnected = connection.status === 'connected'
   const defaultReminder = settings?.defaultReminderMinutes ?? 15
+  const needsScope = connection.status === 'needs_scope'
+
+  const syncedTasks = (board ?? [])
+    .flatMap((p) => p.tasks)
+    .filter(
+      (t) =>
+        t.calendarEventId !== null || (t.addToCalendar && t.dueAt !== null),
+    )
 
   const handleToggle = (checked: boolean) => {
-    updateSettings.mutate({ syncEnabled: checked })
+    if (!checked) {
+      setConfirmOff(true)
+      return
+    }
+    updateSettings.mutate({ syncEnabled: true })
   }
 
   /**
@@ -157,11 +192,11 @@ function SettingsDialog({ collapsed }: { collapsed?: boolean }) {
     }
   }
 
-  // Turning sync off stops Life OS pushing anything. Unlinking the Google
-  // account itself is Clerk's job and lives in the Clerk user profile, so we
-  // don't pretend to do it here.
+  // Turning sync off takes the events with it, so the confirm says so before it
+  // happens. Unlinking the Google account itself is Clerk's job.
   const handleDisconnect = () => {
     updateSettings.mutate({ syncEnabled: false })
+    setConfirmOff(false)
     toast.success('Calendar sync turned off')
   }
 
@@ -169,7 +204,143 @@ function SettingsDialog({ collapsed }: { collapsed?: boolean }) {
     updateSettings.mutate({ defaultReminderMinutes: Number(v) })
   }
 
-  const needsScope = connection.status === 'needs_scope'
+  const handleResync = async () => {
+    setResyncing(true)
+    const results = await Promise.all(
+      syncedTasks.map((t) => syncToCalendar(t.id)),
+    )
+    setResyncing(false)
+    const updated = results.filter((r) => r.ok && !r.silent).length
+    const failures = results.filter((r) => !r.ok)
+    const detail = `of ${syncedTasks.length} synced ${syncedTasks.length === 1 ? 'task' : 'tasks'}`
+    if (failures.length === 0) {
+      toast.success(`Resync finished: ${updated} updated ${detail}`)
+      return
+    }
+    // One message per reason lives beside the action's result type, so this
+    // reads the same reasons the calendar surfaces do.
+    const reconnect = failures.some((r) => r.needsReconnect)
+    toast.error(
+      `Resync finished: ${updated} updated, ${failures.length} failed ${detail}`,
+      {
+        description: reconnect
+          ? `${failures[0].message}. Reconnect Google above.`
+          : failures[0].message,
+      },
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <h3 className="text-sm font-semibold">Calendar Integration</h3>
+      <Separator />
+
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-0.5">
+          <Label className="text-sm font-medium">
+            Enable Google Calendar Sync
+          </Label>
+          {!enabled ? (
+            <span className="font-mono text-[11px] text-muted-foreground">
+              Connect your Google Calendar to sync task times
+            </span>
+          ) : null}
+        </div>
+        <Switch checked={enabled} onCheckedChange={handleToggle} />
+      </div>
+
+      {confirmOff ? (
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3">
+          <p className="mb-2 text-xs leading-snug">
+            Turning sync off removes {syncedTasks.length} synced{' '}
+            {syncedTasks.length === 1 ? 'event' : 'events'} from your Google
+            Calendar. Events you deleted there are unaffected.
+          </p>
+          <div className="flex gap-1.5">
+            <Button size="sm" variant="destructive" onClick={handleDisconnect}>
+              Turn off and remove events
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setConfirmOff(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {enabled && !googleConnected ? (
+        <div className="rounded-md border border-dashed p-3">
+          <p className="text-xs leading-snug text-muted-foreground">
+            {needsScope
+              ? 'Your Google account is linked but has not granted calendar access yet.'
+              : 'Connect your Google account to push task times to your calendar.'}
+          </p>
+          <Button size="sm" className="mt-2 w-full" onClick={handleConnect}>
+            {needsScope ? 'Grant calendar access' : 'Connect Google Calendar'}
+          </Button>
+        </div>
+      ) : null}
+
+      {enabled && googleConnected ? (
+        <div className="flex items-center justify-between rounded-md border bg-accent/30 px-3 py-2">
+          <span className="flex items-center gap-2 text-sm">
+            <span className="size-2 rounded-full bg-emerald-500" />
+            Connected
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleToggle.bind(null, false)}
+          >
+            Turn off sync
+          </Button>
+        </div>
+      ) : null}
+
+      <div className="flex items-center justify-between">
+        <Label className="os-label">Default reminder</Label>
+        <Select
+          value={String(defaultReminder)}
+          onValueChange={handleReminderChange}
+        >
+          <SelectTrigger size="sm" className="w-[140px] text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="5">5 minutes before</SelectItem>
+            <SelectItem value="15">15 minutes before</SelectItem>
+            <SelectItem value="30">30 minutes before</SelectItem>
+            <SelectItem value="60">60 minutes before</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-0.5">
+          <Label className="os-label">Resync calendar</Label>
+          <span className="font-mono text-[11px] text-muted-foreground">
+            Re-push every synced task, including any event deleted in Google
+          </span>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!enabled || !googleConnected || resyncing}
+          onClick={handleResync}
+        >
+          {resyncing ? <Loader2 className="size-3.5 animate-spin" /> : null}
+          Resync
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function SettingsDialog({ collapsed }: { collapsed?: boolean }) {
+  const [open, setOpen] = useState(false)
 
   const trigger = collapsed ? (
     <Tooltip>
@@ -206,74 +377,19 @@ function SettingsDialog({ collapsed }: { collapsed?: boolean }) {
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription className="sr-only">App settings and integrations</DialogDescription>
+          <DialogDescription className="sr-only">
+            App settings and integrations
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-5">
           {CALENDAR_ENABLED ? (
-          <div className="flex flex-col gap-3">
-            <h3 className="text-sm font-semibold">Calendar Integration</h3>
-            <Separator />
-
-            <div className="flex items-center justify-between">
-              <div className="flex flex-col gap-0.5">
-                <Label className="text-sm font-medium">Enable Google Calendar Sync</Label>
-                {!enabled ? (
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    Connect your Google Calendar to sync task times
-                  </span>
-                ) : null}
-              </div>
-              <Switch checked={enabled} onCheckedChange={handleToggle} />
-            </div>
-
-            {enabled && !googleConnected ? (
-              <div className="rounded-md border border-dashed p-3">
-                <p className="text-xs leading-snug text-muted-foreground">
-                  {needsScope
-                    ? 'Your Google account is linked but has not granted calendar access yet.'
-                    : 'Connect your Google account to push task times to your calendar.'}
-                </p>
-                <Button size="sm" className="mt-2 w-full" onClick={handleConnect}>
-                  {needsScope
-                    ? 'Grant calendar access'
-                    : 'Connect Google Calendar'}
-                </Button>
-              </div>
-            ) : null}
-
-            {enabled && googleConnected ? (
-              <div className="flex items-center justify-between rounded-md border bg-accent/30 px-3 py-2">
-                <span className="flex items-center gap-2 text-sm">
-                  <span className="size-2 rounded-full bg-emerald-500" />
-                  Connected
-                </span>
-                <Button variant="ghost" size="sm" onClick={handleDisconnect}>
-                  Turn off sync
-                </Button>
-              </div>
-            ) : null}
-
-            <div className="flex items-center justify-between">
-              <Label className="os-label">Default reminder</Label>
-              <Select value={String(defaultReminder)} onValueChange={handleReminderChange}>
-                <SelectTrigger size="sm" className="w-[140px] text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="5">5 minutes before</SelectItem>
-                  <SelectItem value="15">15 minutes before</SelectItem>
-                  <SelectItem value="30">30 minutes before</SelectItem>
-                  <SelectItem value="60">60 minutes before</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+            <CalendarSettings />
           ) : (
-          <ComingSoon
-            title="Calendar sync"
-            description="Google Calendar integration is on its way. Tasks, due dates, and reminders keep working."
-          />
+            <ComingSoon
+              title="Calendar sync"
+              description="Google Calendar integration is on its way. Tasks, due dates, and reminders keep working."
+            />
           )}
         </div>
       </DialogContent>
@@ -309,7 +425,10 @@ function SidebarFooter({ collapsed }: { collapsed?: boolean }) {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const [collapsed, setCollapsed] = useLocalFlag('lifeos-sidebar-collapsed', false)
+  const [collapsed, setCollapsed] = useLocalFlag(
+    'lifeos-sidebar-collapsed',
+    false,
+  )
 
   // `[` toggles the sidebar (mirrors `]` for the focus panel).
   useEffect(() => {
@@ -334,75 +453,78 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <TooltipProvider delayDuration={300}>
-    <div className="flex h-dvh flex-col overflow-hidden md:flex-row">
-      {/* Desktop sidebar */}
-      <aside
-        className={cn(
-          'hidden shrink-0 flex-col justify-between border-r border-sidebar-border bg-sidebar p-3 md:flex',
-          collapsed ? 'w-16 items-center' : 'w-52',
-        )}
-      >
-        <div className="flex w-full flex-col gap-6">
-          <div className="flex items-center justify-between pt-2">
-            <Wordmark collapsed={collapsed} />
+      <div className="flex h-dvh flex-col overflow-hidden md:flex-row">
+        {/* Desktop sidebar */}
+        <aside
+          className={cn(
+            'hidden shrink-0 flex-col justify-between border-r border-sidebar-border bg-sidebar p-3 md:flex',
+            collapsed ? 'w-16 items-center' : 'w-52',
+          )}
+        >
+          <div className="flex w-full flex-col gap-6">
+            <div className="flex items-center justify-between pt-2">
+              <Wordmark collapsed={collapsed} />
+              {!collapsed ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-7 text-muted-foreground"
+                  aria-label="Collapse sidebar ([)"
+                  title="Collapse sidebar  ["
+                  onClick={() => setCollapsed(true)}
+                >
+                  <PanelLeftClose className="size-4" />
+                </Button>
+              ) : null}
+            </div>
             {!collapsed ? (
+              <p className="-mt-4 px-2 text-sm text-muted-foreground">
+                Everything, in one place.
+              </p>
+            ) : null}
+            {collapsed ? (
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-7 text-muted-foreground"
-                aria-label="Collapse sidebar ([)"
-                title="Collapse sidebar  ["
-                onClick={() => setCollapsed(true)}
+                className="size-9 text-muted-foreground"
+                aria-label="Expand sidebar ([)"
+                title="Expand sidebar  ["
+                onClick={() => setCollapsed(false)}
               >
-                <PanelLeftClose className="size-4" />
+                <PanelLeftOpen className="size-4" />
               </Button>
             ) : null}
+            <NavLinks collapsed={collapsed} />
           </div>
-          {!collapsed ? (
-            <p className="-mt-4 px-2 text-sm text-muted-foreground">Everything, in one place.</p>
-          ) : null}
-          {collapsed ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="size-9 text-muted-foreground"
-              aria-label="Expand sidebar ([)"
-              title="Expand sidebar  ["
-              onClick={() => setCollapsed(false)}
+          <SidebarFooter collapsed={collapsed} />
+        </aside>
+
+        {/* Mobile top bar */}
+        <header className="flex h-14 shrink-0 items-center justify-between border-b border-sidebar-border bg-sidebar px-2 md:hidden">
+          <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label="Menu">
+                <Menu className="size-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent
+              side="left"
+              noAnimation
+              className="flex w-64 flex-col justify-between bg-sidebar p-3 pt-12"
             >
-              <PanelLeftOpen className="size-4" />
-            </Button>
-          ) : null}
-          <NavLinks collapsed={collapsed} />
-        </div>
-        <SidebarFooter collapsed={collapsed} />
-      </aside>
+              <NavLinks onNavigate={() => setMobileNavOpen(false)} />
+              <SidebarFooter />
+            </SheetContent>
+          </Sheet>
+          <Wordmark />
+          <ModeToggle />
+        </header>
 
-      {/* Mobile top bar */}
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-sidebar-border bg-sidebar px-2 md:hidden">
-        <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-          <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" aria-label="Menu">
-              <Menu className="size-5" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent
-            side="left"
-            noAnimation
-            className="flex w-64 flex-col justify-between bg-sidebar p-3 pt-12"
-          >
-            <NavLinks onNavigate={() => setMobileNavOpen(false)} />
-            <SidebarFooter />
-          </SheetContent>
-        </Sheet>
-        <Wordmark />
-        <ModeToggle />
-      </header>
-
-      <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {children}
-      </main>
-    </div>
+        {CALENDAR_ENABLED ? <EnsureTimezone /> : null}
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          {children}
+        </main>
+      </div>
     </TooltipProvider>
   )
 }

@@ -1,58 +1,42 @@
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { convexQuery, useConvexMutation } from '@convex-dev/react-query'
-import { useQuery } from 'convex/react'
 
 import { api } from '../../convex/_generated/api'
 
-export type Space = {
-  id: string
-  ownerId: string
-  name: string
-  inviteCode: string
-  createdAt: number
-  memberCount?: number
-}
-
-/** Reactive query — live sync across tabs/devices */
+/** Reactive query — live sync across tabs/devices. Spaces come from Convex
+ *  only: a space that is not on the server does not exist, and a local
+ *  fallback would invent both its id and its invite code. */
 export const mySpacesQueryOptions = convexQuery(api.spaces.getMySpaces, {})
 
-export function useMySpaces() {
-  // convexQuery provides suspense-compatible options; wrap for convenience
-  // Fallback: if backend missing, convexQuery will error — caller handles via ErrorBoundary.
-  // We expose a hook that can also be used with useQuery directly.
-  return mySpacesQueryOptions
-}
-
-/** Create a collaborative space. Optimistic: returned inviteCode immediately. */
-export function useCreateSpace() {
-  const mutationFn = useConvexMutation(api.spaces.createSpace).withOptimisticUpdate(
-    (store, args) => {
-      const spaces = store.getQuery(api.spaces.getMySpaces, {})
-      if (!spaces) return
-      // Optimistic placeholder with temporary inviteCode
-      const temp: Space = {
-        id: args.id,
-        ownerId: 'me',
-        name: args.name,
-        inviteCode: '------',
-        createdAt: Date.now(),
-        memberCount: 1,
-      }
-      if (spaces.some((s) => s.id === args.id)) return
-      store.setQuery(api.spaces.getMySpaces, {}, [...spaces, temp])
-    },
-  )
-  return useMutation({ mutationFn })
-}
-
-export function useJoinSpace() {
-  const mutationFn = useConvexMutation(api.spaces.joinSpaceByCode)
-  return useMutation({ mutationFn })
+export function spaceMembersQueryOptions(spaceId: string | null) {
+  return convexQuery(api.spaces.getSpaceMembers, spaceId ? { spaceId } : 'skip')
 }
 
 export function useSpaceMembers(spaceId: string | null) {
-  // Conditional query — when null, skip. Use Convex hook directly.
-  // Caller should guard rendering.
-  const data = useQuery(api.spaces.getSpaceMembers, spaceId ? { spaceId } : 'skip')
+  const { data } = useQuery({
+    ...spaceMembersQueryOptions(spaceId),
+    enabled: !!spaceId,
+  })
   return data
+}
+
+/** Create a collaborative space. The server generates the id and the invite
+ *  code, so there is nothing to reconcile afterwards and no optimistic
+ *  placeholder to invent. */
+export function useCreateSpace() {
+  return useMutation({ mutationFn: useConvexMutation(api.spaces.createSpace) })
+}
+
+export function useJoinSpace() {
+  return useMutation({
+    mutationFn: useConvexMutation(api.spaces.joinSpaceByCode),
+  })
+}
+
+export function useLeaveSpace() {
+  return useMutation({ mutationFn: useConvexMutation(api.spaces.leaveSpace) })
+}
+
+export function useDeleteSpace() {
+  return useMutation({ mutationFn: useConvexMutation(api.spaces.deleteSpace) })
 }

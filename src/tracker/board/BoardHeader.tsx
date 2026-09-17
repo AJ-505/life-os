@@ -1,76 +1,156 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { Crosshair, Link as LinkIcon, Plus, Users } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { cn } from '#/design-system'
 import { Button } from '#/design-system/ui/button'
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '#/design-system/ui/dialog'
-import { Input } from '#/design-system/ui/input'
-import { Label } from '#/design-system/ui/label'
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '#/design-system/ui/select'
 import { Switch } from '#/design-system/ui/switch'
 
-import { mySpacesQueryOptions, useCreateSpace } from '#/spaces/queries'
-import { localSpaces } from '#/spaces/validation'
-import { SpacesShareDialog } from '#/spaces/components/SpacesShareDialog'
+import { mySpacesQueryOptions, useSpaceMembers } from '#/spaces/queries'
+import {
+  SpacesShareDialog,
+  memberInitials,
+  shortMemberId,
+} from '#/spaces/components/SpacesShareDialog'
 import { SPACES_ENABLED } from '#/feature-flags'
-import { newId } from '../types'
+import { useBoardScope } from '../board-scope'
 
-type LocalSpace = {
-  id: string
-  name: string
-  inviteCode: string
-  createdAt: number
+/** Clerk ids are long; two characters is what fits in a 24px circle. */
+function MemberStack({ spaceId }: { spaceId: string }) {
+  const members = useSpaceMembers(spaceId)
+  const list = members ?? []
+  if (list.length === 0) return null
+  const shown = list.slice(0, 3)
+  return (
+    <div className="hidden items-center sm:flex">
+      <div className="flex -space-x-1.5">
+        {shown.map((m, i) => (
+          <span
+            key={m.userId}
+            style={{ zIndex: 3 - i }}
+            title={m.isSelf ? 'You' : shortMemberId(m.userId)}
+            className="flex size-6 items-center justify-center rounded-full border-2 border-background bg-signal text-[10px] font-bold text-signal-foreground"
+          >
+            {memberInitials(m.userId)}
+          </span>
+        ))}
+      </div>
+      {list.length > shown.length ? (
+        <span className="ml-1.5 text-[11px] text-muted-foreground">
+          +{list.length - shown.length}
+        </span>
+      ) : null}
+    </div>
+  )
 }
 
-// Module scope, not in the component: try/catch with value blocks opts a
-// component out of React Compiler memoization, so all localStorage access
-// lives here where the compiler doesn't look.
-function readSelectedSpaceId(): string {
-  if (typeof window === 'undefined') return ''
-  return localStorage.getItem('lifeos-selected-space') ?? ''
+/** The space's own name for the title slot. Only mounted when Spaces is on, so
+ *  the flag off means no spaces query at all. */
+function SpaceTitle({ spaceId }: { spaceId: string }) {
+  const { data: spaces } = useQuery({ ...mySpacesQueryOptions, retry: false })
+  const name = spaces?.find((s) => s.id === spaceId)?.name
+  return <>{name ?? 'Shared board'}</>
 }
 
-function readLocalSpaces(): Array<LocalSpace> {
-  if (typeof window === 'undefined') return []
-  try {
-    const raw = localStorage.getItem('lifeos-local-spaces')
-    if (!raw) return []
-    const parsed = localSpaces.safeParse(JSON.parse(raw))
-    return parsed.success ? parsed.data : []
-  } catch {
-    return []
-  }
-}
+/** The board switcher, and the shared-board actions. Personal is a peer of
+ *  every space rather than a hidden default. */
+function SpaceChrome({ spaceId }: { spaceId: string | null }) {
+  const navigate = useNavigate()
+  const { data: spaces } = useQuery({ ...mySpacesQueryOptions, retry: false })
+  const [shareOpen, setShareOpen] = useState(false)
+  const list = spaces ?? []
+  const current =
+    spaceId === null ? null : (list.find((s) => s.id === spaceId) ?? null)
 
-function writeSelectedSpaceId(id: string) {
-  try {
-    localStorage.setItem('lifeos-selected-space', id)
-  } catch {}
-}
+  return (
+    <>
+      <Select
+        value={spaceId ?? 'personal'}
+        onValueChange={(next) => {
+          if (next === 'personal') void navigate({ to: '/' })
+          else
+            void navigate({
+              to: '/space/$spaceId',
+              params: { spaceId: next },
+            })
+        }}
+      >
+        <SelectTrigger size="sm" className="h-8 w-[9.5rem] text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="personal">Personal</SelectItem>
+          {list.map((s) => (
+            <SelectItem key={s.id} value={s.id}>
+              {s.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
-function writeLocalSpaces(spaces: Array<LocalSpace>) {
-  try {
-    localStorage.setItem('lifeos-local-spaces', JSON.stringify(spaces))
-  } catch {}
+      <Link
+        to="/spaces"
+        className="no-underline"
+        title="Manage spaces"
+        aria-label="Manage spaces"
+      >
+        <Button variant="ghost" size="sm" className="h-8 px-2 text-xs">
+          Spaces
+        </Button>
+      </Link>
+
+      {current ? (
+        <>
+          <MemberStack spaceId={current.id} />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 gap-1.5"
+            onClick={async () => {
+              const link = `${window.location.origin}/join/${current.inviteCode}`
+              await navigator.clipboard.writeText(link)
+              toast.success('Link copied')
+            }}
+          >
+            <LinkIcon className="size-3.5" /> Share
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 gap-1"
+            onClick={() => setShareOpen(true)}
+          >
+            <Users className="size-3.5" /> Members
+          </Button>
+          <SpacesShareDialog
+            open={shareOpen}
+            onClose={() => setShareOpen(false)}
+            spaceId={current.id}
+            spaceName={current.name}
+            inviteCode={current.inviteCode}
+          />
+        </>
+      ) : null}
+    </>
+  )
 }
 
 /**
- * Board header + spaces. Owns ALL spaces state (selection, local fallback
- * cache, new-space dialog input, share dialog) so that typing a space name or
- * opening the dialogs never re-renders the board canvas.
+ * Board header. The active board is read from the route (see `useBoardScope`),
+ * never from localStorage: a space that only exists in this browser would be a
+ * space with no server behind it.
  *
- * Previously this state lived in BoardView: every keystroke in the New Space
- * input re-rendered every column, card, and task row. Now only the header
- * re-renders. Memoized so board-root renders that don't touch its props
- * (e.g. drag start/end) skip it entirely.
+ * The spaces chrome is a child that only mounts when the build flag is on, so a
+ * gated build runs no spaces query at all.
  */
 export function BoardHeader({
   activeCount,
@@ -91,146 +171,43 @@ export function BoardHeader({
   focusOpen: boolean
   onToggleFocus: () => void
 }) {
-  const createSpace = useCreateSpace()
-  const [newSpaceOpen, setNewSpaceOpen] = useState(false)
-  const [newSpaceName, setNewSpaceName] = useState('')
-  const [shareOpen, setShareOpen] = useState(false)
-  const [selectedSpaceId, setSelectedSpaceId] =
-    useState<string>(readSelectedSpaceId)
-  const setSelected = (id: string) => {
-    setSelectedSpaceId(id)
-    writeSelectedSpaceId(id)
-  }
-  // Local fallback so UI works before Convex syncs / if backend not deployed yet
-  const [localSpaces, setLocalSpaces] =
-    useState<Array<LocalSpace>>(readLocalSpaces)
-  const { data: fetchedSpaces } = useQuery({
-    ...mySpacesQueryOptions,
-    retry: false,
-  })
-  const spacesList: Array<{
-    id: string
-    name: string
-    inviteCode: string
-    createdAt: number
-    memberCount?: number
-  }> = fetchedSpaces && fetchedSpaces.length > 0 ? fetchedSpaces : localSpaces
-  // Gated behind SPACES_ENABLED (see `#/feature-flags`): with the flag off
-  // this is always null, so no spaces UI can render. State and queries stay
-  // put so flipping the flag restores the exact same behavior.
-  const selectedSpace = SPACES_ENABLED
-    ? (spacesList.find((s) => s.id === selectedSpaceId) ?? null)
-    : null
-
-  const handleCreateSpace = () => {
-    const name = newSpaceName.trim()
-    if (!name) return
-    const id = newId()
-    const inviteCode = Math.random().toString(36).slice(2, 8).toUpperCase()
-    const entry = {
-      id,
-      name,
-      inviteCode,
-      createdAt: Date.now(),
-      memberCount: 1,
-    }
-    const next = [...localSpaces, entry]
-    setLocalSpaces(next)
-    writeLocalSpaces(next)
-    setSelected(id)
-    setNewSpaceName('')
-    setNewSpaceOpen(false)
-    toast.success(`Space “${name}” created`)
-    createSpace.mutate(
-      { id, name, inviteCode },
-      {
-        onSuccess: (code) => {
-          if (typeof code !== 'string' || code === inviteCode) return
-          const updated = localSpaces.map((s) =>
-            s.id === id ? { ...s, inviteCode: code } : s,
-          )
-          setLocalSpaces(updated)
-          writeLocalSpaces(updated)
-        },
-        onError: () => {},
-      },
-    )
-  }
-  const copyInviteLink = async () => {
-    if (!selectedSpace) return
-    const link = `${window.location.origin}/join/${selectedSpace.inviteCode}`
-    await navigator.clipboard.writeText(link)
-    toast.success('Link copied')
-  }
+  const spaceId = useBoardScope()
 
   return (
-    <>
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2.5 sm:px-4">
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <div className="hidden items-center gap-2.5 sm:flex">
-            <h1 className="text-lg font-bold leading-none tracking-tight">
-              {selectedSpace ? selectedSpace.name : 'Board'}
-            </h1>
-            <span className="hidden text-sm leading-none text-muted-foreground lg:inline">
-              {activeCount} projects · {openCount} open tasks
-            </span>
-          </div>
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2.5 sm:px-4">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="hidden items-center gap-2.5 sm:flex">
+          <h1 className="text-lg font-bold leading-none tracking-tight">
+            {spaceId === null || !SPACES_ENABLED ? (
+              'Board'
+            ) : (
+              <SpaceTitle spaceId={spaceId} />
+            )}
+          </h1>
+          <span className="hidden text-sm leading-none text-muted-foreground lg:inline">
+            {activeCount} projects · {openCount} open tasks
+          </span>
         </div>
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          {selectedSpace ? (
-            <>
-              <div className="hidden items-center sm:flex">
-                <div className="flex -space-x-1.5">
-                  {(['You', 'Alex', 'Sam'] as const)
-                    .slice(0, 3)
-                    .map((n, i) => (
-                      <span
-                        key={n}
-                        style={{ zIndex: 3 - i }}
-                        className="flex size-6 items-center justify-center rounded-full border-2 border-background bg-signal text-[10px] font-bold text-signal-foreground"
-                        title={n}
-                      >
-                        {n.slice(0, 1)}
-                      </span>
-                    ))}
-                </div>
-                <span className="ml-1.5 hidden text-[11px] text-muted-foreground lg:inline">
-                  Unlimited members — no paywall
-                </span>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 gap-1.5"
-                onClick={copyInviteLink}
-              >
-                <LinkIcon className="size-3.5" /> Share
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                className="h-8 gap-1"
-                onClick={() => setShareOpen(true)}
-              >
-                <Users className="size-3.5" /> Members
-              </Button>
-            </>
-          ) : null}
-          <label className="flex cursor-pointer items-center gap-1.5">
-            <Switch
-              checked={showDone}
-              onCheckedChange={onShowDoneChange}
-              aria-label="Show completed tasks"
-            />
-            <span className="os-label hidden sm:inline">Done</span>
-          </label>
-          <Button
-            size="sm"
-            className="gap-1.5 bg-signal text-signal-foreground hover:bg-signal/90"
-            onClick={() => onNewProject(defaultCol)}
-          >
-            <Plus className="size-4" /> Project
-          </Button>
+      </div>
+      <div className="flex items-center gap-1.5 sm:gap-2">
+        {SPACES_ENABLED ? <SpaceChrome spaceId={spaceId} /> : null}
+        <label className="flex cursor-pointer items-center gap-1.5">
+          <Switch
+            checked={showDone}
+            onCheckedChange={onShowDoneChange}
+            aria-label="Show completed tasks"
+          />
+          <span className="os-label hidden sm:inline">Done</span>
+        </label>
+        <Button
+          size="sm"
+          className="gap-1.5 bg-signal text-signal-foreground hover:bg-signal/90"
+          onClick={() => onNewProject(defaultCol)}
+        >
+          <Plus className="size-4" /> Project
+        </Button>
+        {/* Focus is personal only, and the rail is hidden on a shared board. */}
+        {spaceId === null ? (
           <Button
             variant={focusOpen ? 'secondary' : 'ghost'}
             size="icon"
@@ -241,51 +218,8 @@ export function BoardHeader({
           >
             <Crosshair className={cn('size-4', focusOpen && 'text-signal')} />
           </Button>
-        </div>
+        ) : null}
       </div>
-
-      {SPACES_ENABLED ? (
-      <Dialog open={newSpaceOpen} onOpenChange={(o) => !o && setNewSpaceOpen(false)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Users className="size-4 text-signal" /> New Space
-            </DialogTitle>
-            <DialogDescription>
-              Create a collaborative board. Share the link — anyone can join.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-1.5">
-            <Label className="os-label">Space name</Label>
-            <Input
-              autoFocus
-              value={newSpaceName}
-              onChange={(e) => setNewSpaceName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreateSpace()}
-              placeholder="e.g. Design Sprint, Family Trip"
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              size="sm"
-              onClick={handleCreateSpace}
-              disabled={!newSpaceName.trim() || createSpace.isPending}
-            >
-              {createSpace.isPending ? 'Creating…' : 'Create'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      ) : null}
-
-      {selectedSpace ? (
-        <SpacesShareDialog
-          open={shareOpen}
-          onClose={() => setShareOpen(false)}
-          spaceName={selectedSpace.name}
-          inviteCode={selectedSpace.inviteCode}
-        />
-      ) : null}
-    </>
+    </div>
   )
 }

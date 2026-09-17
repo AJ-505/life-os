@@ -9,11 +9,15 @@ import { v } from 'convex/values'
  * Permanent removal is a hard delete (cascades to tasks in the mutation).
  *
  * Everything is scoped by `userId` — the Clerk identity subject (the Clerk
- * user id, `ctx.auth.getUserIdentity().subject`). Each account is a
- * fully private LifeOS. The string `id` (client-generated uuid) is kept as the
+ * user id, `ctx.auth.getUserIdentity().subject`). Each account is a fully
+ * private LifeOS. The string `id` (client-generated uuid) is kept as the
  * app-facing identity — relationships are string refs (`projectId`,
  * `parentId`) so the UI and optimistic updates never learn about Convex's
  * internal `_id`. Timestamps are epoch-ms numbers.
+ *
+ * `spaceId` is the one collaborative axis. It is absent for personal rows and
+ * set to the space's app id for shared ones. Every read that filters on it
+ * treats "absent" as personal, so existing rows need no migration.
  */
 export default defineSchema({
   projects: defineTable({
@@ -36,8 +40,9 @@ export default defineSchema({
     createdAt: v.number(),
     finishedAt: v.union(v.number(), v.null()),
     shelvedAt: v.union(v.number(), v.null()),
-    // Collaborative space association — optional so personal projects keep
-    // working with no migration. When null/undefined the project is private.
+    // Collaborative space association — absent means private. Set at creation
+    // and never updated: moving a project between boards would need cascade
+    // decisions for its tasks, its focus members and its calendar events.
     spaceId: v.optional(v.string()),
   })
     .index('by_user', ['userId'])
@@ -45,7 +50,11 @@ export default defineSchema({
     // and migrations can leave the same id under an old + new userId), so
     // ownership lookups must scope by userId — never the bare `id` alone.
     .index('by_user_id', ['userId', 'id'])
-    .index('by_space', ['spaceId']),
+    .index('by_space', ['spaceId'])
+    // Not `by_id`: Convex reserves that name for the implicit `_id` index.
+    // Used by the authorization seam, which must find a project without
+    // knowing who owns it, then decide whether the caller may touch it.
+    .index('by_app_id', ['id']),
 
   tasks: defineTable({
     userId: v.string(),
@@ -68,10 +77,19 @@ export default defineSchema({
     inFocus: v.boolean(),
     focusOrder: v.number(),
     createdAt: v.number(),
+    // Denormalized from the project so a board reads one index and a walk can
+    // never cross scopes. Kept equal to the project's by the same-scope rule.
+    spaceId: v.optional(v.string()),
   })
     .index('by_user', ['userId'])
-    .index('by_project', ['projectId'])
-    .index('by_user_id', ['userId', 'id']),
+    .index('by_user_id', ['userId', 'id'])
+    .index('by_app_id', ['id'])
+    .index('by_space', ['spaceId'])
+    // The two project-scoped reads. A single `projectId` index would be the
+    // same query for every user and would leak across accounts whose
+    // client-generated ids collide.
+    .index('by_user_project', ['userId', 'projectId'])
+    .index('by_space_project', ['spaceId', 'projectId']),
 
   spaces: defineTable({
     id: v.string(),
@@ -80,8 +98,8 @@ export default defineSchema({
     inviteCode: v.string(),
     createdAt: v.number(),
   })
-    .index('by_owner', ['ownerId'])
-    .index('by_inviteCode', ['inviteCode']),
+    .index('by_inviteCode', ['inviteCode'])
+    .index('by_app_id', ['id']),
 
   spaceMembers: defineTable({
     spaceId: v.string(),
@@ -104,7 +122,20 @@ export default defineSchema({
     // Legacy. Whether Google is connected is now read from Clerk (the only
     // place that actually knows), never from a flag we set ourselves.
     googleConnected: v.optional(v.boolean()),
+    // IANA name. Google needs an explicit zone or it reads an offset-bearing
+    // timestamp as a fixed instant and the wall clock shifts. Absent means the
+    // client has not reported one yet, which is a distinct sync outcome.
+    timeZone: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
+  }).index('by_user', ['userId']),
+
+  /** One row per user, holding a sliding window of failed join attempts. The
+   *  throttle exists for the live 6-character legacy codes at roughly 31 bits,
+   *  not for the 10-character codes this version generates at roughly 50. */
+  inviteAttempts: defineTable({
+    userId: v.string(),
+    count: v.number(),
+    windowStartAt: v.number(),
   }).index('by_user', ['userId']),
 })

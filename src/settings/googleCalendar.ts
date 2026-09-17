@@ -1,7 +1,13 @@
+import { useEffect } from 'react'
 import { useUser } from '@clerk/tanstack-react-start'
 import { useAction } from 'convex/react'
+import { useQuery } from '@tanstack/react-query'
 
 import { api } from '../../convex/_generated/api'
+import {
+  calendarSettingsQueryOptions,
+  useUpdateCalendarSettings,
+} from './queries'
 
 /**
  * The client half of the calendar integration. Two jobs, and deliberately not
@@ -21,7 +27,9 @@ type ExternalAccount = {
   reauthorize?: (opts: {
     additionalScopes: Array<string>
     redirectUrl: string
-  }) => Promise<{ verification?: { externalVerificationRedirectURL?: URL | null } }>
+  }) => Promise<{
+    verification?: { externalVerificationRedirectURL?: URL | null }
+  }>
 }
 
 type ClerkUser = {
@@ -30,7 +38,9 @@ type ClerkUser = {
     strategy: string
     additionalScopes: Array<string>
     redirectUrl: string
-  }) => Promise<{ verification?: { externalVerificationRedirectURL?: URL | null } }>
+  }) => Promise<{
+    verification?: { externalVerificationRedirectURL?: URL | null }
+  }>
 }
 
 export type CalendarConnection =
@@ -106,15 +116,30 @@ const MESSAGES: Record<string, string> = {
   created: 'Added to Google Calendar',
   updated: 'Updated in Google Calendar',
   deleted: 'Removed from Google Calendar',
+  event_removed: 'That event was removed in Google Calendar',
   not_connected: 'Connect Google Calendar in Settings first',
-  missing_scope: 'Life OS needs calendar permission. Reconnect Google in Settings.',
+  reauth_required: 'Google Calendar needs reconnecting',
+  missing_scope:
+    'Life OS needs calendar permission. Reconnect Google in Settings.',
+  no_timezone: 'Life OS does not know your timezone yet',
+  not_personal: 'Calendar sync is personal only',
   not_configured: 'Calendar sync is not configured on the server',
+  rate_limited: 'Google is rate limiting us. Try again shortly.',
   google_error: 'Google rejected the change',
 }
 
+/** The reasons whose fix is a reconnect, so a caller can offer the action
+ *  rather than only show a message. */
+const RECONNECT_REASONS = new Set([
+  'not_connected',
+  'reauth_required',
+  'missing_scope',
+  'not_configured',
+])
+
 export type SyncOutcome =
   | { ok: true; silent: boolean; message: string; link: string | null }
-  | { ok: false; message: string; detail: string }
+  | { ok: false; message: string; detail: string; needsReconnect: boolean }
 
 /**
  * Callers pass a task id and get back a message. They never learn that Google
@@ -127,23 +152,47 @@ export function useSyncTaskToCalendar() {
   // value blocks opts the hook out of React Compiler memoization.
   return (taskId: string): Promise<SyncOutcome> =>
     syncTask({ taskId }).then(
-        (result): SyncOutcome =>
-          result.ok
-            ? {
-                ok: true,
-                silent: result.action === 'noop',
-                message: MESSAGES[result.action] ?? 'Calendar updated',
-                link: result.link,
-              }
-            : {
-                ok: false,
-                message: MESSAGES[result.reason] ?? 'Calendar sync failed',
-                detail: result.detail,
-              },
-        (error: unknown): SyncOutcome => ({
-          ok: false,
-          message: 'Calendar sync failed',
-          detail: error instanceof Error ? error.message : String(error),
-        }),
-      )
+      (result): SyncOutcome =>
+        result.ok
+          ? {
+              ok: true,
+              silent: result.action === 'noop',
+              message: MESSAGES[result.action] ?? 'Calendar updated',
+              link: result.link,
+            }
+          : {
+              ok: false,
+              message: MESSAGES[result.reason] ?? 'Calendar sync failed',
+              detail: result.detail,
+              needsReconnect: RECONNECT_REASONS.has(result.reason),
+            },
+      (error: unknown): SyncOutcome => ({
+        ok: false,
+        message: 'Calendar sync failed',
+        detail: error instanceof Error ? error.message : String(error),
+        needsReconnect: false,
+      }),
+    )
+}
+
+/* ---------------------------------------------------------------- timezone */
+
+/**
+ * Google reads an offset-bearing timestamp as a fixed instant, so the only way
+ * to keep a 09:00 task at 09:00 is to tell it the zone the wall clock was
+ * captured in. The browser knows it; the server cannot. This writes it once.
+ *
+ * Mounted from behind the calendar flag, so a build without the feature never
+ * touches the settings query.
+ */
+export function useEnsureTimezone() {
+  const { data: settings } = useQuery(calendarSettingsQueryOptions)
+  const update = useUpdateCalendarSettings()
+  const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone
+
+  useEffect(() => {
+    if (!resolved || settings === undefined) return
+    if (settings.timeZone === resolved) return
+    update.mutate({ timeZone: resolved })
+  }, [resolved, settings, update])
 }

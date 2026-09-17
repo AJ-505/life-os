@@ -106,15 +106,16 @@ export function BackupControls() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Replace everything?</DialogTitle>
+            <DialogTitle>Replace your personal board?</DialogTitle>
             <DialogDescription>
-              Importing this backup will erase your current board and restore{' '}
+              Importing this backup will erase your personal board and restore{' '}
               {pendingImport?.projects.length ?? 0} projects and{' '}
               {pendingImport?.tasks.length ?? 0} tasks from{' '}
               {pendingImport
                 ? new Date(pendingImport.exportedAt).toLocaleString()
                 : ''}
-              . This cannot be undone.
+              . Projects inside a space are not in the file and are left alone.
+              This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

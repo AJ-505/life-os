@@ -7,6 +7,7 @@ import { cn } from '#/design-system'
 import { Checkbox } from '#/design-system/ui/checkbox'
 
 import { POSITION_GAP } from '../types'
+import { useBoardScope } from '../board-scope'
 import { useSetTaskFocus, useUpdateTask } from '../queries'
 import { taskId } from './board-logic'
 import { useBoardUI } from './board-ui'
@@ -55,6 +56,7 @@ export function TaskRowBody({
 }) {
   const updateTask = useUpdateTask()
   const setFocus = useSetTaskFocus()
+  const spaceId = useBoardScope()
   const { openTask, setHovered } = useBoardUI()
 
   return (
@@ -96,26 +98,28 @@ export function TaskRowBody({
         ) : null}
       </button>
       {task.dueAt ? <DueChip due={task.dueAt} done={task.done} /> : null}
-      <button
-        type="button"
-        aria-label={task.inFocus ? 'Remove from focus' : 'Add to focus'}
-        onClick={() =>
-          setFocus.mutate({
-            id: task.id,
-            inFocus: !task.inFocus,
-            focusOrder: Date.now() / 1000 + POSITION_GAP,
-          })
-        }
-        onPointerDown={(e) => e.stopPropagation()}
-        className={cn(
-          'mt-0.5 shrink-0 cursor-pointer transition-opacity',
-          task.inFocus
-            ? 'text-signal opacity-100'
-            : 'text-muted-foreground opacity-0 hover:text-signal group-hover/task:opacity-100',
-        )}
-      >
-        <Crosshair className="size-3.5" />
-      </button>
+      {spaceId === null ? (
+        <button
+          type="button"
+          aria-label={task.inFocus ? 'Remove from focus' : 'Add to focus'}
+          onClick={() =>
+            setFocus.mutate({
+              id: task.id,
+              inFocus: !task.inFocus,
+              focusOrder: Date.now() / 1000 + POSITION_GAP,
+            })
+          }
+          onPointerDown={(e) => e.stopPropagation()}
+          className={cn(
+            'mt-0.5 shrink-0 cursor-pointer transition-opacity',
+            task.inFocus
+              ? 'text-signal opacity-100'
+              : 'text-muted-foreground opacity-0 hover:text-signal group-hover/task:opacity-100',
+          )}
+        >
+          <Crosshair className="size-3.5" />
+        </button>
+      ) : null}
     </div>
   )
 }

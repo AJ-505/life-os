@@ -33,6 +33,7 @@ import {
 import { Switch } from '#/design-system/ui/switch'
 import { Textarea } from '#/design-system/ui/textarea'
 
+import { useBoardScope } from '../board-scope'
 import { POSITION_GAP, newId, positionAfter } from '../types'
 import {
   useCreateTask,
@@ -43,10 +44,7 @@ import {
 } from '../queries'
 import { useQuery } from '@tanstack/react-query'
 import { calendarSettingsQueryOptions } from '#/settings/queries'
-import {
-  useGoogleCalendar,
-  useSyncTaskToCalendar,
-} from '#/settings/googleCalendar'
+import { useGoogleCalendar } from '#/settings/googleCalendar'
 import { toast } from 'sonner'
 
 import type { BoardData, Task } from '../types'
@@ -233,10 +231,13 @@ function TaskCalendarFields({
   localDueAt: number | null
   localAddToCal: boolean
   onAddToCal: (v: boolean) => void
-  localReminder: number
+  /** Null means "no explicit choice", so the stored default applies. */
+  localReminder: number | null
   onReminder: (v: number) => void
 }) {
   const { data: calendarSettings } = useQuery(calendarSettingsQueryOptions)
+  const reminder =
+    localReminder ?? calendarSettings?.defaultReminderMinutes ?? 15
   const { connection } = useGoogleCalendar()
   const calendarReady =
     connection.status === 'connected' &&
@@ -267,7 +268,7 @@ function TaskCalendarFields({
       <div className="flex items-center justify-between">
         <Label className="text-sm font-medium">Reminder</Label>
         <Select
-          value={String(localReminder)}
+          value={String(reminder)}
           onValueChange={(v) => onReminder(Number(v))}
         >
           <SelectTrigger size="sm" className="w-[180px] text-xs">
@@ -299,6 +300,16 @@ export function TaskDetails({
   const updateTask = useUpdateTask()
   const moveTask = useMoveTask()
   const setFocus = useSetTaskFocus()
+  const spaceId = useBoardScope()
+
+  // One toggle target for the whole row, so the switch is not the only thing
+  // you can hit. Reading it off the switch alone is what the owner reported.
+  const toggleFocus = () =>
+    setFocus.mutate({
+      id: task.id,
+      inFocus: !task.inFocus,
+      focusOrder: Date.now() / 1000 + POSITION_GAP,
+    })
   const deleteTask = useDeleteTask()
 
   // Title/notes are uncontrolled (committed on blur/close). Controlled state
@@ -313,19 +324,16 @@ export function TaskDetails({
 
   const project = board.find((p) => p.id === task.projectId)
   const activeProjects = board.filter((p) => p.status === 'active')
-  // Only read for the default reminder minutes. Clerk connection state and
-  // hints stay in TaskCalendarFields so the common open path (flag off)
-  // never touches useUser.
-  const { data: calendarSettings } = useQuery(calendarSettingsQueryOptions)
-  const syncToCalendar = useSyncTaskToCalendar()
-  const defaultReminder = calendarSettings?.defaultReminderMinutes ?? 15
+  // No calendar read here. Every calendar read lives in TaskCalendarFields,
+  // which only mounts behind the flag, so a build without the feature makes no
+  // calendar query at all. `enabled: false` was tried and still subscribed.
 
   // Local 24h time + due state — committed only on Done (optimistic close, single toast)
   const [localDueAt, setLocalDueAt] = useState<number | null>(
     task.dueAt ?? null,
   )
-  const [localReminder, setLocalReminder] = useState<number>(
-    task.reminderMinutes ?? defaultReminder,
+  const [localReminder, setLocalReminder] = useState<number | null>(
+    task.reminderMinutes,
   )
   // The toggle reflects stored intent. It used to be derived from
   // `!!task.calendarEventId`, which the board never returned, so it read false
@@ -338,16 +346,10 @@ export function TaskDetails({
   )
   useEffect(() => {
     setLocalDueAt(task.dueAt ?? null)
-    setLocalReminder(task.reminderMinutes ?? defaultReminder)
+    setLocalReminder(task.reminderMinutes)
     setLocalAddToCal(task.addToCalendar)
     setTimeInput(task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00')
-  }, [
-    task.id,
-    task.dueAt,
-    task.reminderMinutes,
-    task.addToCalendar,
-    defaultReminder,
-  ])
+  }, [task.id, task.dueAt, task.reminderMinutes, task.addToCalendar])
 
   // TEMP-PROBE(?perf=1): click-to-dialog-paint. Double rAF lands after the
   // browser paints the mounted dialog. Deleted after the scaling analysis.
@@ -462,16 +464,6 @@ export function TaskDetails({
     const dueAtToCommit = localDueAt
     const reminderToCommit = localReminder
     const addToCalToCommit = localAddToCal
-    const changed =
-      dueAtToCommit !== task.dueAt ||
-      reminderToCommit !== task.reminderMinutes ||
-      addToCalToCommit !== task.addToCalendar ||
-      fieldsChanged(p.fields)
-    // A round trip to Google is worth it when the task wants an event, or
-    // when it already has one that now needs updating or removing. Title and
-    // notes count: they are the event's summary and description.
-    const touchesCalendar =
-      changed && (addToCalToCommit || task.calendarEventId !== null)
     onClose()
     setTimeout(() => {
       p.subtask?.()
@@ -484,13 +476,14 @@ export function TaskDetails({
       } = {}
       if (dueAtToCommit !== task.dueAt) patch.dueAt = dueAtToCommit
       if (reminderToCommit !== task.reminderMinutes)
-        patch.reminderMinutes = reminderToCommit
+        patch.reminderMinutes = reminderToCommit ?? null
       if (addToCalToCommit !== task.addToCalendar)
         patch.addToCalendar = addToCalToCommit
 
-      // Both writes go out together, but the calendar push waits for both to
-      // land: it re-reads the task on the server, so starting it early is how
-      // a renamed task used to reach Google under its old title.
+      // The calendar push is not awaited here. `updateTask` schedules it for
+      // every calendar-relevant field, so one writer owns the change and the
+      // dialog closing cannot race it. Setting a reminder or a date is still
+      // visible immediately, because the task row reports the synced state.
       const written = Promise.all([
         commitFields(p.fields),
         Object.keys(patch).length > 0
@@ -498,21 +491,11 @@ export function TaskDetails({
           : Promise.resolve(),
       ])
 
-      void written
-        .then(() => (touchesCalendar ? syncToCalendar(task.id) : null))
-        .then((outcome) => {
-          if (!outcome) return
-          if (outcome.ok) {
-            if (!outcome.silent) toast.success(outcome.message)
-          } else {
-            toast.error(outcome.message, { description: outcome.detail })
-          }
+      void written.catch((e: unknown) => {
+        toast.error('Could not save the task', {
+          description: e instanceof Error ? e.message : String(e),
         })
-        .catch((e: unknown) => {
-          toast.error('Could not save the task', {
-            description: e instanceof Error ? e.message : String(e),
-          })
-        })
+      })
       after?.()
     }, 0)
   }
@@ -528,7 +511,7 @@ export function TaskDetails({
     pendingRef.current = null
     // Revert deferred due state so a quick reopen shows persisted values
     setLocalDueAt(task.dueAt ?? null)
-    setLocalReminder(task.reminderMinutes ?? 15)
+    setLocalReminder(task.reminderMinutes)
     setLocalAddToCal(!!task.calendarEventId)
     setTimeInput(task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00')
     // Clear any draft input so typed text does not leak into next open
@@ -716,7 +699,7 @@ export function TaskDetails({
             </div>
           </div>
 
-          {CALENDAR_ENABLED ? (
+          {CALENDAR_ENABLED && spaceId === null ? (
             <TaskCalendarFields
               localDueAt={localDueAt}
               localAddToCal={localAddToCal}
@@ -738,27 +721,40 @@ export function TaskDetails({
             draftCaptureRef={draftCaptureRef}
           />
 
-          <div className="flex items-center justify-between rounded-md border px-3 py-2">
-            <span className="flex items-center gap-2 text-sm">
-              <Crosshair
-                className={cn(
-                  'size-4',
-                  task.inFocus ? 'text-signal' : 'text-muted-foreground',
-                )}
+          {/* Focus is personal only: `inFocus` is one boolean on a row every
+              member reads, so a shared board has no focus to show. */}
+          {spaceId === null ? (
+            <div
+              role="switch"
+              aria-checked={task.inFocus}
+              aria-label="In focus"
+              tabIndex={0}
+              onClick={toggleFocus}
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault()
+                  toggleFocus()
+                }
+              }}
+              className="flex cursor-pointer items-center justify-between rounded-md border px-3 py-2 transition-colors hover:bg-accent/50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+            >
+              <span className="flex items-center gap-2 text-sm">
+                <Crosshair
+                  className={cn(
+                    'size-4',
+                    task.inFocus ? 'text-signal' : 'text-muted-foreground',
+                  )}
+                />
+                In focus
+              </span>
+              <Switch
+                checked={task.inFocus}
+                tabIndex={-1}
+                aria-hidden
+                className="pointer-events-none"
               />
-              In focus
-            </span>
-            <Switch
-              checked={task.inFocus}
-              onCheckedChange={(inFocus) =>
-                setFocus.mutate({
-                  id: task.id,
-                  inFocus,
-                  focusOrder: Date.now() / 1000 + POSITION_GAP,
-                })
-              }
-            />
-          </div>
+            </div>
+          ) : null}
         </div>
 
         <DialogFooter className="flex-row justify-between sm:justify-between">

@@ -20,7 +20,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '#/design-system/ui/dialog'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '#/design-system/ui/tabs'
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '#/design-system/ui/tabs'
 
 import {
   boardQueryOptions,
@@ -81,8 +86,7 @@ function ProjectRow({
   const [confirming, setConfirming] = useState(false)
 
   const doneCount = project.tasks.filter((t) => t.done).length
-  const when =
-    variant === 'shelf' ? project.shelvedAt : project.finishedAt
+  const when = variant === 'shelf' ? project.shelvedAt : project.finishedAt
 
   return (
     <div
@@ -105,7 +109,9 @@ function ProjectRow({
             variant="secondary"
             size="sm"
             className="gap-1.5"
-            onClick={() => setStatus.mutate({ id: project.id, status: 'active' })}
+            onClick={() =>
+              setStatus.mutate({ id: project.id, status: 'active' })
+            }
           >
             <RotateCcw className="size-3.5" /> Restore
           </Button>
@@ -196,7 +202,13 @@ function ArchivedTaskRow({
   )
 }
 
-function EmptyState({ icon: Icon, text }: { icon: typeof Archive; text: string }) {
+function EmptyState({
+  icon: Icon,
+  text,
+}: {
+  icon: typeof Archive
+  text: string
+}) {
   return (
     <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed p-10 text-center">
       <Icon className="size-6 text-muted-foreground/50" />
@@ -206,7 +218,7 @@ function EmptyState({ icon: Icon, text }: { icon: typeof Archive; text: string }
 }
 
 export function LibraryView() {
-  const { data: board } = useSuspenseQuery(boardQueryOptions)
+  const { data: board } = useSuspenseQuery(boardQueryOptions(null))
 
   const shelved = board
     .filter((p) => p.status === 'shelved')
@@ -247,9 +259,7 @@ export function LibraryView() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-baseline gap-3 border-b px-4 py-2.5">
         <h1 className="text-lg font-bold tracking-tight">Library</h1>
-        <span className="os-label">
-          out of sight, not out of reach
-        </span>
+        <span className="os-label">out of sight, not out of reach</span>
       </div>
 
       <div className="board-scroll min-h-0 flex-1 overflow-y-auto">
@@ -344,7 +354,11 @@ export function LibraryView() {
                 />
               ) : (
                 archivedTasks.map(({ task, project }) => (
-                  <ArchivedTaskRow key={task.id} task={task} project={project} />
+                  <ArchivedTaskRow
+                    key={task.id}
+                    task={task}
+                    project={project}
+                  />
                 ))
               )}
             </TabsContent>

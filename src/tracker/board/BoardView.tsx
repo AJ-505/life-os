@@ -199,11 +199,13 @@ function NewProjectDialog({
   onClose,
   gridCol,
   board,
+  spaceId,
 }: {
   open: boolean
   onClose: () => void
   gridCol: number
   board: BoardData
+  spaceId: string | null
 }) {
   const createProject = useCreateProject()
   const [name, setName] = useState('')
@@ -218,6 +220,7 @@ function NewProjectDialog({
       id: newId(),
       name: n,
       color,
+      spaceId,
       gridCol,
       gridRow: positionAfter(
         columnProjects(board, gridCol).map((p) => ({ position: p.gridRow })),
@@ -469,8 +472,8 @@ function FastDragOverlay({
   )
 }
 
-export function BoardView() {
-  const { data: board } = useSuspenseQuery(boardQueryOptions)
+export function BoardView({ spaceId }: { spaceId: string | null }) {
+  const { data: board } = useSuspenseQuery(boardQueryOptions(spaceId))
   const moveProject = useMoveProject()
   const moveTask = useMoveTask()
   const setFocus = useSetTaskFocus()
@@ -533,38 +536,38 @@ export function BoardView() {
   }
 
   const onDragStart = (e: DragStartEvent) => {
-      const parsed = parseDragId(e.active.id)
-      if (!parsed) return
-      // Remember where inside the item the pointer grabbed, so the overlay can
-      // track the cursor 1:1 (see FastDragOverlay).
-      const activator = e.activatorEvent as PointerEvent | null
-      const rect = e.active.rect.current.initial
-      grabOffset.current =
-        activator && 'clientX' in activator && rect
-          ? { x: activator.clientX - rect.left, y: activator.clientY - rect.top }
-          : { x: 10, y: 10 }
-      // The item's starting top-left, so the overlay can be seeded there before
-      // the first pointermove (prevents a top-left flash on a fresh portal node).
-      initialPos.current = rect ? { x: rect.left, y: rect.top } : { x: 0, y: 0 }
-      if (parsed.kind === 'proj') {
-        const project = board.find((p) => p.id === parsed.key)
-        if (project) setActiveDrag({ type: 'proj', project })
-        setDragKind('proj')
-      } else if (parsed.kind === 'task') {
-        const found = findTask(parsed.key)
-        if (found) setActiveDrag({ type: 'task', task: found.task })
-        setDragKind('task')
-      } else if (parsed.kind === 'fitem') {
-        const found = findTask(parsed.key)
-        if (found)
-          setActiveDrag({
-            type: 'fitem',
-            task: found.task,
-            project: found.project,
-          })
-        setDragKind('fitem')
-      }
+    const parsed = parseDragId(e.active.id)
+    if (!parsed) return
+    // Remember where inside the item the pointer grabbed, so the overlay can
+    // track the cursor 1:1 (see FastDragOverlay).
+    const activator = e.activatorEvent as PointerEvent | null
+    const rect = e.active.rect.current.initial
+    grabOffset.current =
+      activator && 'clientX' in activator && rect
+        ? { x: activator.clientX - rect.left, y: activator.clientY - rect.top }
+        : { x: 10, y: 10 }
+    // The item's starting top-left, so the overlay can be seeded there before
+    // the first pointermove (prevents a top-left flash on a fresh portal node).
+    initialPos.current = rect ? { x: rect.left, y: rect.top } : { x: 0, y: 0 }
+    if (parsed.kind === 'proj') {
+      const project = board.find((p) => p.id === parsed.key)
+      if (project) setActiveDrag({ type: 'proj', project })
+      setDragKind('proj')
+    } else if (parsed.kind === 'task') {
+      const found = findTask(parsed.key)
+      if (found) setActiveDrag({ type: 'task', task: found.task })
+      setDragKind('task')
+    } else if (parsed.kind === 'fitem') {
+      const found = findTask(parsed.key)
+      if (found)
+        setActiveDrag({
+          type: 'fitem',
+          task: found.task,
+          project: found.project,
+        })
+      setDragKind('fitem')
     }
+  }
 
   const onDragEnd = (e: DragEndEvent) => {
     setActiveDrag(null)
@@ -688,8 +691,8 @@ export function BoardView() {
         focusSide,
       )
       setFocus.mutate({ id: src.key, inFocus: true, focusOrder })
-      }
     }
+  }
 
   const onDragCancel = () => {
     setActiveDrag(null)
@@ -745,35 +748,42 @@ export function BoardView() {
             </div>
           </div>
 
-          {focusOpen ? (
+          {/* Focus is a personal working set, and `inFocus` is one shared
+              boolean on a row, so a shared board has no rail to show. */}
+          {focusOpen && spaceId === null ? (
             <ResizableFocusPanel board={board} onClose={closeFocus} />
           ) : null}
         </div>
 
         {/* Mobile focus */}
-        <Button
-          size="icon"
-          aria-label="Open focus"
-          className="fixed bottom-5 right-5 z-40 size-12 rounded-full bg-signal text-signal-foreground shadow-xl hover:bg-signal/90 lg:hidden"
-          onClick={() => setMobileFocusOpen(true)}
-        >
-          <Crosshair className="size-5" />
-        </Button>
-        <Sheet open={mobileFocusOpen} onOpenChange={setMobileFocusOpen}>
-          <SheetContent
-            side="right"
-            noAnimation
-            className="w-[88vw] max-w-sm p-0 pt-8"
+        {spaceId === null ? (
+          <Button
+            size="icon"
+            aria-label="Open focus"
+            className="fixed bottom-5 right-5 z-40 size-12 rounded-full bg-signal text-signal-foreground shadow-xl hover:bg-signal/90 lg:hidden"
+            onClick={() => setMobileFocusOpen(true)}
           >
-            <FocusPanel board={board} />
-          </SheetContent>
-        </Sheet>
+            <Crosshair className="size-5" />
+          </Button>
+        ) : null}
+        {spaceId === null ? (
+          <Sheet open={mobileFocusOpen} onOpenChange={setMobileFocusOpen}>
+            <SheetContent
+              side="right"
+              noAnimation
+              className="w-[88vw] max-w-sm p-0 pt-8"
+            >
+              <FocusPanel board={board} />
+            </SheetContent>
+          </Sheet>
+        ) : null}
 
         <NewProjectDialog
           open={newProjectCol !== null}
           onClose={() => setNewProjectCol(null)}
           gridCol={newProjectCol ?? 0}
           board={board}
+          spaceId={spaceId}
         />
 
         <FastDragOverlay

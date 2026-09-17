@@ -9,7 +9,7 @@
     "module": "ESNext",
     "target": "ESNext",
     "lib": ["ES2021", "dom"],
-    "types": ["node"],
+    "types": ["node", "vite/client"],
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
     "noEmit": true

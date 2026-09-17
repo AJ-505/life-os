@@ -118,16 +118,36 @@
   --proj-slate: oklch(0.73 0.03 250);
 }
 
-[data-proj='flame'] { --proj: var(--proj-flame); }
-[data-proj='saffron'] { --proj: var(--proj-saffron); }
-[data-proj='moss'] { --proj: var(--proj-moss); }
-[data-proj='sea'] { --proj: var(--proj-sea); }
-[data-proj='sky'] { --proj: var(--proj-sky); }
-[data-proj='iris'] { --proj: var(--proj-iris); }
-[data-proj='orchid'] { --proj: var(--proj-orchid); }
-[data-proj='rose'] { --proj: var(--proj-rose); }
-[data-proj='clay'] { --proj: var(--proj-clay); }
-[data-proj='slate'] { --proj: var(--proj-slate); }
+[data-proj='flame'] {
+  --proj: var(--proj-flame);
+}
+[data-proj='saffron'] {
+  --proj: var(--proj-saffron);
+}
+[data-proj='moss'] {
+  --proj: var(--proj-moss);
+}
+[data-proj='sea'] {
+  --proj: var(--proj-sea);
+}
+[data-proj='sky'] {
+  --proj: var(--proj-sky);
+}
+[data-proj='iris'] {
+  --proj: var(--proj-iris);
+}
+[data-proj='orchid'] {
+  --proj: var(--proj-orchid);
+}
+[data-proj='rose'] {
+  --proj: var(--proj-rose);
+}
+[data-proj='clay'] {
+  --proj: var(--proj-clay);
+}
+[data-proj='slate'] {
+  --proj: var(--proj-slate);
+}
 
 @theme inline {
   --font-sans:
@@ -273,4 +293,18 @@ body::after {
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/*
+ * Radix wraps a ScrollArea's children in a `display: table; min-width: 100%`
+ * box so tables can scroll sideways. That box sizes to its content's
+ * min-content and is not capped by the viewport, so one unbreakable string
+ * inside a bounded-width area grows the box past its container and clips
+ * whatever sits at the right edge. Making it a block restores the cap; children
+ * that need to shrink already carry `min-w-0`.
+ */
+[data-slot='scroll-area-viewport'] > div {
+  /* Radix sets these inline, so the override has to win. */
+  display: block !important;
+  min-width: 0 !important;
 }

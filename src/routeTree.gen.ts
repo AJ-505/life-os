@@ -15,6 +15,7 @@ import { Route as SpacesRouteImport } from './routes/spaces'
 import { Route as SsoCallbackRouteImport } from './routes/sso-callback'
 import { Route as TimelineRouteImport } from './routes/timeline'
 import { Route as JoinInviteCodeRouteImport } from './routes/join.$inviteCode'
+import { Route as SpaceSpaceIdRouteImport } from './routes/space.$spaceId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -46,6 +47,11 @@ const JoinInviteCodeRoute = JoinInviteCodeRouteImport.update({
   path: '/join/$inviteCode',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SpaceSpaceIdRoute = SpaceSpaceIdRouteImport.update({
+  id: '/space/$spaceId',
+  path: '/space/$spaceId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -54,6 +60,7 @@ export interface FileRoutesByFullPath {
   '/sso-callback': typeof SsoCallbackRoute
   '/timeline': typeof TimelineRoute
   '/join/$inviteCode': typeof JoinInviteCodeRoute
+  '/space/$spaceId': typeof SpaceSpaceIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -62,6 +69,7 @@ export interface FileRoutesByTo {
   '/sso-callback': typeof SsoCallbackRoute
   '/timeline': typeof TimelineRoute
   '/join/$inviteCode': typeof JoinInviteCodeRoute
+  '/space/$spaceId': typeof SpaceSpaceIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -71,6 +79,7 @@ export interface FileRoutesById {
   '/sso-callback': typeof SsoCallbackRoute
   '/timeline': typeof TimelineRoute
   '/join/$inviteCode': typeof JoinInviteCodeRoute
+  '/space/$spaceId': typeof SpaceSpaceIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -81,6 +90,7 @@ export interface FileRouteTypes {
     | '/sso-callback'
     | '/timeline'
     | '/join/$inviteCode'
+    | '/space/$spaceId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -89,6 +99,7 @@ export interface FileRouteTypes {
     | '/sso-callback'
     | '/timeline'
     | '/join/$inviteCode'
+    | '/space/$spaceId'
   id:
     | '__root__'
     | '/'
@@ -97,6 +108,7 @@ export interface FileRouteTypes {
     | '/sso-callback'
     | '/timeline'
     | '/join/$inviteCode'
+    | '/space/$spaceId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -106,6 +118,7 @@ export interface RootRouteChildren {
   SsoCallbackRoute: typeof SsoCallbackRoute
   TimelineRoute: typeof TimelineRoute
   JoinInviteCodeRoute: typeof JoinInviteCodeRoute
+  SpaceSpaceIdRoute: typeof SpaceSpaceIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -152,6 +165,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof JoinInviteCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/space/$spaceId': {
+      id: '/space/$spaceId'
+      path: '/space/$spaceId'
+      fullPath: '/space/$spaceId'
+      preLoaderRoute: typeof SpaceSpaceIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -162,6 +182,7 @@ const rootRouteChildren: RootRouteChildren = {
   SsoCallbackRoute: SsoCallbackRoute,
   TimelineRoute: TimelineRoute,
   JoinInviteCodeRoute: JoinInviteCodeRoute,
+  SpaceSpaceIdRoute: SpaceSpaceIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

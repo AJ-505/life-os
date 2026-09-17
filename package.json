@@ -12,10 +12,12 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "convex:deploy": "convex deploy",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p convex/tsconfig.json",
     "lint": "oxlint",
     "format": "prettier --write . && oxlint --fix",
     "check": "prettier --check .",
+    "check:contract": "node scripts/check-convex-contract.mjs",
+    "convex:deploy": "convex deploy",
     "school:sync": "tsx scripts/school-sync.ts"
   },
   "dependencies": {
@@ -53,6 +55,7 @@
     "zod": "^4.5.4"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "@tailwindcss/typography": "^0.5.16",
     "@tanstack/devtools-vite": "latest",
     "@tanstack/router-cli": "^1.132.0",
@@ -63,10 +66,11 @@
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.1.1",
     "concurrently": "^10.0.3",
+    "convex-test": "^0.0.54",
     "dotenv": "^17.3.1",
     "jsdom": "^28.1.0",
-    "oxlint": "^1.81.0",
     "oxc-transform-react": "^0.148.0",
+    "oxlint": "^1.81.0",
     "portless": "^0.15.4",
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
