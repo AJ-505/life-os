@@ -40,3 +40,15 @@ export function useLeaveSpace() {
 export function useDeleteSpace() {
   return useMutation({ mutationFn: useConvexMutation(api.spaces.deleteSpace) })
 }
+
+/** Issue a new invite link for a space. Owner only, enforced on the server. */
+export function useResetInviteCode() {
+  return useMutation({
+    mutationFn: useConvexMutation(api.spaces.resetInviteCode),
+  })
+}
+
+/** Take one person's access away and rotate the link, in one transaction. */
+export function useRemoveMember() {
+  return useMutation({ mutationFn: useConvexMutation(api.spaces.removeMember) })
+}

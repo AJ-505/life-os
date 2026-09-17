@@ -1,18 +1,26 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { Crosshair, Link as LinkIcon, Plus, Users } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  Crosshair,
+  Link as LinkIcon,
+  Plus,
+  Users,
+} from 'lucide-react'
 import { toast } from 'sonner'
 
 import { cn } from '#/design-system'
 import { Button } from '#/design-system/ui/button'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '#/design-system/ui/select'
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '#/design-system/ui/dropdown-menu'
 import { Switch } from '#/design-system/ui/switch'
 
 import { mySpacesQueryOptions, useSpaceMembers } from '#/spaces/queries'
@@ -61,52 +69,74 @@ function SpaceTitle({ spaceId }: { spaceId: string }) {
   return <>{name ?? 'Shared board'}</>
 }
 
-/** The board switcher, and the shared-board actions. Personal is a peer of
- *  every space rather than a hidden default. */
-function SpaceChrome({ spaceId }: { spaceId: string | null }) {
+/**
+ * The space switcher, and the shared-board actions.
+ *
+ * A menu of links rather than a select: this is navigation between places, so
+ * every entry is a real anchor with working keyboard and middle-click
+ * behaviour, and a handful of items cannot produce a scrolling list. Only
+ * mounted inside a space, so the personal board has no spaces chrome at all.
+ */
+function SpaceChrome({ spaceId }: { spaceId: string }) {
   const navigate = useNavigate()
   const { data: spaces } = useQuery({ ...mySpacesQueryOptions, retry: false })
   const [shareOpen, setShareOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+
   const list = spaces ?? []
-  const current =
-    spaceId === null ? null : (list.find((s) => s.id === spaceId) ?? null)
+  const current = list.find((s) => s.id === spaceId) ?? null
 
   return (
     <>
-      <Select
-        value={spaceId ?? 'personal'}
-        onValueChange={(next) => {
-          if (next === 'personal') void navigate({ to: '/' })
-          else
-            void navigate({
-              to: '/space/$spaceId',
-              params: { spaceId: next },
-            })
-        }}
-      >
-        <SelectTrigger size="sm" className="h-8 w-[9.5rem] text-xs">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="personal">Personal</SelectItem>
-          {list.map((s) => (
-            <SelectItem key={s.id} value={s.id}>
-              {s.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-
-      <Link
-        to="/spaces"
-        className="no-underline"
-        title="Manage spaces"
-        aria-label="Manage spaces"
-      >
-        <Button variant="ghost" size="sm" className="h-8 px-2 text-xs">
-          Spaces
-        </Button>
-      </Link>
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 max-w-[11rem] gap-1.5"
+            aria-label="Switch space"
+            title="Switch space"
+          >
+            <span className="truncate">{current?.name ?? 'Shared board'}</span>
+            <ChevronDown className="size-3.5 shrink-0 opacity-60" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          className="max-h-72 w-56 overflow-y-auto"
+        >
+          <DropdownMenuLabel className="font-semibold">
+            Your spaces
+          </DropdownMenuLabel>
+          {list.length === 0 ? (
+            <DropdownMenuItem disabled>No spaces yet</DropdownMenuItem>
+          ) : (
+            list.map((s) => (
+              <DropdownMenuItem
+                key={s.id}
+                asChild
+                onSelect={() => setMenuOpen(false)}
+              >
+                <Link
+                  to="/space/$spaceId"
+                  params={{ spaceId: s.id }}
+                  className="no-underline"
+                  // Radix closes on select only when the item handles the click;
+                  // a Link prevents default, so the close is explicit here.
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                  {s.id === spaceId ? <Check className="size-3.5" /> : null}
+                </Link>
+              </DropdownMenuItem>
+            ))
+          )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={() => void navigate({ to: '/spaces' })}>
+            All spaces…
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       {current ? (
         <>
@@ -135,8 +165,6 @@ function SpaceChrome({ spaceId }: { spaceId: string | null }) {
             open={shareOpen}
             onClose={() => setShareOpen(false)}
             spaceId={current.id}
-            spaceName={current.name}
-            inviteCode={current.inviteCode}
           />
         </>
       ) : null}
@@ -149,8 +177,9 @@ function SpaceChrome({ spaceId }: { spaceId: string | null }) {
  * never from localStorage: a space that only exists in this browser would be a
  * space with no server behind it.
  *
- * The spaces chrome is a child that only mounts when the build flag is on, so a
- * gated build runs no spaces query at all.
+ * The spaces chrome mounts only inside a space, and only when the build flag is
+ * on, so the personal board carries none of it and a flag-off build runs no
+ * spaces query from here.
  */
 export function BoardHeader({
   activeCount,
@@ -172,17 +201,14 @@ export function BoardHeader({
   onToggleFocus: () => void
 }) {
   const spaceId = useBoardScope()
+  const inSpace = SPACES_ENABLED && spaceId !== null
 
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2.5 sm:px-4">
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
         <div className="hidden items-center gap-2.5 sm:flex">
           <h1 className="text-lg font-bold leading-none tracking-tight">
-            {spaceId === null || !SPACES_ENABLED ? (
-              'Board'
-            ) : (
-              <SpaceTitle spaceId={spaceId} />
-            )}
+            {inSpace ? <SpaceTitle spaceId={spaceId} /> : 'Board'}
           </h1>
           <span className="hidden text-sm leading-none text-muted-foreground lg:inline">
             {activeCount} projects · {openCount} open tasks
@@ -190,7 +216,7 @@ export function BoardHeader({
         </div>
       </div>
       <div className="flex items-center gap-1.5 sm:gap-2">
-        {SPACES_ENABLED ? <SpaceChrome spaceId={spaceId} /> : null}
+        {inSpace ? <SpaceChrome spaceId={spaceId} /> : null}
         <label className="flex cursor-pointer items-center gap-1.5">
           <Switch
             checked={showDone}

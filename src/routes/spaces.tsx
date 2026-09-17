@@ -329,7 +329,7 @@ function SpacesView() {
                 : confirm
                   ? confirm.space.role === 'owner'
                     ? `You own “${confirm.space.name}”. Leaving hands it to the longest-standing member and changes the invite code.`
-                    : `You will lose access to “${confirm.space.name}”. You can rejoin with an invite link.`
+                    : `You will lose access to “${confirm.space.name}”. The invite link keeps working for other people, so if you need your access gone for good, ask the owner to reset it.`
                   : null}
             </DialogDescription>
           </DialogHeader>
@@ -354,8 +354,6 @@ function SpacesView() {
           open={shareSpace !== null}
           onClose={() => setShareSpace(null)}
           spaceId={shareSpace.id}
-          spaceName={shareSpace.name}
-          inviteCode={shareSpace.inviteCode}
         />
       ) : null}
     </div>

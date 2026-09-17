@@ -473,6 +473,9 @@ function FastDragOverlay({
 }
 
 export function BoardView({ spaceId }: { spaceId: string | null }) {
+  // A revoked membership is handled by the space route's own guard, which
+  // watches this same query and renders an explanation. `useSuspenseQuery`
+  // forces its own `throwOnError`, so an override here would be inert.
   const { data: board } = useSuspenseQuery(boardQueryOptions(spaceId))
   const moveProject = useMoveProject()
   const moveTask = useMoveTask()

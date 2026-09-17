@@ -528,3 +528,245 @@ describe('the pre-Spaces client contract', () => {
     expect(board[0].tasks.map((x) => x.id)).toEqual(['t-old-client'])
   })
 })
+
+/**
+ * Two rows for one pair, which the schema permits. The app cannot create one:
+ * Convex serialises the double join, measured. An out-of-band duplicate is what
+ * the reader and the removal have to survive.
+ */
+async function seedDuplicateMembership(t: T, spaceId: string, userId: string) {
+  await t.run(async (ctx) => {
+    await ctx.db.insert('spaceMembers', {
+      spaceId,
+      userId,
+      role: 'member',
+      joinedAt: Date.now() + 1000,
+    })
+  })
+}
+
+async function membershipRows(t: T, spaceId: string, userId: string) {
+  return await t.run(async (ctx) =>
+    ctx.db
+      .query('spaceMembers')
+      .withIndex('by_space_user', (q) =>
+        q.eq('spaceId', spaceId).eq('userId', userId),
+      )
+      .collect(),
+  )
+}
+
+describe('revocation: reset the link', () => {
+  it('rotates the code, kills the old link, and keeps members in', async () => {
+    const t = convexTest(schema, modules)
+    const space = await twoMemberSpace(t)
+
+    const result = await asUser(t, 'user_a').mutation(
+      api.spaces.resetInviteCode,
+      {
+        spaceId: space.id,
+      },
+    )
+    expect(result.inviteCode).not.toBe(space.inviteCode)
+
+    // The link that leaked no longer resolves, for anyone.
+    const replayOld = await asUser(t, 'user_c').mutation(
+      api.spaces.joinSpaceByCode,
+      {
+        inviteCode: space.inviteCode,
+      },
+    )
+    expect(replayOld.ok).toBe(false)
+    if (!replayOld.ok) expect(replayOld.reason).toBe('not_found')
+
+    // The new link works.
+    const replayNew = await asUser(t, 'user_c').mutation(
+      api.spaces.joinSpaceByCode,
+      {
+        inviteCode: result.inviteCode,
+      },
+    )
+    expect(replayNew.ok).toBe(true)
+
+    // And the members who were already in keep their access.
+    const board = await asUser(t, 'user_b').query(api.tracker.getBoard, {
+      spaceId: space.id,
+    })
+    expect(board).toEqual([])
+  })
+
+  it('is refused for a non-owner', async () => {
+    const t = convexTest(schema, modules)
+    const space = await twoMemberSpace(t)
+    await expect(
+      asUser(t, 'user_b').mutation(api.spaces.resetInviteCode, {
+        spaceId: space.id,
+      }),
+    ).rejects.toThrow(/Only the owner/)
+  })
+})
+
+describe('revocation: remove a member', () => {
+  it('deletes every row, rotates the code, and the held link stops working', async () => {
+    const t = convexTest(schema, modules)
+    const space = await twoMemberSpace(t)
+    await seedDuplicateMembership(t, space.id, 'user_b')
+    expect(await membershipRows(t, space.id, 'user_b')).toHaveLength(2)
+
+    const result = await asUser(t, 'user_a').mutation(api.spaces.removeMember, {
+      spaceId: space.id,
+      userId: 'user_b',
+    })
+
+    // Both rows, not the one a read happened to return.
+    expect(await membershipRows(t, space.id, 'user_b')).toHaveLength(0)
+    expect(result.inviteCode).not.toBe(space.inviteCode)
+
+    // The member list the dialog renders no longer shows them.
+    const members = await asUser(t, 'user_a').query(
+      api.spaces.getSpaceMembers,
+      {
+        spaceId: space.id,
+      },
+    )
+    expect(members.map((m) => m.userId)).toEqual(['user_a'])
+
+    // They lose access right away.
+    await expect(
+      asUser(t, 'user_b').query(api.tracker.getBoard, { spaceId: space.id }),
+    ).rejects.toThrow()
+
+    // And the link they were holding does not put them back in.
+    const replay = await asUser(t, 'user_b').mutation(
+      api.spaces.joinSpaceByCode,
+      {
+        inviteCode: space.inviteCode,
+      },
+    )
+    expect(replay.ok).toBe(false)
+    if (!replay.ok) expect(replay.reason).toBe('not_found')
+    expect(await membershipRows(t, space.id, 'user_b')).toHaveLength(0)
+
+    // The new link would let them back, which is the owner's choice to share.
+    const rejoin = await asUser(t, 'user_b').mutation(
+      api.spaces.joinSpaceByCode,
+      {
+        inviteCode: result.inviteCode,
+      },
+    )
+    expect(rejoin.ok).toBe(true)
+  })
+
+  it('leaves the removed member content in the space', async () => {
+    const t = convexTest(schema, modules)
+    const space = await twoMemberSpace(t)
+    await spaceProject(t, 'user_b', space.id, 'p-b', 'B project')
+    await asUser(t, 'user_b').mutation(api.tracker.createTask, {
+      id: 't-b',
+      projectId: 'p-b',
+      title: 'B task',
+      position: 1024,
+    })
+    await asUser(t, 'user_a').mutation(api.spaces.removeMember, {
+      spaceId: space.id,
+      userId: 'user_b',
+    })
+    const board = await asUser(t, 'user_a').query(api.tracker.getBoard, {
+      spaceId: space.id,
+    })
+    expect(board.map((p) => p.id)).toEqual(['p-b'])
+    expect(board[0].tasks.map((x) => x.id)).toEqual(['t-b'])
+  })
+
+  it('refuses a non-owner, the owner, yourself, and removing nobody', async () => {
+    const t = convexTest(schema, modules)
+    const space = await twoMemberSpace(t)
+    await expect(
+      asUser(t, 'user_b').mutation(api.spaces.removeMember, {
+        spaceId: space.id,
+        userId: 'user_a',
+      }),
+    ).rejects.toThrow(/Only the owner/)
+
+    await expect(
+      asUser(t, 'user_a').mutation(api.spaces.removeMember, {
+        spaceId: space.id,
+        userId: 'user_a',
+      }),
+    ).rejects.toThrow(/Leave the space instead/)
+
+    const before = (
+      await asUser(t, 'user_a').query(api.spaces.getMySpaces, {})
+    )[0].inviteCode
+    await expect(
+      asUser(t, 'user_a').mutation(api.spaces.removeMember, {
+        spaceId: space.id,
+        userId: 'user_zzz',
+      }),
+    ).rejects.toThrow(/not a member/)
+
+    // Removing nobody must not rotate: that breaks the link for pending joiners
+    // in exchange for nothing.
+    const after = (
+      await asUser(t, 'user_a').query(api.spaces.getMySpaces, {})
+    )[0].inviteCode
+    expect(after).toBe(before)
+  })
+})
+
+describe('revocation: leaving clears every row', () => {
+  it('a duplicate row does not survive a leave', async () => {
+    const t = convexTest(schema, modules)
+    const space = await twoMemberSpace(t)
+    await seedDuplicateMembership(t, space.id, 'user_b')
+
+    await asUser(t, 'user_b').mutation(api.spaces.leaveSpace, {
+      spaceId: space.id,
+    })
+
+    expect(await membershipRows(t, space.id, 'user_b')).toHaveLength(0)
+    await expect(
+      asUser(t, 'user_b').query(api.tracker.getBoard, { spaceId: space.id }),
+    ).rejects.toThrow()
+  })
+})
+
+describe('the spaces list', () => {
+  it('lists a space once and derives the role from the space owner', async () => {
+    const t = convexTest(schema, modules)
+    const space = await twoMemberSpace(t)
+    await seedDuplicateMembership(t, space.id, 'user_b')
+
+    const mine = await asUser(t, 'user_b').query(api.spaces.getMySpaces, {})
+    expect(mine.map((s) => s.id)).toEqual([space.id])
+    expect(mine[0].role).toBe('member')
+
+    // The owner reads owner from the same field, even after a hand-off.
+    const ownerView = await asUser(t, 'user_a').query(
+      api.spaces.getMySpaces,
+      {},
+    )
+    expect(ownerView[0].role).toBe('owner')
+    await asUser(t, 'user_a').mutation(api.spaces.leaveSpace, {
+      spaceId: space.id,
+    })
+    const afterHandOff = await asUser(t, 'user_b').query(
+      api.spaces.getMySpaces,
+      {},
+    )
+    expect(afterHandOff[0].role).toBe('owner')
+  })
+
+  it('lists each member once even with a duplicate row', async () => {
+    const t = convexTest(schema, modules)
+    const space = await twoMemberSpace(t)
+    await seedDuplicateMembership(t, space.id, 'user_b')
+    const members = await asUser(t, 'user_a').query(
+      api.spaces.getSpaceMembers,
+      {
+        spaceId: space.id,
+      },
+    )
+    expect(members.map((m) => m.userId)).toEqual(['user_a', 'user_b'])
+  })
+})

@@ -18,6 +18,11 @@
  * Read only: every probe is unauthenticated, so a mutation cannot write.
  */
 import { readFileSync } from 'node:fs'
+import { setDefaultResultOrder } from 'node:dns'
+
+// This host's IPv6 route to Cloudflare drops connections often enough to fail
+// the check at random. Prefer A records so a clean run means a clean contract.
+setDefaultResultOrder('ipv4first')
 
 const args = process.argv.slice(2)
 const urlFlag = args.indexOf('--url')
@@ -123,6 +128,12 @@ const LIVE_CLIENT_SENDS = {
     ],
   },
   'spaces:getMySpaces': null,
+  // The rebuilt live bundle (6013fca) reaches these three as well. Unknown
+  // fields are rejected, so a shape change on any of them breaks the deployed
+  // client exactly like a missing required field does.
+  'spaces:getSpaceMembers': { spaceId: 'contract-probe' },
+  'spaces:deleteSpace': { spaceId: 'contract-probe' },
+  'spaces:leaveSpace': { spaceId: 'contract-probe' },
   'spaces:createSpace': {
     name: 'contract probe',
     id: 'contract-probe',
@@ -143,8 +154,25 @@ function deployment() {
   return line.slice('VITE_CONVEX_URL='.length).trim().replace(/\/$/, '')
 }
 
+/**
+ * A fetch that survives a flaky network. Without this the check dies on one
+ * dropped connection, which reads as "unknown" rather than "clean".
+ */
+async function get(url, init) {
+  let last
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      return await fetch(url, init)
+    } catch (error) {
+      last = error
+      await new Promise((resolve) => setTimeout(resolve, 400 * attempt))
+    }
+  }
+  throw last
+}
+
 async function chunks() {
-  const html = await (await fetch(APP)).text()
+  const html = await (await get(APP)).text()
   // Both forms appear in a Vite build: `/assets/x.js` in the HTML, and a bare
   // `assets/x.js` inside the preload manifest a chunk carries. Matching only the
   // leading-slash form is what made an earlier check miss every route chunk.
@@ -164,7 +192,7 @@ async function chunks() {
     if (next.length === 0) break
     for (const chunk of next) {
       seen.add(chunk)
-      const res = await fetch(APP + chunk)
+      const res = await get(APP + chunk)
       if (!res.ok) continue
       const src = await res.text()
       for (const m of src.matchAll(ASSET))
@@ -177,7 +205,7 @@ async function chunks() {
 async function referencedFunctions() {
   const refs = new Set()
   for (const chunk of await chunks()) {
-    const res = await fetch(APP + chunk)
+    const res = await get(APP + chunk)
     if (!res.ok) continue
     const src = await res.text()
     // `$` is a legal identifier character in a minified bundle.
@@ -197,7 +225,7 @@ async function referencedFunctions() {
 }
 
 async function call(convexUrl, kind, path, body) {
-  const res = await fetch(`${convexUrl}/api/${kind}`, {
+  const res = await get(`${convexUrl}/api/${kind}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

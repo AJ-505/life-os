@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from '@tanstack/react-router'
+import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import {
   CalendarRange,
@@ -83,7 +83,22 @@ function NavLinks({
   onNavigate?: () => void
   collapsed?: boolean
 }) {
-  const item = (to: string, label: string, Icon: typeof Users) => {
+  const pathname = useRouterState({ select: (s) => s.location.pathname })
+  /**
+   * `/spaces` cannot prefix-match `/space/<id>`, so the Spaces tab needs its own
+   * rule. The first path segment covers every form: `/spaces`, `/spaces/<id>`,
+   * `/space/<id>`. `/join/<code>` is deliberately excluded, because you are not
+   * in a space until the join lands.
+   */
+  const segment = pathname.split('/')[1] ?? ''
+  const inSpacesArea = segment === 'spaces' || segment === 'space'
+
+  const item = (
+    to: string,
+    label: string,
+    Icon: typeof Users,
+    alsoActive = false,
+  ) => {
     const link = (
       <Link
         key={to}
@@ -92,23 +107,26 @@ function NavLinks({
         className="no-underline"
         activeOptions={{ exact: to === '/' }}
       >
-        {({ isActive }) => (
-          <span
-            className={cn(
-              'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
-              collapsed && 'justify-center px-0',
-              isActive
-                ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
-            )}
-          >
-            <Icon
-              className={cn('size-4', isActive && 'text-signal')}
-              strokeWidth={isActive ? 2.4 : 2}
-            />
-            {!collapsed ? label : null}
-          </span>
-        )}
+        {({ isActive }) => {
+          const active = isActive || alsoActive
+          return (
+            <span
+              className={cn(
+                'flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors',
+                collapsed && 'justify-center px-0',
+                active
+                  ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                  : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
+              )}
+            >
+              <Icon
+                className={cn('size-4', active && 'text-signal')}
+                strokeWidth={active ? 2.4 : 2}
+              />
+              {!collapsed ? label : null}
+            </span>
+          )
+        }}
       </Link>
     )
     return collapsed ? (
@@ -128,7 +146,7 @@ function NavLinks({
       {/* Spaces teaser: its own group below the main nav. It stays
           visible while Spaces is gated and lands on the ComingSoon page. */}
       <nav className="flex flex-col gap-1" aria-label="Spaces">
-        {item('/spaces', 'Spaces', Users)}
+        {item('/spaces', 'Spaces', Users, inSpacesArea)}
       </nav>
     </>
   )

@@ -153,14 +153,37 @@ export async function scopeTasks(
     .collect()
 }
 
+/**
+ * Remove every membership row a user holds in a space.
+ *
+ * `spaceMembers` has no unique index and a join is a read-then-insert, so two
+ * rows for one pair are reachable (see the note on `isSpaceMember`). Deleting
+ * only the row a read happened to return leaves the pair with a row, which
+ * means the user keeps full access. Anything that revokes access uses this.
+ */
+export async function dropMembership(
+  ctx: MutationCtx,
+  spaceId: string,
+  userId: string,
+): Promise<number> {
+  const rows = await ctx.db
+    .query('spaceMembers')
+    .withIndex('by_space_user', (q) =>
+      q.eq('spaceId', spaceId).eq('userId', userId),
+    )
+    .collect()
+  await Promise.all(rows.map((row) => ctx.db.delete(row._id)))
+  return rows.length
+}
+
 /** Fetch userSettings row for a user, or null if not yet created. */
 export async function getUserSettings(
   ctx: QueryCtx | MutationCtx,
   userId: string,
 ): Promise<Doc<'userSettings'> | null> {
-  // `.first()` for the same reason as the membership read: the settings row is
-  // created on first write, so two concurrent writers can both insert, and a
-  // throwing read would break every calendar call for that user.
+  // `.first()` for the same reason as the membership read: the row is created
+  // on first write, and a duplicate written from outside this mutation must not
+  // break every calendar call for that user.
   return await ctx.db
     .query('userSettings')
     .withIndex('by_user', (q) => q.eq('userId', userId))

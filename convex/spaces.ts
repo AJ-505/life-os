@@ -2,7 +2,7 @@ import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
-import { requireMember, requireUserId } from './lib'
+import { dropMembership, requireMember, requireUserId } from './lib'
 
 /** Matches the tracker's batch so a big delete behaves the same either way. */
 const DELETE_BATCH = 200
@@ -162,8 +162,9 @@ export const joinSpaceByCode = mutation({
     const space = await spaceByInviteCode(ctx, code)
     if (!space) return { ok: false, reason: 'not_found' }
 
-    // `.first()`, for the same reason the guard uses it: a concurrent double
-    // join can leave two rows, and a throwing read would lock the member out.
+    // `.first()`, for the same reason the guard uses it: the pair is not unique
+    // by construction, so a duplicate from outside this mutation must not lock
+    // the member out with a throwing read.
     const membership = await ctx.db
       .query('spaceMembers')
       .withIndex('by_space_user', (q) =>
@@ -196,7 +197,7 @@ export const leaveSpace = mutation({
   args: { spaceId: v.string() },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
-    const membership = await requireMember(ctx, userId, args.spaceId)
+    await requireMember(ctx, userId, args.spaceId)
     const space = await ctx.db
       .query('spaces')
       .withIndex('by_app_id', (q) => q.eq('id', args.spaceId))
@@ -216,7 +217,9 @@ export const leaveSpace = mutation({
         'You are the only member of this space. Delete it instead of leaving.',
       )
 
-    await ctx.db.delete(membership._id)
+    // Every row, not the one this read happened to return: a duplicate would
+    // otherwise keep the leaver's access alive.
+    await dropMembership(ctx, args.spaceId, userId)
 
     if (space.ownerId !== userId) return
 
@@ -246,10 +249,25 @@ export const getMySpaces = query({
           .query('spaces')
           .withIndex('by_app_id', (q) => q.eq('id', membership.spaceId))
           .unique()
-        return space ? { ...shapeSpace(space), role: membership.role } : null
+        // The role is derived from the space's `ownerId`, which is the one
+        // authority for who owns it. Reading the membership row's stored role
+        // instead would be a second copy that can drift, and the UI gates
+        // owner-only controls on this.
+        return space
+          ? {
+              ...shapeSpace(space),
+              role: space.ownerId === userId ? 'owner' : membership.role,
+            }
+          : null
       }),
     )
-    return resolved.filter((space) => space !== null)
+    // A duplicate membership row would otherwise list the same space twice and
+    // give React two identical keys.
+    const byId = new Map<string, NonNullable<(typeof resolved)[number]>>()
+    for (const space of resolved) {
+      if (space && !byId.has(space.id)) byId.set(space.id, space)
+    }
+    return [...byId.values()]
   },
 })
 
@@ -262,15 +280,101 @@ export const getSpaceMembers = query({
       .query('spaceMembers')
       .withIndex('by_space', (q) => q.eq('spaceId', args.spaceId))
       .collect()
-    return members
-      .sort((a, b) => a.joinedAt - b.joinedAt || (a.userId < b.userId ? -1 : 1))
-      .map((m) => ({
-        userId: m.userId,
-        spaceId: m.spaceId,
-        role: m.role,
-        joinedAt: m.joinedAt,
-        isSelf: m.userId === userId,
-      }))
+    const space = await ctx.db
+      .query('spaces')
+      .withIndex('by_app_id', (q) => q.eq('id', args.spaceId))
+      .unique()
+    const sorted = members.sort(
+      (a, b) => a.joinedAt - b.joinedAt || (a.userId < b.userId ? -1 : 1),
+    )
+    // Same two reasons as `getMySpaces`: the role comes from `spaces.ownerId`,
+    // and a duplicate row must not render the same person twice.
+    const seen = new Set<string>()
+    return sorted.flatMap((m) => {
+      if (seen.has(m.userId)) return []
+      seen.add(m.userId)
+      return [
+        {
+          userId: m.userId,
+          spaceId: m.spaceId,
+          role: space?.ownerId === m.userId ? ('owner' as const) : m.role,
+          joinedAt: m.joinedAt,
+          isSelf: m.userId === userId,
+        },
+      ]
+    })
+  },
+})
+
+/**
+ * Rotation, shared by both revocation paths. The code is the credential, so
+ * anything that takes access away has to change it: removing a membership row
+ * while the removed person still holds the code leaves them one page load from
+ * walking back in.
+ */
+async function rotateInviteCode(ctx: MutationCtx, space: Doc<'spaces'>) {
+  // The space document, not its app id: `patch` wants the Convex `_id`, and the
+  // string id would address nothing.
+  const code = await unusedInviteCode(ctx, space.id)
+  await ctx.db.patch(space._id, { inviteCode: code })
+  return code
+}
+
+/** Owner-only check, with one clear message for the member case. */
+function assertOwner(space: Doc<'spaces'>, userId: string) {
+  if (space.ownerId !== userId)
+    throw new Error('Only the owner can do that with this space')
+}
+
+/**
+ * Issue a new invite link for the whole space. For "the link leaked and I do
+ * not know who has it". Everyone already in stays in; anyone holding the old
+ * link cannot use it any more.
+ */
+export const resetInviteCode = mutation({
+  args: { spaceId: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx)
+    const space = await ctx.db
+      .query('spaces')
+      .withIndex('by_app_id', (q) => q.eq('id', args.spaceId))
+      .unique()
+    if (!space) throw new Error('Space not found')
+    assertOwner(space, userId)
+    return { inviteCode: await rotateInviteCode(ctx, space) }
+  },
+})
+
+/**
+ * Take one person's access away: their memberships go, and the code changes in
+ * the same transaction so the link they hold stops working. Both halves are
+ * needed; either alone leaves them able to return.
+ *
+ * A member's own projects and tasks are untouched: they belong to the space and
+ * carry their own creator, not a grant.
+ */
+export const removeMember = mutation({
+  args: { spaceId: v.string(), userId: v.string() },
+  handler: async (ctx, args) => {
+    const caller = await requireUserId(ctx)
+    const space = await ctx.db
+      .query('spaces')
+      .withIndex('by_app_id', (q) => q.eq('id', args.spaceId))
+      .unique()
+    if (!space) throw new Error('Space not found')
+    assertOwner(space, caller)
+    if (args.userId === caller)
+      throw new Error('Leave the space instead of removing yourself')
+    if (args.userId === space.ownerId)
+      throw new Error('The owner cannot be removed. Delete the space instead.')
+
+    const removed = await dropMembership(ctx, space.id, args.userId)
+    // Rotating after a no-op would break the link for people who have not
+    // joined yet, in exchange for removing nobody.
+    if (removed === 0)
+      throw new Error('That person is not a member of this space')
+
+    return { inviteCode: await rotateInviteCode(ctx, space) }
   },
 })
 
