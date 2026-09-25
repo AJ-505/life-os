@@ -221,6 +221,7 @@ export function shapeTask(t: Doc<'tasks'>) {
     reminderMinutes: t.reminderMinutes ?? null,
     addToCalendar: t.addToCalendar ?? false,
     calendarEventId: t.calendarEventId ?? null,
+    assigneeId: t.assigneeId ?? null,
     spaceId: t.spaceId ?? null,
   }
 }

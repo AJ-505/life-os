@@ -301,6 +301,68 @@ describe('spaces: scope id uniqueness', () => {
   })
 })
 
+describe('spaces: collaboration', () => {
+  it('shows names instead of Clerk ids to every member', async () => {
+    const t = convexTest(schema, modules)
+    const space = await twoMemberSpace(t)
+    await asUser(t, 'user_a').mutation(api.spaces.syncUserProfile, {
+      displayName: 'Ada Lovelace',
+      email: 'ada@example.com',
+    })
+    await asUser(t, 'user_b').mutation(api.spaces.syncUserProfile, {
+      displayName: 'Grace Hopper',
+    })
+
+    const members = await asUser(t, 'user_a').query(
+      api.spaces.getSpaceMembers,
+      { spaceId: space.id },
+    )
+    expect(members.map((m) => m.name)).toEqual(['Ada Lovelace', 'Grace Hopper'])
+    expect(members[1].initials).toBe('GH')
+    expect(members.every((m) => m.name !== m.userId)).toBe(true)
+  })
+
+  it('lets members assign and records the task flow', async () => {
+    const t = convexTest(schema, modules)
+    const space = await twoMemberSpace(t)
+    await spaceProject(t, 'user_a', space.id, 'p-shared')
+    await asUser(t, 'user_a').mutation(api.spaces.syncUserProfile, {
+      displayName: 'Ada Lovelace',
+    })
+    await asUser(t, 'user_b').mutation(api.spaces.syncUserProfile, {
+      displayName: 'Grace Hopper',
+    })
+    await asUser(t, 'user_a').mutation(api.tracker.createTask, {
+      id: 't-assigned',
+      projectId: 'p-shared',
+      title: 'Write the brief',
+      position: 1024,
+      assigneeId: 'user_b',
+    })
+    await asUser(t, 'user_b').mutation(api.tracker.updateTask, {
+      id: 't-assigned',
+      assigneeId: 'user_a',
+      done: true,
+    })
+
+    const history = await asUser(t, 'user_a').query(
+      api.tracker.getTaskHistory,
+      {
+        taskId: 't-assigned',
+      },
+    )
+    expect(history.map((event) => event.kind)).toEqual([
+      'completed',
+      'assigned',
+      'assigned',
+      'created',
+    ])
+    expect(history[0].actorName).toBe('Grace Hopper')
+    expect(history[1].toName).toBe('Ada Lovelace')
+    expect(history[2].toName).toBe('Grace Hopper')
+  })
+})
+
 describe('spaces: moves and subtrees', () => {
   it('refuses a move between a personal board and a space', async () => {
     const t = convexTest(schema, modules)

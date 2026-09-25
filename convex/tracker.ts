@@ -4,6 +4,7 @@ import { internalMutation, mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
 import {
   getMemberSpace,
+  requireMember,
   getWritableProject,
   getWritableTask,
   isSpaceMember,
@@ -15,8 +16,57 @@ import {
 import { eventIdsForTasks } from './calendar'
 
 import type { Doc } from './_generated/dataModel'
-import type { MutationCtx } from './_generated/server'
+import type { MutationCtx, QueryCtx } from './_generated/server'
 import type { Scope } from './lib'
+
+type TaskActivityKind =
+  | 'created'
+  | 'assigned'
+  | 'unassigned'
+  | 'completed'
+  | 'reopened'
+  | 'archived'
+  | 'unarchived'
+  | 'moved'
+  | 'updated'
+
+async function recordTaskActivity(
+  ctx: MutationCtx,
+  task: Pick<Doc<'tasks'>, 'id' | 'projectId' | 'spaceId'>,
+  actorId: string,
+  kind: TaskActivityKind,
+  options?: {
+    fromUserId?: string | null
+    toUserId?: string | null
+    detail?: string
+  },
+) {
+  if (!task.spaceId) return
+  await ctx.db.insert('taskActivity', {
+    spaceId: task.spaceId,
+    taskId: task.id,
+    projectId: task.projectId,
+    actorId,
+    kind,
+    ...(options?.fromUserId !== undefined && {
+      fromUserId: options.fromUserId,
+    }),
+    ...(options?.toUserId !== undefined && { toUserId: options.toUserId }),
+    ...(options?.detail ? { detail: options.detail } : {}),
+    createdAt: Date.now(),
+  })
+}
+
+async function profileName(
+  ctx: QueryCtx | MutationCtx,
+  userId: string,
+): Promise<string> {
+  const profile = await ctx.db
+    .query('userProfiles')
+    .withIndex('by_user', (q) => q.eq('userId', userId))
+    .first()
+  return profile?.displayName?.trim() || 'Member'
+}
 
 /** Everything for one board, in one query. Views derive what they need
  *  client-side — exactly like the original `fetchBoard`.
@@ -77,6 +127,35 @@ export const getBoard = query({
           .sort((a, b) => a.position - b.position)
           .map(shapeTask),
       }))
+  },
+})
+
+export const getTaskHistory = query({
+  args: { taskId: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx)
+    const task = await getWritableTask(ctx, userId, args.taskId)
+    if (!task.spaceId) return []
+    const events = await ctx.db
+      .query('taskActivity')
+      .withIndex('by_space_task', (q) =>
+        q.eq('spaceId', task.spaceId!).eq('taskId', task.id),
+      )
+      .order('desc')
+      .take(100)
+    return await Promise.all(
+      events.map(async (event) => ({
+        id: event._id,
+        kind: event.kind,
+        actorName: await profileName(ctx, event.actorId),
+        fromName: event.fromUserId
+          ? await profileName(ctx, event.fromUserId)
+          : null,
+        toName: event.toUserId ? await profileName(ctx, event.toUserId) : null,
+        detail: event.detail ?? null,
+        createdAt: event.createdAt,
+      })),
+    )
   },
 })
 
@@ -270,6 +349,7 @@ export const createTask = mutation({
     title: v.string(),
     position: v.number(),
     dueAt: v.optional(v.union(v.number(), v.null())),
+    assigneeId: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
@@ -277,6 +357,12 @@ export const createTask = mutation({
     if (!title) throw new Error('Task title is required')
     // Writing to the destination project is what gates creation.
     const project = await getWritableProject(ctx, userId, args.projectId)
+    const assigneeId = args.assigneeId ?? null
+    if (assigneeId !== null) {
+      if (!project.spaceId)
+        throw new Error('Tasks on a personal board cannot be assigned')
+      await requireMember(ctx, assigneeId, project.spaceId)
+    }
     if (
       await assertScopeTaskIdFree(ctx, userId, args.id, project.spaceId ?? null)
     )
@@ -296,8 +382,20 @@ export const createTask = mutation({
       inFocus: false,
       focusOrder: 0,
       createdAt: Date.now(),
+      assigneeId,
       ...(project.spaceId && { spaceId: project.spaceId }),
     })
+    const activityTask = {
+      id: args.id,
+      projectId: project.id,
+      spaceId: project.spaceId,
+    }
+    await recordTaskActivity(ctx, activityTask, userId, 'created')
+    if (assigneeId !== null) {
+      await recordTaskActivity(ctx, activityTask, userId, 'assigned', {
+        toUserId: assigneeId,
+      })
+    }
   },
 })
 
@@ -426,6 +524,7 @@ export const updateTask = mutation({
     notes: v.optional(v.union(v.string(), v.null())),
     done: v.optional(v.boolean()),
     archived: v.optional(v.boolean()),
+    assigneeId: v.optional(v.union(v.string(), v.null())),
     dueAt: v.optional(v.union(v.number(), v.null())),
     reminderMinutes: v.optional(v.union(v.number(), v.null())),
     addToCalendar: v.optional(v.boolean()),
@@ -433,14 +532,67 @@ export const updateTask = mutation({
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
     const task = await getWritableTask(ctx, userId, args.id)
-    const { id: _id, done, ...rest } = args
+    const { id: _id, done, assigneeId, ...rest } = args
+    if (assigneeId !== undefined && assigneeId !== null) {
+      if (!task.spaceId)
+        throw new Error('Tasks on a personal board cannot be assigned')
+      await requireMember(ctx, assigneeId, task.spaceId)
+    }
     const patch: Partial<Doc<'tasks'>> = { ...rest }
+    if (assigneeId !== undefined) patch.assigneeId = assigneeId
     if (done !== undefined) {
       patch.done = done
       patch.doneAt = done ? Date.now() : null
     }
     await ctx.db.patch(task._id, patch)
     await scheduleCalendarSync(ctx, userId, task, patch)
+    if (task.spaceId) {
+      const activityTask = {
+        id: task.id,
+        projectId: task.projectId,
+        spaceId: task.spaceId,
+      }
+      if (
+        assigneeId !== undefined &&
+        assigneeId !== (task.assigneeId ?? null)
+      ) {
+        await recordTaskActivity(
+          ctx,
+          activityTask,
+          userId,
+          assigneeId === null ? 'unassigned' : 'assigned',
+          {
+            fromUserId: task.assigneeId ?? null,
+            toUserId: assigneeId,
+          },
+        )
+      }
+      if (done !== undefined && done !== task.done) {
+        await recordTaskActivity(
+          ctx,
+          activityTask,
+          userId,
+          done ? 'completed' : 'reopened',
+        )
+      }
+      if (args.archived !== undefined && args.archived !== task.archived) {
+        await recordTaskActivity(
+          ctx,
+          activityTask,
+          userId,
+          args.archived ? 'archived' : 'unarchived',
+        )
+      }
+      if (
+        (args.title !== undefined && args.title.trim() !== task.title) ||
+        (args.notes !== undefined && args.notes !== task.notes) ||
+        (args.dueAt !== undefined && args.dueAt !== task.dueAt)
+      ) {
+        await recordTaskActivity(ctx, activityTask, userId, 'updated', {
+          detail: 'Task details updated',
+        })
+      }
+    }
   },
 })
 
@@ -460,6 +612,15 @@ export const moveTask = mutation({
       projectId: args.projectId,
       position: args.position,
     })
+    if (source) {
+      await recordTaskActivity(
+        ctx,
+        { id: task.id, projectId: args.projectId, spaceId: source },
+        userId,
+        'moved',
+        { detail: 'Moved to another project' },
+      )
+    }
 
     // The whole subtree travels with the task, walked over the board's own
     // tasks rather than the caller's: in a space a teammate may have created

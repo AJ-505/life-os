@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { useUser } from '@clerk/tanstack-react-start'
 import {
   CalendarRange,
   LayoutGrid,
@@ -54,6 +55,7 @@ import {
   useSyncTaskToCalendar,
 } from '#/settings/googleCalendar'
 import { boardQueryOptions } from '#/tracker'
+import { useSyncUserProfile } from '#/spaces/queries'
 
 const NAV = [
   { to: '/', label: 'Board', icon: LayoutGrid },
@@ -139,17 +141,26 @@ function NavLinks({
     )
   }
   return (
-    <>
-      <nav className="flex flex-col gap-1 mb-5">
-        {NAV.map(({ to, label, icon: Icon }) => item(to, label, Icon))}
-      </nav>
-      {/* Spaces teaser: its own group below the main nav. It stays
-          visible while Spaces is gated and lands on the ComingSoon page. */}
-      <nav className="flex flex-col gap-1" aria-label="Spaces">
-        {item('/spaces', 'Spaces', Users, inSpacesArea)}
-      </nav>
-    </>
+    <nav className="flex flex-col gap-1" aria-label="Main navigation">
+      {NAV.map(({ to, label, icon: Icon }) => item(to, label, Icon))}
+      {item('/spaces', 'Spaces', Users, inSpacesArea)}
+    </nav>
   )
+}
+
+function ProfileSync() {
+  const { user } = useUser()
+  const { mutate } = useSyncUserProfile()
+  const displayName =
+    user?.fullName ?? user?.username ?? user?.primaryEmailAddress?.emailAddress
+  const email = user?.primaryEmailAddress?.emailAddress
+
+  useEffect(() => {
+    if (!user || !displayName) return
+    mutate({ displayName, ...(email ? { email } : {}) })
+  }, [user?.id, displayName, email, mutate])
+
+  return null
 }
 
 /** Writes the browser's IANA zone once, behind the flag. Google needs it or it
@@ -539,6 +550,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {CALENDAR_ENABLED ? <EnsureTimezone /> : null}
+        <ProfileSync />
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {children}
         </main>

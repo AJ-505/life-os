@@ -24,22 +24,15 @@ import {
 
 type Member = {
   userId: string
+  name: string
+  initials: string
   role: string
   joinedAt: number
   isSelf: boolean
 }
 
-/** Clerk user ids are long and ugly. These two helpers are the whole story of
- *  how a member is shown until names are resolved, which is a named follow-up
- *  rather than something to invent here. */
-export function shortMemberId(userId: string): string {
-  const tail = userId.split('_').pop() ?? userId
-  return tail.slice(0, 8)
-}
-
-export function memberInitials(userId: string): string {
-  return shortMemberId(userId).slice(0, 2).toUpperCase()
-}
+/** The old ID-only helpers are deliberately gone. Names come from the signed
+ *  user's profile directory, so a member is never reduced to an opaque id. */
 
 /**
  * Share and membership for one space.
@@ -76,7 +69,7 @@ export function SpacesShareDialog({
   const list: Array<Member> = members ?? []
   const isOwner = list.some((m) => m.isSelf && m.role === 'owner')
   const inviteLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/join/${inviteCode}`
-  const label = (m: Member) => (m.isSelf ? 'You' : shortMemberId(m.userId))
+  const label = (m: Member) => (m.isSelf ? 'You' : m.name)
 
   const copy = async (text: string, msg: string) => {
     await navigator.clipboard.writeText(text)
@@ -261,9 +254,9 @@ export function SpacesShareDialog({
                     className="flex items-center gap-2 rounded-md border px-2.5 py-2"
                   >
                     <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-signal text-[11px] font-bold text-signal-foreground">
-                      {memberInitials(m.userId)}
+                      {m.initials}
                     </span>
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs">
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
                       {label(m)}
                     </span>
                     {m.role === 'owner' ? (

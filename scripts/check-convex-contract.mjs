@@ -140,6 +140,11 @@ const LIVE_CLIENT_SENDS = {
     inviteCode: 'PROBE',
   },
   'spaces:joinSpaceByCode': { inviteCode: 'PROBE' },
+  'spaces:removeMember': {
+    spaceId: 'contract-probe',
+    userId: 'contract-probe',
+  },
+  'spaces:resetInviteCode': { spaceId: 'contract-probe' },
 }
 
 /** Which endpoint a function lives on. Actions answer only on /api/action, and

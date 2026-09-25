@@ -23,6 +23,10 @@ export function boardQueryOptions(spaceId: string | null) {
   return convexQuery(api.tracker.getBoard, { spaceId })
 }
 
+export function taskHistoryQueryOptions(taskId: string | null) {
+  return convexQuery(api.tracker.getTaskHistory, taskId ? { taskId } : 'skip')
+}
+
 /**
  * Every mutation below opened with the same getQuery/guard/setQuery preamble.
  * Collapsing it here also gives the store's board type one home: it used to be
@@ -183,6 +187,7 @@ export function useCreateTask() {
                   inFocus: false,
                   focusOrder: 0,
                   createdAt: Date.now(),
+                  assigneeId: args.assigneeId ?? null,
                   spaceId: p.spaceId,
                 },
               ].sort((a, b) => a.position - b.position),

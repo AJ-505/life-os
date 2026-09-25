@@ -32,6 +32,7 @@ const task: Doc<'tasks'> = {
   inFocus: false,
   focusOrder: 0,
   createdAt: 1,
+  assigneeId: 'user_a',
   spaceId: 's1',
 }
 
@@ -65,6 +66,7 @@ describe('shapeTask', () => {
     expect(shaped.reminderMinutes).toBe(30)
     expect(shaped.addToCalendar).toBe(true)
     expect(shaped.calendarEventId).toBe('gcal_abc')
+    expect(shaped.assigneeId).toBe('user_a')
     expect(shaped.spaceId).toBe('s1')
   })
 
@@ -80,6 +82,7 @@ describe('shapeTask', () => {
       reminderMinutes: _reminderMinutes,
       addToCalendar: _addToCalendar,
       calendarEventId: _calendarEventId,
+      assigneeId: _assigneeId,
       spaceId: _spaceId,
       ...bare
     } = task
@@ -87,6 +90,7 @@ describe('shapeTask', () => {
     expect(shaped.reminderMinutes).toBeNull()
     expect(shaped.addToCalendar).toBe(false)
     expect(shaped.calendarEventId).toBeNull()
+    expect(shaped.assigneeId).toBeNull()
     // Absent means personal, and the client sees `null` rather than `undefined`.
     expect(shaped.spaceId).toBeNull()
   })

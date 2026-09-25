@@ -52,3 +52,9 @@ export function useResetInviteCode() {
 export function useRemoveMember() {
   return useMutation({ mutationFn: useConvexMutation(api.spaces.removeMember) })
 }
+
+export function useSyncUserProfile() {
+  return useMutation({
+    mutationFn: useConvexMutation(api.spaces.syncUserProfile),
+  })
+}

@@ -24,11 +24,7 @@ import {
 import { Switch } from '#/design-system/ui/switch'
 
 import { mySpacesQueryOptions, useSpaceMembers } from '#/spaces/queries'
-import {
-  SpacesShareDialog,
-  memberInitials,
-  shortMemberId,
-} from '#/spaces/components/SpacesShareDialog'
+import { SpacesShareDialog } from '#/spaces/components/SpacesShareDialog'
 import { SPACES_ENABLED } from '#/feature-flags'
 import { useBoardScope } from '../board-scope'
 
@@ -45,10 +41,10 @@ function MemberStack({ spaceId }: { spaceId: string }) {
           <span
             key={m.userId}
             style={{ zIndex: 3 - i }}
-            title={m.isSelf ? 'You' : shortMemberId(m.userId)}
+            title={m.isSelf ? 'You' : m.name}
             className="flex size-6 items-center justify-center rounded-full border-2 border-background bg-signal text-[10px] font-bold text-signal-foreground"
           >
-            {memberInitials(m.userId)}
+            {m.initials}
           </span>
         ))}
       </div>

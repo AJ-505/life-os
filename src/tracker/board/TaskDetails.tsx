@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MutableRefObject } from 'react'
 import { format } from 'date-fns'
-import { Archive, CalendarIcon, Crosshair, Plus, Trash2, X } from 'lucide-react'
+import {
+  Archive,
+  CalendarIcon,
+  Crosshair,
+  History,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-react'
 
 import { cn, ComingSoon } from '#/design-system'
 import { CALENDAR_ENABLED } from '#/feature-flags'
@@ -34,6 +42,7 @@ import { Switch } from '#/design-system/ui/switch'
 import { Textarea } from '#/design-system/ui/textarea'
 
 import { useBoardScope } from '../board-scope'
+import { useSpaceMembers } from '#/spaces/queries'
 import { POSITION_GAP, newId, positionAfter } from '../types'
 import {
   useCreateTask,
@@ -42,6 +51,7 @@ import {
   useSetTaskFocus,
   useUpdateTask,
 } from '../queries'
+import { taskHistoryQueryOptions } from '../queries'
 import { useQuery } from '@tanstack/react-query'
 import { calendarSettingsQueryOptions } from '#/settings/queries'
 import { useGoogleCalendar } from '#/settings/googleCalendar'
@@ -286,6 +296,67 @@ function TaskCalendarFields({
   )
 }
 
+function TaskHistoryPanel({ taskId }: { taskId: string }) {
+  const { data: history = [], isLoading } = useQuery(
+    taskHistoryQueryOptions(taskId),
+  )
+  if (isLoading) {
+    return <p className="text-xs text-muted-foreground">Loading history…</p>
+  }
+  if (history.length === 0) {
+    return <p className="text-xs text-muted-foreground">No history yet.</p>
+  }
+  const describe = (event: (typeof history)[number]) => {
+    switch (event.kind) {
+      case 'created':
+        return 'created this task'
+      case 'assigned':
+        return `assigned this to ${event.toName ?? 'a member'}`
+      case 'unassigned':
+        return `removed ${event.fromName ?? 'the previous assignee'}`
+      case 'completed':
+        return 'closed this task'
+      case 'reopened':
+        return 'reopened this task'
+      case 'archived':
+        return 'archived this task'
+      case 'unarchived':
+        return 'restored this task'
+      case 'moved':
+        return 'moved this task to another project'
+      case 'updated':
+        return 'updated the task details'
+    }
+  }
+  return (
+    <div
+      className="flex flex-col gap-2 border-t pt-3"
+      aria-label="Task history"
+    >
+      <div className="flex items-center gap-2">
+        <History className="size-3.5 text-muted-foreground" />
+        <span className="os-label">Task history</span>
+      </div>
+      <ol className="flex flex-col gap-2">
+        {history.map((event) => (
+          <li key={event.id} className="flex items-start gap-2 text-xs">
+            <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-signal" />
+            <div className="min-w-0 flex-1">
+              <p>
+                <span className="font-medium">{event.actorName}</span>{' '}
+                {describe(event)}
+              </p>
+              <time className="font-mono text-[10px] text-muted-foreground">
+                {format(new Date(event.createdAt), 'd MMM yyyy · h:mm a')}
+              </time>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
 export function TaskDetails({
   task,
   board,
@@ -321,6 +392,8 @@ export function TaskDetails({
   const pendingRef = useRef<PendingWrites | null>(null)
   const draftCaptureRef = useRef<CaptureWrite | null>(null)
   const [dueOpen, setDueOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const members = useSpaceMembers(spaceId)
 
   const project = board.find((p) => p.id === task.projectId)
   const activeProjects = board.filter((p) => p.status === 'active')
@@ -699,6 +772,38 @@ export function TaskDetails({
             </div>
           </div>
 
+          {spaceId !== null ? (
+            <div className="flex flex-col gap-1.5">
+              <Label className="os-label">Assignee</Label>
+              <Select
+                value={task.assigneeId ?? 'unassigned'}
+                onValueChange={(assigneeId) =>
+                  updateTask.mutate({
+                    id: task.id,
+                    assigneeId: assigneeId === 'unassigned' ? null : assigneeId,
+                  })
+                }
+              >
+                <SelectTrigger size="sm" className="w-full text-xs">
+                  <SelectValue placeholder="Unassigned" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  {(members ?? []).map((member) => (
+                    <SelectItem key={member.userId} value={member.userId}>
+                      {member.isSelf ? `${member.name} (you)` : member.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                Every space member can assign or take this task.
+              </p>
+            </div>
+          ) : null}
+
+          {historyOpen ? <TaskHistoryPanel taskId={task.id} /> : null}
+
           {CALENDAR_ENABLED && spaceId === null ? (
             <TaskCalendarFields
               localDueAt={localDueAt}
@@ -790,9 +895,22 @@ export function TaskDetails({
               Delete
             </Button>
           </div>
-          <Button size="sm" onPointerDown={armClose} onClick={close}>
-            Done
-          </Button>
+          <div className="flex items-center gap-1.5">
+            {spaceId !== null ? (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setHistoryOpen((open) => !open)}
+              >
+                <History className="size-3.5" />
+                {historyOpen ? 'Hide history' : 'History'}
+              </Button>
+            ) : null}
+            <Button size="sm" onPointerDown={armClose} onClick={close}>
+              Done
+            </Button>
+          </div>
         </DialogFooter>
         {/* Last in DOM so Radix autofocus lands on the title input, as before.
             Visually unchanged: absolute top-right. Must keep onPointerDown

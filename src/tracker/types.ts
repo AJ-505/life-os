@@ -41,6 +41,8 @@ export interface Task {
   inFocus: boolean
   focusOrder: number
   createdAt: number
+  /** The member responsible for this shared task. Null means unassigned. */
+  assigneeId: string | null
   /** The board this task lives on. Null for a personal task. Always present:
    *  the server normalises it. */
   spaceId: string | null

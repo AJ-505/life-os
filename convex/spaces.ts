@@ -38,6 +38,57 @@ function shapeSpace(s: Doc<'spaces'>) {
   }
 }
 
+async function profileForUser(
+  ctx: QueryCtx | MutationCtx,
+  userId: string,
+): Promise<Doc<'userProfiles'> | null> {
+  return await ctx.db
+    .query('userProfiles')
+    .withIndex('by_user', (q) => q.eq('userId', userId))
+    .first()
+}
+
+function memberName(profile: Doc<'userProfiles'> | null): string {
+  return profile?.displayName?.trim() || 'Member'
+}
+
+function memberInitials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean)
+  if (words.length === 0) return 'ME'
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase()
+  return `${words[0][0]}${words.at(-1)?.[0] ?? ''}`.toUpperCase()
+}
+
+/** Keep the directory current without making Clerk a database lookup on every
+ *  board read. The identity is still the only authorization source. */
+export const syncUserProfile = mutation({
+  args: {
+    displayName: v.optional(v.string()),
+    email: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity()
+    if (!identity) throw new Error('Not authenticated')
+    const displayName = args.displayName?.trim() || identity.name || 'Member'
+    const email = args.email?.trim() || identity.email || undefined
+    const existing = await profileForUser(ctx, identity.subject)
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        displayName,
+        ...(email ? { email } : {}),
+        updatedAt: Date.now(),
+      })
+      return
+    }
+    await ctx.db.insert('userProfiles', {
+      userId: identity.subject,
+      displayName,
+      ...(email ? { email } : {}),
+      updatedAt: Date.now(),
+    })
+  },
+})
+
 async function spaceByInviteCode(
   ctx: QueryCtx | MutationCtx,
   inviteCode: string,
@@ -276,7 +327,7 @@ export const getSpaceMembers = query({
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
     await requireMember(ctx, userId, args.spaceId)
-    const members = await ctx.db
+    const membershipRows = await ctx.db
       .query('spaceMembers')
       .withIndex('by_space', (q) => q.eq('spaceId', args.spaceId))
       .collect()
@@ -284,13 +335,13 @@ export const getSpaceMembers = query({
       .query('spaces')
       .withIndex('by_app_id', (q) => q.eq('id', args.spaceId))
       .unique()
-    const sorted = members.sort(
+    const sorted = membershipRows.sort(
       (a, b) => a.joinedAt - b.joinedAt || (a.userId < b.userId ? -1 : 1),
     )
     // Same two reasons as `getMySpaces`: the role comes from `spaces.ownerId`,
     // and a duplicate row must not render the same person twice.
     const seen = new Set<string>()
-    return sorted.flatMap((m) => {
+    const members = sorted.flatMap((m) => {
       if (seen.has(m.userId)) return []
       seen.add(m.userId)
       return [
@@ -303,6 +354,17 @@ export const getSpaceMembers = query({
         },
       ]
     })
+    return await Promise.all(
+      members.map(async (member) => {
+        const profile = await profileForUser(ctx, member.userId)
+        const name = memberName(profile)
+        return {
+          ...member,
+          name,
+          initials: memberInitials(name),
+        }
+      }),
+    )
   },
 })
 

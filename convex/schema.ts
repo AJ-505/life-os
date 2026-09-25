@@ -77,6 +77,7 @@ export default defineSchema({
     inFocus: v.boolean(),
     focusOrder: v.number(),
     createdAt: v.number(),
+    assigneeId: v.optional(v.union(v.string(), v.null())),
     // Denormalized from the project so a board reads one index and a walk can
     // never cross scopes. Kept equal to the project's by the same-scope rule.
     spaceId: v.optional(v.string()),
@@ -90,6 +91,42 @@ export default defineSchema({
     // client-generated ids collide.
     .index('by_user_project', ['userId', 'projectId'])
     .index('by_space_project', ['spaceId', 'projectId']),
+
+  /** A small, denormalized directory of the names collaborators see. It is
+   *  deliberately not the source of authorization: identity still comes from
+   *  Clerk on the server. */
+  userProfiles: defineTable({
+    userId: v.string(),
+    displayName: v.string(),
+    email: v.optional(v.string()),
+    updatedAt: v.number(),
+  }).index('by_user', ['userId']),
+
+  /** Append-only task history for shared work. This is a child table rather
+   *  than an array on tasks so every write does not rewrite the task document. */
+  taskActivity: defineTable({
+    spaceId: v.string(),
+    taskId: v.string(),
+    projectId: v.string(),
+    actorId: v.string(),
+    kind: v.union(
+      v.literal('created'),
+      v.literal('assigned'),
+      v.literal('unassigned'),
+      v.literal('completed'),
+      v.literal('reopened'),
+      v.literal('archived'),
+      v.literal('unarchived'),
+      v.literal('moved'),
+      v.literal('updated'),
+    ),
+    fromUserId: v.optional(v.union(v.string(), v.null())),
+    toUserId: v.optional(v.union(v.string(), v.null())),
+    detail: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index('by_space_task', ['spaceId', 'taskId'])
+    .index('by_task', ['taskId']),
 
   spaces: defineTable({
     id: v.string(),
