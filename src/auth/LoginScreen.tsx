@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useRouter } from '@tanstack/react-router'
 import { useClerk, useSignIn } from '@clerk/tanstack-react-start'
 import { toast } from 'sonner'
 
@@ -10,12 +11,14 @@ import {
   CardHeader,
   CardTitle,
 } from '#/design-system/ui/card'
+import { RETURN_PATH } from './return-path'
 
 /**
  * The whole app sits behind this. One button kicks off Clerk's Google OAuth
  * redirect; Clerk bounces back to /sso-callback (see routes/sso-callback.tsx),
- * which finishes the handshake and lands on `/`. Enabling Google itself is a
- * Clerk dashboard toggle (User & authentication → SSO connections → Google).
+ * which finishes the handshake and lands on the page the visitor was sent —
+ * a shared space, not just the home board. Enabling Google itself is a Clerk
+ * dashboard toggle (User & authentication → SSO connections → Google).
  *
  * A click has to survive two dead ends this screen can be in. Clerk refuses to
  * start a sign-in while the client holds a session (`session_exists`), and it
@@ -26,6 +29,7 @@ import {
  * reloads, and the click after it reaches Google.
  */
 export function LoginScreen() {
+  const router = useRouter()
   const { signIn, fetchStatus } = useSignIn()
   const { signOut } = useClerk()
   const [busy, setBusy] = useState(false)
@@ -37,6 +41,18 @@ export function LoginScreen() {
     setBusy(true)
 
     /**
+     * Whoever is on this screen got here by following a link — a shared space,
+     * most of all — so the board they were sent is the board they land on once
+     * Google is done. It rides the callback URL so it survives the round trip;
+     * /sso-callback reads it from there.
+     */
+    const here = router.state.location.href
+    const callback =
+      here === '/'
+        ? '/sso-callback'
+        : `/sso-callback?${RETURN_PATH}=${encodeURIComponent(here)}`
+
+    /**
      * One attempt at the OAuth redirect. A live attempt leaves the first factor
      * verification with an external redirect URL for Google; a dead one comes
      * back with no redirect at all, whether it failed or silently reused an
@@ -46,7 +62,7 @@ export function LoginScreen() {
       const { error } = await signIn.sso({
         strategy: 'oauth_google',
         redirectUrl: '/',
-        redirectCallbackUrl: '/sso-callback',
+        redirectCallbackUrl: callback,
       })
       const redirected = Boolean(
         signIn.firstFactorVerification.externalVerificationRedirectURL,

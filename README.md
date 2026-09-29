@@ -68,6 +68,32 @@ Two details worth knowing:
 
 > **Not released.** Calendar sync is behind `VITE_ENABLE_CALENDAR=1`. Without it the task and settings surfaces render a placeholder and no calendar query runs.
 
+## Link previews
+
+A shared link is read by someone who is never logged in, so what a person sees
+in WhatsApp, Slack or iMessage is decided entirely by the server-rendered
+`<head>`. `src/seo.ts` builds that head, and `__root.tsx` is its only caller:
+one builder for the whole document, keyed off the matched route, so a page can
+never end up with two `og:title` elements for a crawler to choose between.
+
+`/join/<inviteCode>` is the link that matters — it is the one a person pastes
+into a chat, and the first thing a crawler ever sees. It renders its own title
+and description, plus `noindex, nofollow`, so invite codes never reach a search
+index.
+
+The card itself is `public/og.png`: 1200x630, rendered from the same oklch
+tokens in `src/styles.css` and the same `@fontsource` webfonts the app loads,
+then quantised to a 256-colour palette so a shared link carries 27KB rather
+than 510KB. It is a committed asset, not a build step — changing the copy on
+it means re-rendering the PNG by hand. `public/favicon.svg`, `icon-192.png`,
+`icon-512.png` and `favicon.ico` carry the same mark and are referenced from
+the head alongside it.
+
+`og:image` and `og:url` must be absolute, and a cold fetch gives us no
+request-time location we control, so the origin comes from `VITE_SITE_URL`
+(default `https://lifeos-track.vercel.app`). Vite inlines it, so changing the
+domain needs a rebuild.
+
 ## Backup
 
 Export your data as JSON from the sidebar and import it back anytime. A backup covers your **personal** board only: a space's projects belong to everyone in it, so they are not captured and a restore never touches them. Tasks keep their calendar association across a round trip, and an event whose task the snapshot drops is removed rather than orphaned.

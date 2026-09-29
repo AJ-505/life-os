@@ -18,6 +18,7 @@ import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
 import { THEME_INIT_SCRIPT, ThemeProvider } from '#/design-system'
 import { AppShell } from '#/shell'
 import { AuthGate } from '#/auth'
+import { linksFor, metaFor, seoForRouteId } from '#/seo'
 
 import appCss from '../styles.css?url'
 
@@ -40,19 +41,40 @@ const fetchClerkAuth = createServerFn({ method: 'GET' }).handler(async () => {
   return { userId, token }
 })
 
-export const Route = createRootRouteWithContext<MyRouterContext>()({
-  head: () => ({
+/** The only two fields the head builder needs from a match. Naming them keeps
+ *  `head` out of the route's generic inference — inferring `matches` inline
+ *  collapses `beforeLoad`'s expected return type to `never`.
+ *
+ *  `pathname`, not `fullPath`: `fullPath` is the route *pattern*
+ *  (`/join/$inviteCode`), which would put a literal `$inviteCode` into every
+ *  shared link's `og:url` and canonical. */
+type HeadMatch = { routeId: string; pathname: string }
+
+function buildHead(matches: HeadMatch[]) {
+  const deepest = matches[matches.length - 1]
+  const pathname = deepest?.pathname ?? '/'
+  const page = seoForRouteId(deepest?.routeId ?? '/')
+  return {
     meta: [
-      { charSet: 'utf-8' },
+      { charSet: 'utf-8' as const },
       {
         name: 'viewport',
         content: 'width=device-width, initial-scale=1, viewport-fit=cover',
       },
-      { title: 'LifeOS' },
+      // Read by crawlers, not by the app: this is what decides how a shared
+      // link looks in WhatsApp, Slack and iMessage. No user data reaches it.
+      ...metaFor(page, pathname),
     ],
-    links: [{ rel: 'stylesheet', href: appCss }],
+    links: [{ rel: 'stylesheet', href: appCss }, ...linksFor(pathname)],
     scripts: [{ children: THEME_INIT_SCRIPT }],
-  }),
+  }
+}
+
+export const Route = createRootRouteWithContext<MyRouterContext>()({
+  // One builder for the whole document head, driven by the deepest match. The
+  // alternative — letting each route add its own og tags — risks two
+  // `og:title` elements on one page, and a crawler picks either.
+  head: ({ matches }: { matches: HeadMatch[] }) => buildHead(matches),
   beforeLoad: async (ctx) => {
     const { userId, token } = await fetchClerkAuth()
     // serverHttpClient only exists during SSR — give it the Clerk token so
