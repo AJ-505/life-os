@@ -89,6 +89,17 @@ it means re-rendering the PNG by hand. `public/favicon.svg`, `icon-192.png`,
 `icon-512.png` and `favicon.ico` carry the same mark and are referenced from
 the head alongside it.
 
+That mark is the sidebar wordmark's `OS` badge: an orange rounded square
+(`--signal`) with the letters knocked out in near-black (`--signal-foreground`
+in dark mode). The letters are real outlines extracted from the `Fragment Mono`
+file `@fontsource/fragment-mono` ships, plus a stroke for the bold the browser
+fakes — Fragment Mono has only a 400 weight, so `<span class="font-bold">`
+renders as a stroked regular, and the icon reproduces that rather than picking
+a different typeface. The generator lives outside the repo, at
+`~/code/artifacts/life-os/scripts/generate-favicon.py` (SVG) and
+`generate-favicon-raster.py` (PNGs and ICO); both are run by hand, matching
+`og.png`'s committed-asset contract.
+
 `og:image` and `og:url` must be absolute, and a cold fetch gives us no
 request-time location we control, so the origin comes from `VITE_SITE_URL`
 (default `https://lifeos-track.vercel.app`). Vite inlines it, so changing the
