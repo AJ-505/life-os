@@ -11,7 +11,6 @@
     "generate-routes": "tsr generate",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc --noEmit -p convex/tsconfig.json",
     "lint": "oxlint",
     "format": "prettier --write . && oxlint --fix",

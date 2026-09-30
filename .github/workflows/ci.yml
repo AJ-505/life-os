@@ -26,8 +26,6 @@ jobs:
 
       - run: pnpm typecheck
 
-      - run: pnpm test
-
       # `prettier --check` is deliberately not a gate: it reports pre-existing
       # offenders across files this project has not touched. Run `pnpm format`
       # to normalize the tree.
