@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { MutableRefObject } from 'react'
-import { format } from 'date-fns'
+import { format } from 'date-fns/format'
 import {
   Archive,
   CalendarIcon,
@@ -424,29 +424,6 @@ export function TaskDetails({
     setTimeInput(task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00')
   }, [task.id, task.dueAt, task.reminderMinutes, task.addToCalendar])
 
-  // TEMP-PROBE(?perf=1): click-to-dialog-paint. Double rAF lands after the
-  // browser paints the mounted dialog. Deleted after the scaling analysis.
-  useEffect(() => {
-    if (
-      typeof window === 'undefined' ||
-      !window.location.search.includes('perf')
-    )
-      return
-    const id = task.id
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        const marks = performance.getEntriesByName(`task-open-${id}`)
-        const m = marks[marks.length - 1]
-        if (!m) return
-        const boardTasks = (window as unknown as { __perfBoardTasks?: number })
-          .__perfBoardTasks
-        console.log(
-          `[perf] task-open ${Math.round(performance.now() - m.startTime)}ms boardTasks=${boardTasks ?? '?'} projectId=${task.projectId}`,
-        )
-      }),
-    )
-  }, [task.id, task.projectId])
-
   const parseTime24 = (s: string): { h: number; m: number } | null => {
     const m = s.trim().match(/^(\d{1,2}):(\d{2})$/)
     if (!m) return null
@@ -585,13 +562,13 @@ export function TaskDetails({
     // Revert deferred due state so a quick reopen shows persisted values
     setLocalDueAt(task.dueAt ?? null)
     setLocalReminder(task.reminderMinutes)
-    setLocalAddToCal(!!task.calendarEventId)
+    setLocalAddToCal(task.addToCalendar)
     setTimeInput(task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00')
-    // Clear any draft input so typed text does not leak into next open
-    const draftEl = document.querySelector<HTMLInputElement>(
-      'input[placeholder="Add a subtask"]',
-    )
-    if (draftEl) draftEl.value = ''
+    // Same capture the close path uses: it reads and clears the new-subtask
+    // draft. Dropping the result (instead of committing it) is exactly what a
+    // cancel means, and it clears the input the clean way — through the ref,
+    // not a global DOM query that can hit a different task's input.
+    draftCaptureRef.current?.()
     onClose()
     setTimeout(() => {
       closingRef.current = false

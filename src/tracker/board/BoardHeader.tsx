@@ -9,9 +9,8 @@ import {
   Plus,
   Users,
 } from 'lucide-react'
-import { toast } from 'sonner'
 
-import { cn } from '#/design-system'
+import { cn, copyToClipboard } from '#/design-system'
 import { Button } from '#/design-system/ui/button'
 import {
   DropdownMenu,
@@ -143,8 +142,7 @@ function SpaceChrome({ spaceId }: { spaceId: string }) {
             className="h-8 gap-1.5"
             onClick={async () => {
               const link = `${window.location.origin}/join/${current.inviteCode}`
-              await navigator.clipboard.writeText(link)
-              toast.success('Link copied')
+              await copyToClipboard(link, 'Link copied')
             }}
           >
             <LinkIcon className="size-3.5" /> Share

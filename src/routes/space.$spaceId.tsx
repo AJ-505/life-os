@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ShieldOff } from 'lucide-react'
 
 import { Button } from '#/design-system/ui/button'
-import { BoardView } from '#/tracker'
+import { BoardView } from '#/tracker/board/BoardView'
 import { BoardScopeProvider } from '#/tracker/board-scope'
 import { boardQueryOptions } from '#/tracker/queries'
 

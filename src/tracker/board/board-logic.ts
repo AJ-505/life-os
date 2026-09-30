@@ -48,6 +48,34 @@ export function boardColumns(board: BoardData): Array<number> {
   )
 }
 
+/**
+ * Task id -> { task, project }, flattened once per board identity. The host
+ * (keybindings) and any other repeated lookup build this once instead of
+ * rescanning every project's list per press.
+ */
+export function buildTaskIndex(board: BoardData) {
+  const m = new Map<string, { task: Task; project: ProjectWithTasks }>()
+  for (const p of board) {
+    for (const t of p.tasks) m.set(t.id, { task: t, project: p })
+  }
+  return m
+}
+
+/**
+ * Done / total over a project's visible (non-archived) tasks, the numbers the
+ * progress bar and the "x/y" label both show. One definition here — the same
+ * arithmetic had drifted into three copies with subtly different filters.
+ */
+export function projectCounts(project: ProjectWithTasks) {
+  const totalCount = project.tasks.filter((t) => !t.archived).length
+  const doneCount = project.tasks.filter((t) => t.done && !t.archived).length
+  return {
+    doneCount,
+    totalCount,
+    progress: totalCount === 0 ? 0 : doneCount / totalCount,
+  }
+}
+
 /* ------------------------------------------------------------ task nesting */
 
 export type TaskNode = { task: Task; children: Array<TaskNode> }

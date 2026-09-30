@@ -6,7 +6,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { format } from 'date-fns'
+import { format } from 'date-fns/format'
 import {
   Archive,
   CalendarIcon,
@@ -54,7 +54,7 @@ import {
   useSetProjectStatus,
   useUpdateProject,
 } from '../queries'
-import { listId, projId, taskId, taskTree } from './board-logic'
+import { listId, projId, projectCounts, taskId, taskTree } from './board-logic'
 import { TaskRow } from './TaskRow'
 
 import type { ProjectWithTasks } from '../types'
@@ -264,9 +264,7 @@ export function ProjectCardBody({
 
   const showDoneHere = showDone || project.showDone
   const nodes = taskTree(project, showDoneHere)
-  const doneCount = project.tasks.filter((t) => t.done && !t.archived).length
-  const totalCount = project.tasks.filter((t) => !t.archived).length
-  const progress = totalCount === 0 ? 0 : doneCount / totalCount
+  const { doneCount, totalCount, progress } = projectCounts(project)
 
   return (
     <div

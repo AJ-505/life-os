@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { useUser } from '@clerk/tanstack-react-start'
@@ -54,7 +54,7 @@ import {
   useGoogleCalendar,
   useSyncTaskToCalendar,
 } from '#/settings/googleCalendar'
-import { boardQueryOptions } from '#/tracker'
+import { boardQueryOptions } from '#/tracker/queries'
 import { useSyncUserProfile } from '#/spaces/queries'
 
 const NAV = [
@@ -154,11 +154,18 @@ function ProfileSync() {
   const displayName =
     user?.fullName ?? user?.username ?? user?.primaryEmailAddress?.emailAddress
   const email = user?.primaryEmailAddress?.emailAddress
+  // Clerk hands back a fresh user object on many unrelated updates. Only
+  // re-sync when the profile fields themselves changed — the signature is
+  // the gate, not the identity of the object.
+  const syncedRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!user || !displayName) return
+    const signature = `${user.id}|${displayName}|${email ?? ''}`
+    if (syncedRef.current === signature) return
+    syncedRef.current = signature
     mutate({ displayName, ...(email ? { email } : {}) })
-  }, [user?.id, displayName, email, mutate])
+  }, [user, displayName, email, mutate])
 
   return null
 }
@@ -302,12 +309,12 @@ function CalendarSettings() {
 
       {enabled && !googleConnected ? (
         <div className="rounded-md border border-dashed p-3">
-          <p className="text-xs leading-snug text-muted-foreground">
+          <p className="mb-2 text-xs leading-snug text-muted-foreground">
             {needsScope
               ? 'Your Google account is linked but has not granted calendar access yet.'
               : 'Connect your Google account to push task times to your calendar.'}
           </p>
-          <Button size="sm" className="mt-2 w-full" onClick={handleConnect}>
+          <Button size="sm" className="w-full" onClick={handleConnect}>
             {needsScope ? 'Grant calendar access' : 'Connect Google Calendar'}
           </Button>
         </div>

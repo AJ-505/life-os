@@ -1,6 +1,8 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { format, isPast, isToday } from 'date-fns'
+import { format } from 'date-fns/format'
+import { isPast } from 'date-fns/isPast'
+import { isToday } from 'date-fns/isToday'
 import { CornerDownRight, Crosshair } from 'lucide-react'
 
 import { cn } from '#/design-system'

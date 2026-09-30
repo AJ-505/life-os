@@ -1,12 +1,10 @@
 import { useState } from 'react'
 import { useSuspenseQuery } from '@tanstack/react-query'
-import {
-  differenceInCalendarDays,
-  format,
-  isPast,
-  isToday,
-  isTomorrow,
-} from 'date-fns'
+import { differenceInCalendarDays } from 'date-fns/differenceInCalendarDays'
+import { format } from 'date-fns/format'
+import { isPast } from 'date-fns/isPast'
+import { isToday } from 'date-fns/isToday'
+import { isTomorrow } from 'date-fns/isTomorrow'
 import { CalendarRange, Crosshair, Flag } from 'lucide-react'
 
 import { cn } from '#/design-system'
@@ -34,8 +32,7 @@ const BUCKETS = [
 ] as const
 type Bucket = (typeof BUCKETS)[number]
 
-function bucketOf(due: Date): Bucket {
-  const now = new Date()
+function bucketOf(due: Date, now: Date): Bucket {
   if (isPast(due)) return 'Overdue'
   if (isToday(due) && due.getHours() === now.getHours()) return 'This hour'
   if (isToday(due)) return 'Today'
@@ -66,10 +63,17 @@ function collectEntries(board: BoardData): Map<Bucket, Array<Entry>> {
     }
   }
   entries.sort((a, b) => a.due.getTime() - b.due.getTime())
+  // One `now` for the whole pass: an entry must not land in a different
+  // bucket than its neighbour because midnight (or a slow render) crossed
+  // between the two comparisons.
+  const now = new Date()
   const grouped = new Map<Bucket, Array<Entry>>()
   for (const e of entries) {
-    const b = bucketOf(e.due)
-    grouped.set(b, [...(grouped.get(b) ?? []), e])
+    const b = bucketOf(e.due, now)
+    // Push into the existing array; spreading per insert made this O(n²).
+    const bucket = grouped.get(b)
+    if (bucket) bucket.push(e)
+    else grouped.set(b, [e])
   }
   return grouped
 }
@@ -77,15 +81,14 @@ function collectEntries(board: BoardData): Map<Bucket, Array<Entry>> {
 function TaskEntry({
   task,
   project,
-  board,
+  onOpen,
 }: {
   task: Task
   project: Project
-  board: BoardData
+  onOpen: () => void
 }) {
   const updateTask = useUpdateTask()
   const setFocus = useSetTaskFocus()
-  const [open, setOpen] = useState(false)
 
   return (
     <div
@@ -102,7 +105,7 @@ function TaskEntry({
       />
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={onOpen}
         className="min-w-0 flex-1 cursor-pointer text-left"
       >
         <p className="text-sm leading-snug">{task.title}</p>
@@ -131,14 +134,6 @@ function TaskEntry({
       >
         <Crosshair className="size-3.5" />
       </button>
-      {open ? (
-        <TaskDetails
-          task={task}
-          board={board}
-          open={open}
-          onClose={() => setOpen(false)}
-        />
-      ) : null}
     </div>
   )
 }
@@ -147,6 +142,13 @@ export function TimelineView() {
   const { data: board } = useSuspenseQuery(boardQueryOptions(null))
   const grouped = collectEntries(board)
   const total = [...grouped.values()].reduce((n, l) => n + l.length, 0)
+  // One dialog host for the whole view. A row owning its dialog used to mount
+  // a radix portal + focus-trap per row — the number of hidden portals grew
+  // with the timeline, and an open row dialog blocked scrolling its section.
+  const [openTask, setOpenTask] = useState<Task | null>(null)
+  const openProject = openTask
+    ? board.find((p) => p.tasks.some((t) => t.id === openTask.id))
+    : null
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -189,7 +191,7 @@ export function TimelineView() {
                           key={e.task.id}
                           task={e.task}
                           project={e.project}
-                          board={board}
+                          onOpen={() => setOpenTask(e.task)}
                         />
                       ) : (
                         <div
@@ -217,6 +219,14 @@ export function TimelineView() {
           )}
         </div>
       </div>
+      {openTask && openProject ? (
+        <TaskDetails
+          task={openTask}
+          board={board}
+          open={true}
+          onClose={() => setOpenTask(null)}
+        />
+      ) : null}
     </div>
   )
 }

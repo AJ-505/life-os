@@ -9,7 +9,7 @@ import {
 } from './_generated/server'
 import type { ActionCtx } from './_generated/server'
 import { internal } from './_generated/api'
-import { getUserSettings, requireUserId } from './lib'
+import { getUserSettings, requireUserId, taskByAppId } from './lib'
 
 /**
  * One-way push: Life OS task ▸ Google Calendar, for personal tasks only.
@@ -83,7 +83,7 @@ export function tryDerivedEventId(taskId: string): string | null {
 export function eventIdsForTasks(
   tasks: Array<{
     id: string
-    spaceId?: string
+    spaceId?: string | null
     calendarEventId?: string | null
     addToCalendar?: boolean
     dueAt: number | null
@@ -150,12 +150,10 @@ type Snapshot = {
 export const taskForSync = internalQuery({
   args: { userId: v.string(), taskId: v.string() },
   handler: async (ctx, args): Promise<Snapshot | null> => {
-    const task = await ctx.db
-      .query('tasks')
-      .withIndex('by_user_id', (q) =>
-        q.eq('userId', args.userId).eq('id', args.taskId),
-      )
-      .unique()
+    // `.first()`, not `.unique()`: a backup or a migration can leave two rows
+    // for one (userId, id), and a throwing read here would break every sync
+    // call for that user instead of just being ambiguous.
+    const task = await taskByAppId(ctx, args.userId, args.taskId)
     if (!task) return null
     const settings = await getUserSettings(ctx, args.userId)
     return {
@@ -190,12 +188,8 @@ export const setEventId = internalMutation({
     expect: v.union(v.string(), v.null()),
   },
   handler: async (ctx, args) => {
-    const task = await ctx.db
-      .query('tasks')
-      .withIndex('by_user_id', (q) =>
-        q.eq('userId', args.userId).eq('id', args.taskId),
-      )
-      .unique()
+    // `.first()` for the same reason as `taskForSync`.
+    const task = await taskByAppId(ctx, args.userId, args.taskId)
     const current = task ? (task.calendarEventId ?? null) : null
     if (task && current === args.expect) {
       await ctx.db.patch(task._id, { calendarEventId: args.calendarEventId })

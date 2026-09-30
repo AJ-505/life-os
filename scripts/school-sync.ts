@@ -41,6 +41,7 @@ function expandHome(p: string) {
 function sanitize(name: string) {
   return name
     .replace(/[\\/:*?"<>|]/g, '-')
+    .replace(/\.+/g, '-') // dots-only names would walk out of VAULT
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 140)

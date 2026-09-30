@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 
-import { BoardView } from '#/tracker'
+import { BoardView } from '#/tracker/board/BoardView'
 import { BoardScopeProvider } from '#/tracker/board-scope'
 
 // The board query is per-user and auth-gated, so it loads client-side inside

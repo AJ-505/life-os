@@ -80,6 +80,7 @@ const LIVE_CLIENT_SENDS = {
   },
   'tracker:setTaskFocus': { id: 'contract-probe', inFocus: false },
   'tracker:deleteTask': { id: 'contract-probe' },
+  'tracker:getTaskHistory': { taskId: 'contract-probe' },
   'settings:getCalendarSettings': null,
   // The dialog writes one at a time; sending both covers both.
   'settings:updateCalendarSettings': {
@@ -145,6 +146,10 @@ const LIVE_CLIENT_SENDS = {
     userId: 'contract-probe',
   },
   'spaces:resetInviteCode': { spaceId: 'contract-probe' },
+  'spaces:syncUserProfile': {
+    displayName: 'contract probe',
+    email: 'contract-probe@example.invalid',
+  },
 }
 
 /** Which endpoint a function lives on. Actions answer only on /api/action, and

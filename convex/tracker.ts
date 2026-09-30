@@ -9,6 +9,7 @@ import {
   getWritableTask,
   isSpaceMember,
   requireUserId,
+  scopeProjects,
   scopeTasks,
   shapeProject,
   shapeTask,
@@ -96,17 +97,10 @@ export const getBoard = query({
 
     let projects: Array<Doc<'projects'>>
     if (spaceId === null) {
-      const rows = await ctx.db
-        .query('projects')
-        .withIndex('by_user', (q) => q.eq('userId', userId))
-        .collect()
-      projects = rows.filter((project) => !project.spaceId)
+      projects = await scopeProjects(ctx, userId, null)
     } else {
       await getMemberSpace(ctx, userId, spaceId)
-      projects = await ctx.db
-        .query('projects')
-        .withIndex('by_space', (q) => q.eq('spaceId', spaceId))
-        .collect()
+      projects = await scopeProjects(ctx, userId, spaceId)
     }
 
     const tasks = await scopeTasks(ctx, userId, spaceId)
@@ -164,25 +158,28 @@ export const getTaskHistory = query({
 /** Reject an id the caller can already reach on a different board, and treat a
  *  repeat on the same board as the optimistic retry it is. Without this a
  *  member could plant a teammate's id inside a shared space and make every
- *  write to that id ambiguous. */
-async function assertScopeProjectIdFree(
+ *  write to that id ambiguous. One helper for both tables: the two copies this
+ *  replaces had already drifted once (the `spaceId` reachability check). */
+async function assertScopeIdFree(
   ctx: MutationCtx,
   userId: string,
   id: string,
   scope: Scope,
-) {
+  table: 'projects' | 'tasks',
+  noun: 'project' | 'task',
+): Promise<boolean> {
   const candidates = await ctx.db
-    .query('projects')
+    .query(table)
     .withIndex('by_app_id', (q) => q.eq('id', id))
     .collect()
   for (const candidate of candidates) {
     const reachable =
       candidate.userId === userId ||
-      (candidate.spaceId !== undefined &&
+      (candidate.spaceId != null &&
         (await isSpaceMember(ctx, userId, candidate.spaceId)))
     if (!reachable) continue
     if ((candidate.spaceId ?? null) === scope) return true
-    throw new Error('That project id is already used on another of your boards')
+    throw new Error(`That ${noun} id is already used on another of your boards`)
   }
   return false
 }
@@ -208,7 +205,8 @@ export const createProject = mutation({
 
     // The client supplies the id so creation is optimistic; a duplicate on the
     // same board means an optimistic retry already landed — success, not error.
-    if (await assertScopeProjectIdFree(ctx, userId, args.id, spaceId)) return
+    if (await assertScopeIdFree(ctx, userId, args.id, spaceId, 'projects', 'project'))
+      return
 
     await ctx.db.insert('projects', {
       userId,
@@ -223,9 +221,8 @@ export const createProject = mutation({
       createdAt: Date.now(),
       finishedAt: null,
       shelvedAt: null,
-      // Spread the normalized value, so an absent argument never writes an
-      // explicit `undefined` onto the row.
-      ...(spaceId !== null && { spaceId }),
+      // The schema stores `string | null`; the local is already normalized.
+      spaceId,
     })
   },
 })
@@ -308,38 +305,17 @@ export const deleteProject = mutation({
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
     const project = await getWritableProject(ctx, userId, args.id)
-    // Hard delete cascades to the project's tasks, and to their events.
+    // Hard delete cascades to the project's tasks, their events, and their
+    // activity rows — nothing reads orphaned history, so leaving it behind is
+    // unbounded table growth.
     const tasks = await projectTasks(ctx, userId, project)
     await scheduleEventCleanup(ctx, userId, tasks)
-    await deleteTasksBatched(ctx, tasks)
+    await deleteTasksBatched(ctx, tasks, project.spaceId ?? null)
     await ctx.db.delete(project._id)
   },
 })
 
 /* ---------------------------------------------------------------- tasks */
-
-/** Same rule as projects: an id may exist once per board the caller can reach. */
-async function assertScopeTaskIdFree(
-  ctx: MutationCtx,
-  userId: string,
-  id: string,
-  scope: Scope,
-) {
-  const candidates = await ctx.db
-    .query('tasks')
-    .withIndex('by_app_id', (q) => q.eq('id', id))
-    .collect()
-  for (const candidate of candidates) {
-    const reachable =
-      candidate.userId === userId ||
-      (candidate.spaceId !== undefined &&
-        (await isSpaceMember(ctx, userId, candidate.spaceId)))
-    if (!reachable) continue
-    if ((candidate.spaceId ?? null) === scope) return true
-    throw new Error('That task id is already used on another of your boards')
-  }
-  return false
-}
 
 export const createTask = mutation({
   args: {
@@ -363,8 +339,20 @@ export const createTask = mutation({
         throw new Error('Tasks on a personal board cannot be assigned')
       await requireMember(ctx, assigneeId, project.spaceId)
     }
+    // A parent must exist on the same board and differ from the child. Without
+    // the self-check the row registers as its own child and every subtree walk
+    // (delete, move, client `descendantIds`) never drains — a client argument
+    // could hang the mutation until the transaction times out.
+    const parentId = args.parentId ?? null
+    if (parentId !== null) {
+      if (parentId === args.id)
+        throw new Error('A task cannot be its own subtask')
+      const parent = await getWritableTask(ctx, userId, parentId)
+      if ((parent.spaceId ?? null) !== (project.spaceId ?? null))
+        throw new Error('A subtask must live on the same board as its parent')
+    }
     if (
-      await assertScopeTaskIdFree(ctx, userId, args.id, project.spaceId ?? null)
+      await assertScopeIdFree(ctx, userId, args.id, project.spaceId ?? null, 'tasks', 'task')
     )
       return
     await ctx.db.insert('tasks', {
@@ -383,7 +371,7 @@ export const createTask = mutation({
       focusOrder: 0,
       createdAt: Date.now(),
       assigneeId,
-      ...(project.spaceId && { spaceId: project.spaceId }),
+      spaceId: project.spaceId ?? null,
     })
     const activityTask = {
       id: args.id,
@@ -465,16 +453,23 @@ function childrenByParent(tasks: Array<Doc<'tasks'>>) {
   return childrenOf
 }
 
-/** Everything below `root`, inclusive, walked over one board's tasks. */
+/** Everything below `root`, inclusive, walked over one board's tasks. The
+ *  visited set bounds the walk: `createTask` rejects self/cross-board parents,
+ *  but a row from before that check (or from a restored backup) could carry a
+ *  cycle, and an unbounded queue would hang the mutation to the transaction
+ *  timeout instead of just deleting what is there. */
 function withDescendants(
   tasks: Array<Doc<'tasks'>>,
   root: Doc<'tasks'>,
 ): Array<Doc<'tasks'>> {
   const childrenOf = childrenByParent(tasks)
   const found = [root]
+  const visited = new Set([root.id])
   const queue = [...(childrenOf.get(root.id) ?? [])]
   while (queue.length > 0) {
     const child = queue.shift()!
+    if (visited.has(child.id)) continue
+    visited.add(child.id)
     found.push(child)
     queue.push(...(childrenOf.get(child.id) ?? []))
   }
@@ -487,15 +482,32 @@ function withDescendants(
 const DELETE_BATCH = 200
 
 export const continueDeleteTasks = internalMutation({
-  args: { ids: v.array(v.string()) },
+  args: {
+    ids: v.array(v.string()),
+    spaceId: v.optional(v.union(v.string(), v.null())),
+  },
   handler: async (ctx, args) => {
     const batch = args.ids.slice(0, DELETE_BATCH)
-    await Promise.all(
-      batch.map((id) => ctx.db.delete(id as Doc<'tasks'>['_id'])),
-    )
+    await Promise.all([
+      ...batch.map((id) => ctx.db.delete(id as Doc<'tasks'>['_id'])),
+      ...(args.spaceId
+        ? batch.map((id) =>
+            ctx.db
+              .query('taskActivity')
+              .withIndex('by_space_task', (q) =>
+                q.eq('spaceId', args.spaceId!).eq('taskId', id),
+              )
+              .collect()
+              .then((rows) =>
+                Promise.all(rows.map((row) => ctx.db.delete(row._id))),
+              ),
+          )
+        : []),
+    ])
     if (args.ids.length > batch.length) {
       await ctx.scheduler.runAfter(0, internal.tracker.continueDeleteTasks, {
         ids: args.ids.slice(batch.length),
+        spaceId: args.spaceId,
       })
     }
   },
@@ -504,13 +516,27 @@ export const continueDeleteTasks = internalMutation({
 async function deleteTasksBatched(
   ctx: MutationCtx,
   tasks: Array<Doc<'tasks'>>,
+  spaceId: string | null,
 ) {
   const ids = tasks.map((task) => task._id)
   const batch = ids.slice(0, DELETE_BATCH)
   await Promise.all(batch.map((id) => ctx.db.delete(id)))
+  // Activity rows for a space's tasks go with them, batched the same way.
+  if (spaceId) {
+    for (const task of batch.length ? tasks.slice(0, batch.length) : []) {
+      const rows = await ctx.db
+        .query('taskActivity')
+        .withIndex('by_space_task', (q) =>
+          q.eq('spaceId', spaceId).eq('taskId', task.id),
+        )
+        .collect()
+      await Promise.all(rows.map((row) => ctx.db.delete(row._id)))
+    }
+  }
   if (ids.length > batch.length) {
     await ctx.scheduler.runAfter(0, internal.tracker.continueDeleteTasks, {
       ids: ids.slice(batch.length),
+      spaceId,
     })
   }
 }
@@ -539,6 +565,9 @@ export const updateTask = mutation({
       await requireMember(ctx, assigneeId, task.spaceId)
     }
     const patch: Partial<Doc<'tasks'>> = { ...rest }
+    // Trim like `createTask` does, so the stored title and the activity-log
+    // comparison below never disagree on whitespace.
+    if (args.title !== undefined) patch.title = args.title.trim()
     if (assigneeId !== undefined) patch.assigneeId = assigneeId
     if (done !== undefined) {
       patch.done = done
@@ -624,14 +653,27 @@ export const moveTask = mutation({
 
     // The whole subtree travels with the task, walked over the board's own
     // tasks rather than the caller's: in a space a teammate may have created
-    // the children, and a caller-scoped walk would leave them behind.
+    // the children, and a caller-scoped walk would leave them behind. The
+    // writes go out one parallel batch per level (instead of one awaited patch
+    // per child) and the visited set bounds the walk, so a large or cyclic
+    // subtree can neither blow the transaction budget nor spin forever.
     const boardTasks = await scopeTasks(ctx, userId, source)
     const childrenOf = childrenByParent(boardTasks)
-    const queue = [...(childrenOf.get(args.id) ?? [])]
-    while (queue.length > 0) {
-      const child = queue.shift()!
-      await ctx.db.patch(child._id, { projectId: args.projectId })
-      queue.push(...(childrenOf.get(child.id) ?? []))
+    const visited = new Set<string>()
+    let level = childrenOf.get(args.id) ?? []
+    while (level.length > 0) {
+      const patching: Array<Doc<'tasks'>> = []
+      const next: Array<Doc<'tasks'>> = []
+      for (const child of level) {
+        if (visited.has(child.id)) continue
+        visited.add(child.id)
+        patching.push(child)
+        next.push(...(childrenOf.get(child.id) ?? []))
+      }
+      await Promise.all(
+        patching.map((c) => ctx.db.patch(c._id, { projectId: args.projectId })),
+      )
+      level = next
     }
   },
 })
@@ -670,6 +712,6 @@ export const deleteTask = mutation({
     const boardTasks = await scopeTasks(ctx, userId, task.spaceId ?? null)
     const toDelete = withDescendants(boardTasks, task)
     await scheduleEventCleanup(ctx, userId, toDelete)
-    await deleteTasksBatched(ctx, toDelete)
+    await deleteTasksBatched(ctx, toDelete, task.spaceId ?? null)
   },
 })

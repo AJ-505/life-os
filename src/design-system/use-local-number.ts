@@ -17,5 +17,22 @@ export function useLocalNumber(key: string, initial: number) {
     setValue(v)
     localStorage.setItem(key, String(v))
   }
-  return [value, update] as const
+  /**
+   * Same state, but the localStorage write waits for `commit`. For a drag
+   * ticking at 60Hz that is one write on release instead of one per
+   * pointermove; the in-memory state updates every tick either way, so the
+   * resize feedback stays instant.
+   */
+  const [pending, setPending] = useState<number | null>(null)
+  const updateDeferred = (v: number) => {
+    setValue(v)
+    setPending(v)
+  }
+  const commit = () => {
+    if (pending !== null) {
+      localStorage.setItem(key, String(pending))
+      setPending(null)
+    }
+  }
+  return [value, update, updateDeferred, commit] as const
 }

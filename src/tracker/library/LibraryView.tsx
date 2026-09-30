@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useSuspenseQuery } from '@tanstack/react-query'
-import { format, formatDistanceToNow } from 'date-fns'
+import { format } from 'date-fns/format'
+import { formatDistanceToNow } from 'date-fns/formatDistanceToNow'
 import {
   Archive,
   ArchiveRestore,
@@ -222,37 +223,36 @@ export function LibraryView() {
 
   const shelved = board
     .filter((p) => p.status === 'shelved')
-    .sort(
-      (a, b) =>
-        new Date(b.shelvedAt ?? 0).getTime() -
-        new Date(a.shelvedAt ?? 0).getTime(),
-    )
+    .sort((a, b) => (b.shelvedAt ?? 0) - (a.shelvedAt ?? 0))
   const finished = board
     .filter((p) => p.status === 'done')
-    .sort(
-      (a, b) =>
-        new Date(b.finishedAt ?? 0).getTime() -
-        new Date(a.finishedAt ?? 0).getTime(),
-    )
-  const completedTasks = board
-    .flatMap((p) => p.tasks.map((t) => ({ task: t, project: p })))
-    .filter(({ task }) => task.done && !task.archived)
-    .sort(
-      (a, b) =>
-        new Date(b.task.doneAt ?? 0).getTime() -
-        new Date(a.task.doneAt ?? 0).getTime(),
-    )
-  const archivedTasks = board
-    .flatMap((p) => p.tasks.map((t) => ({ task: t, project: p })))
-    .filter(({ task }) => task.archived)
+    .sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0))
 
-  // group completed tasks by month for a little "trophy room" feel
+  // One pass over every task instead of two flatMap+filter sweeps.
+  const completedTasks: Array<{ task: Task; project: ProjectWithTasks }> = []
+  const archivedTasks: Array<{ task: Task; project: ProjectWithTasks }> = []
+  for (const project of board) {
+    for (const task of project.tasks) {
+      if (task.archived) {
+        archivedTasks.push({ task, project })
+      } else if (task.done) {
+        completedTasks.push({ task, project })
+      }
+    }
+  }
+  completedTasks.sort((a, b) => (b.task.doneAt ?? 0) - (a.task.doneAt ?? 0))
+
+  // Group completed tasks by month for a little "trophy room" feel. Push into
+  // the existing array instead of spreading on every insert — the spread made
+  // grouping O(n²) in task count.
   const byMonth = new Map<string, typeof completedTasks>()
   for (const item of completedTasks) {
     const key = item.task.doneAt
       ? format(new Date(item.task.doneAt), 'MMMM yyyy')
       : 'Sometime'
-    byMonth.set(key, [...(byMonth.get(key) ?? []), item])
+    const bucket = byMonth.get(key)
+    if (bucket) bucket.push(item)
+    else byMonth.set(key, [item])
   }
 
   return (

@@ -51,7 +51,6 @@ export interface Task {
 export type ProjectStatus = 'active' | 'shelved' | 'done'
 
 export type ProjectWithTasks = Project & { tasks: Array<Task> }
-export type TaskWithProject = Task & { project: Project }
 
 export type BoardData = Array<ProjectWithTasks>
 

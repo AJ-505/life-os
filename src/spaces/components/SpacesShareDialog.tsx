@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Check, Copy, Link2, Lock, ShieldOff, Users } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { copyToClipboard } from '#/design-system'
 import { Badge } from '#/design-system/ui/badge'
 import { Button } from '#/design-system/ui/button'
 import {
@@ -71,10 +72,9 @@ export function SpacesShareDialog({
   const inviteLink = `${typeof window !== 'undefined' ? window.location.origin : ''}/join/${inviteCode}`
   const label = (m: Member) => (m.isSelf ? 'You' : m.name)
 
-  const copy = async (text: string, msg: string) => {
-    await navigator.clipboard.writeText(text)
+  const copy = (text: string, msg: string) => {
+    void copyToClipboard(text, msg)
     setCopied(true)
-    toast.success(msg)
     setTimeout(() => setCopied(false), 1500)
   }
 

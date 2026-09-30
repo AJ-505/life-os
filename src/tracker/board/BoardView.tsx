@@ -51,6 +51,8 @@ import {
   projectDrop,
   taskDrop,
   visibleTasks,
+  buildTaskIndex,
+  projectCounts,
 } from './board-logic'
 import { ProjectCard } from './ProjectCard'
 import { BoardHeader } from './BoardHeader'
@@ -333,9 +335,7 @@ function BoardColumn({
 }
 
 function GhostProjectCard({ project }: { project: ProjectWithTasks }) {
-  const doneCount = project.tasks.filter((t) => t.done && !t.archived).length
-  const totalCount = project.tasks.filter((t) => !t.archived).length
-  const progress = totalCount === 0 ? 0 : doneCount / totalCount
+  const { doneCount, totalCount, progress } = projectCounts(project)
 
   return (
     <div
@@ -527,16 +527,11 @@ export function BoardView({ spaceId }: { spaceId: string | null }) {
     0,
   )
 
-  // Drag-only task lookup. Keybindings own a separate copy inside
-  // TaskDetailsHost — intentionally duplicated to keep hover/keys out of this
-  // root, and never passed into memoized rows.
-  const findTask = (id: string) => {
-    for (const p of board) {
-      const t = p.tasks.find((x) => x.id === id)
-      if (t) return { task: t, project: p }
-    }
-    return null
-  }
+  // Drag-only task lookup, from the same flattened index the keybindings in
+  // TaskDetailsHost use: O(1) per drag event instead of an O(projects x tasks)
+  // scan. Built from `board` identity, so it never feeds memoized rows.
+  const taskIndex = buildTaskIndex(board)
+  const findTask = (id: string) => taskIndex.get(id) ?? null
 
   const onDragStart = (e: DragStartEvent) => {
     const parsed = parseDragId(e.active.id)

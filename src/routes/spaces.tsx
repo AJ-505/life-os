@@ -5,7 +5,7 @@ import { Copy, Link2, MoreHorizontal, Plus, Users, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '#/design-system/ui/button'
-import { ComingSoon } from '#/design-system'
+import { ComingSoon, copyToClipboard } from '#/design-system'
 import { SPACES_ENABLED } from '#/feature-flags'
 import { Badge } from '#/design-system/ui/badge'
 import { Input } from '#/design-system/ui/input'
@@ -96,10 +96,9 @@ function SpacesView() {
     )
   }
 
-  const copy = async (code: string) => {
+  const copy = (code: string) => {
     const link = `${window.location.origin}/join/${code}`
-    await navigator.clipboard.writeText(link)
-    toast.success('Link copied')
+    void copyToClipboard(link, 'Link copied')
   }
 
   const runConfirm = () => {

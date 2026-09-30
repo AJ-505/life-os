@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
+import { buildTaskIndex } from './board-logic'
 import { useBoardScope } from '../board-scope'
 import { useSetTaskFocus } from '../queries'
 import { BoardUIContext } from './board-ui'
@@ -35,44 +36,18 @@ export function TaskDetailsHost({
   const [lastOpenTask, setLastOpenTask] = useState<Task | null>(null)
   const hoveredRef = useRef<string | null>(null)
   const setFocus = useSetTaskFocus()
-  // Board snapshot for the TEMP-PROBE below. A ref (synced in an effect)
-  // rather than `board` itself: reading `board` inside `openTask` would make
-  // the compiler cache `openTask` on `board`, rebuilding `boardUI` on every
-  // patch and re-rendering every row — the exact regression being measured.
   const spaceId = useBoardScope()
 
-  const boardRef = useRef(board)
-  useEffect(() => {
-    boardRef.current = board
-  }, [board])
-
-  // Task id -> index of flattened visible rows. Rebuilt only when the board
-  // identity changes, so `findTask` below closes over a Map, not a nested
-  // scan: O(1) per press instead of O(projects x tasks).
-  const index = (() => {
-    const m = new Map<string, { task: Task; project: (typeof board)[number] }>()
-    for (const p of board) {
-      for (const t of p.tasks) m.set(t.id, { task: t, project: p })
-    }
-    return m
-  })()
+  // Task id -> { task, project }, flattened once per board identity, so the
+  // keybinding lookup is O(1) per press instead of O(projects x tasks).
+  const index = buildTaskIndex(board)
 
   // Must not read `board` / `index`. The compiler caches this function
-  // forever (sentinel), then caches `boardUI` forever. Capturing `findTask`
+  // forever (sentinel), then caches `boardUI` forever. Capturing `index`
   // made `boardUI` a new object on every board patch, so every context
   // consumer (every task row) re-rendered on F. The dialog still gets the
   // task on the same click render via `foundOpenTask` below.
   const openTask = (id: string) => {
-    // TEMP-PROBE(?perf=1): click timestamp + board scale for scaling analysis.
-    // Reads `boardRef`, never `board`: keeps this function sentinel-stable.
-    if (
-      typeof window !== 'undefined' &&
-      window.location.search.includes('perf')
-    ) {
-      performance.mark(`task-open-${id}`)
-      ;(window as unknown as { __perfBoardTasks?: number }).__perfBoardTasks =
-        boardRef.current.reduce((n, p) => n + p.tasks.length, 0)
-    }
     setOpenTaskId(id)
   }
   const setHovered = (id: string | null) => {
@@ -109,24 +84,6 @@ export function TaskDetailsHost({
         setOpenTaskId(id)
       } else if (e.key === 'f' && spaceId === null) {
         e.preventDefault()
-        // TEMP-PROBE(?perf=1): F-to-first-paint + scale (project vs board).
-        const perfOn =
-          typeof window !== 'undefined' &&
-          window.location.search.includes('perf')
-        if (perfOn) {
-          performance.mark(`task-focus-${id}`)
-          const projSize = found.project.tasks.length
-          requestAnimationFrame(() =>
-            requestAnimationFrame(() => {
-              const m = performance.getEntriesByName(`task-focus-${id}`).pop()
-              if (m) {
-                console.log(
-                  `[perf] f-press ${Math.round(performance.now() - m.startTime)}ms projectTasks=${projSize}`,
-                )
-              }
-            }),
-          )
-        }
         setFocus.mutate({
           id,
           inFocus: !found.task.inFocus,

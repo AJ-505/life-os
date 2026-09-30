@@ -9,8 +9,8 @@ import type { BoardData } from '../types'
  * Desktop focus panel + its resize handle. Owns `focusWidth` so that dragging
  * the resize edge (a `pointermove` per frame at 60Hz) only re-renders this
  * aside — previously the width lived in BoardView and every tick re-rendered
- * the whole board canvas. Memoized so unrelated board-root renders (e.g. drag
- * start/end) skip the panel when neither `board` nor `onClose` changed.
+ * the whole board canvas. The React Compiler memoizes the component; no
+ * hand-written wrapper here.
  */
 export function ResizableFocusPanel({
   board,
@@ -19,10 +19,13 @@ export function ResizableFocusPanel({
   board: BoardData
   onClose: () => void
 }) {
-  const [focusWidth, setFocusWidth] = useLocalNumber('lifeos-focus-width', 320)
+  const [focusWidth, setFocusWidth, setFocusWidthLive, commitFocusWidth] =
+    useLocalNumber('lifeos-focus-width', 320)
 
   // Drag the panel's left edge to resize it. The panel is anchored right, so
-  // dragging left (smaller clientX) widens it.
+  // dragging left (smaller clientX) widens it. The drag itself only moves
+  // React state — instant feedback, no storage I/O per tick — and the one
+  // localStorage write happens when the pointer is released.
   const startFocusResize = (e: React.PointerEvent) => {
     e.preventDefault()
     const startX = e.clientX
@@ -32,8 +35,9 @@ export function ResizableFocusPanel({
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
     const onMove = (ev: PointerEvent) =>
-      setFocusWidth(clamp(startW + (startX - ev.clientX)))
+      setFocusWidthLive(clamp(startW + (startX - ev.clientX)))
     const onUp = () => {
+      commitFocusWidth()
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
       window.removeEventListener('pointermove', onMove)

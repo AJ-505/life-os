@@ -1,6 +1,6 @@
 import { v } from 'convex/values'
 
-import { mutation, query } from './_generated/server'
+import { internalMutation, mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
 import { dropMembership, requireMember, requireUserId } from './lib'
 
@@ -111,34 +111,41 @@ async function unusedInviteCode(
 }
 
 /**
- * Count the attempt and report the wait when the window is spent. A sliding
- * window, and read with `.first()` so a duplicate row can never lock a user out
- * of joining forever. The throttle exists for the live 6-character legacy codes
- * at roughly 31 bits; a new 10-character code is already infeasible to guess,
- * and a per-account limit does not slow a multi-account attacker.
+ * Count a *failed* attempt and report the wait when the window is spent. The
+ * window only starts on a code that failed to resolve, so re-opening an invite
+ * link you already belong to never counts against the window. A sliding
+ * window, and read with `.first()` so a duplicate row can never lock a user
+ * out of joining forever. The throttle exists for the live 6-character legacy
+ * codes at roughly 31 bits; a new 10-character code is already infeasible to
+ * guess, and a per-account limit does not slow a multi-account attacker.
  */
-async function joinThrottleMinutes(
+async function joinThrottleStartWindow(
   ctx: MutationCtx,
   userId: string,
-): Promise<number | null> {
-  const now = Date.now()
-  const row = await ctx.db
-    .query('inviteAttempts')
-    .withIndex('by_user', (q) => q.eq('userId', userId))
-    .first()
-  if (!row || now - row.windowStartAt > JOIN_WINDOW_MS) {
-    if (row) await ctx.db.patch(row._id, { count: 1, windowStartAt: now })
-    else
-      await ctx.db.insert('inviteAttempts', {
-        userId,
-        count: 1,
-        windowStartAt: now,
-      })
-    return null
-  }
-  const count = row.count + 1
-  await ctx.db.patch(row._id, { count })
-  if (count <= JOIN_MAX_ATTEMPTS) return null
+  priorRow: Doc<'inviteAttempts'> | null,
+  now: number,
+): Promise<{ count: number; windowStartAt: number }> {
+  const inWindow =
+    priorRow !== null && now - priorRow.windowStartAt <= JOIN_WINDOW_MS
+  const row = inWindow
+    ? { count: priorRow.count + 1, windowStartAt: priorRow.windowStartAt }
+    : { count: 1, windowStartAt: now }
+  if (priorRow) await ctx.db.patch(priorRow._id, row)
+  else
+    await ctx.db.insert('inviteAttempts', {
+      userId,
+      count: row.count,
+      windowStartAt: row.windowStartAt,
+    })
+  return row
+}
+
+function joinThrottleWaitMinutes(
+  row: { count: number; windowStartAt: number } | null,
+  now: number,
+): number | null {
+  if (!row || now - row.windowStartAt > JOIN_WINDOW_MS) return null
+  if (row.count < JOIN_MAX_ATTEMPTS) return null
   return Math.max(
     1,
     Math.ceil((row.windowStartAt + JOIN_WINDOW_MS - now) / 60000),
@@ -206,12 +213,28 @@ export const joinSpaceByCode = mutation({
     const code = args.inviteCode.trim().toUpperCase()
     if (!CODE_SHAPE.test(code)) return { ok: false, reason: 'invalid' }
 
-    const wait = await joinThrottleMinutes(ctx, userId)
-    if (wait !== null)
-      return { ok: false, reason: 'throttled', retryAfterMinutes: wait }
+    // Read the throttle row without counting anything yet: the window only
+    // advances on a code that fails to resolve, so re-opening an invite link
+    // the user already belongs to never burns an attempt.
+    const now = Date.now()
+    const throttleRow = await ctx.db
+      .query('inviteAttempts')
+      .withIndex('by_user', (q) => q.eq('userId', userId))
+      .first()
+    const settledWait = joinThrottleWaitMinutes(throttleRow, now)
+    if (settledWait !== null)
+      return { ok: false, reason: 'throttled', retryAfterMinutes: settledWait }
 
     const space = await spaceByInviteCode(ctx, code)
-    if (!space) return { ok: false, reason: 'not_found' }
+    if (!space) {
+      // Count the failed attempt, and tell the user they are out of the window
+      // in the same reply when this attempt spends it.
+      const row = await joinThrottleStartWindow(ctx, userId, throttleRow, now)
+      const wait = joinThrottleWaitMinutes(row, now)
+      return wait === null
+        ? { ok: false, reason: 'not_found' }
+        : { ok: false, reason: 'throttled', retryAfterMinutes: wait }
+    }
 
     // `.first()`, for the same reason the guard uses it: the pair is not unique
     // by construction, so a duplicate from outside this mutation must not lock
@@ -440,6 +463,14 @@ export const removeMember = mutation({
   },
 })
 
+/**
+ * Deleting a space deletes everything it holds: memberships, projects, tasks,
+ * and the activity rows behind those tasks. Every side is batched to
+ * `DELETE_BATCH` and continued through the scheduler, so a space larger than
+ * one transaction still goes without tripping the write or scan limits. The
+ * space document is deleted last, by the continuation, so an interrupted
+ * cascade can always find what is left through its indexes.
+ */
 export const deleteSpace = mutation({
   args: { spaceId: v.string() },
   handler: async (ctx, args) => {
@@ -451,13 +482,11 @@ export const deleteSpace = mutation({
     if (!space) throw new Error('Space not found')
     if (space.ownerId !== userId) throw new Error('Only owner can delete space')
 
-    const members = await ctx.db
-      .query('spaceMembers')
-      .withIndex('by_space', (q) => q.eq('spaceId', args.spaceId))
-      .collect()
-    await Promise.all(members.map((m) => ctx.db.delete(m._id)))
-
-    const [projects, tasks] = await Promise.all([
+    const [members, projects, tasks] = await Promise.all([
+      ctx.db
+        .query('spaceMembers')
+        .withIndex('by_space', (q) => q.eq('spaceId', args.spaceId))
+        .collect(),
       ctx.db
         .query('projects')
         .withIndex('by_space', (q) => q.eq('spaceId', args.spaceId))
@@ -467,18 +496,87 @@ export const deleteSpace = mutation({
         .withIndex('by_space', (q) => q.eq('spaceId', args.spaceId))
         .collect(),
     ])
-    // One read for every task in the space, not one per project, and the
-    // deletes are batched so a space larger than one transaction still goes.
-    const ids = tasks.map((task) => task._id)
-    const batch = ids.slice(0, DELETE_BATCH)
-    await Promise.all(batch.map((id) => ctx.db.delete(id)))
-    if (ids.length > batch.length) {
-      await ctx.scheduler.runAfter(0, internal.tracker.continueDeleteTasks, {
-        ids: ids.slice(batch.length),
-      })
-    }
-    await Promise.all(projects.map((project) => ctx.db.delete(project._id)))
 
-    await ctx.db.delete(space._id)
+    await deleteSpaceSide(ctx, {
+      spaceId: space._id,
+      appSpaceId: args.spaceId,
+      memberIds: members.map((m) => m._id),
+      projectIds: projects.map((p) => p._id),
+      taskIds: tasks.map((t) => t._id),
+    })
+  },
+})
+
+/** One bounded step of the cascade, shared by the first transaction and the
+ *  scheduled continuations. The `spaceId` here is the Convex `_id`, deleted
+ *  only once every other side has drained; `appSpaceId` is the app-facing id
+ *  the `taskActivity` index is keyed on. Ids travel through the scheduler as
+ *  plain strings, so each delete narrows back to its table. */
+async function deleteSpaceSide(
+  ctx: MutationCtx,
+  side: {
+    spaceId: string
+    appSpaceId: string
+    memberIds: string[]
+    projectIds: string[]
+    taskIds: string[]
+  },
+) {
+  const batch = (ids: string[]) => ids.slice(0, DELETE_BATCH)
+
+  await Promise.all([
+    ...batch(side.memberIds).map((id) =>
+      ctx.db.delete(id as Doc<'spaceMembers'>['_id']),
+    ),
+    ...batch(side.projectIds).map((id) =>
+      ctx.db.delete(id as Doc<'projects'>['_id']),
+    ),
+    // Activity rows for the tasks in this batch go with them, through the
+    // space+task index so no scan is involved.
+    ...batch(side.taskIds).flatMap((id) => [
+      ctx.db.delete(id as Doc<'tasks'>['_id']),
+      ctx.db
+        .query('taskActivity')
+        .withIndex('by_space_task', (q) =>
+          q.eq('spaceId', side.appSpaceId).eq('taskId', id),
+        )
+        .collect()
+        .then((rows) => Promise.all(rows.map((row) => ctx.db.delete(row._id)))),
+    ]),
+  ])
+
+  const remaining = {
+    spaceId: side.spaceId,
+    appSpaceId: side.appSpaceId,
+    memberIds: side.memberIds.slice(DELETE_BATCH),
+    projectIds: side.projectIds.slice(DELETE_BATCH),
+    taskIds: side.taskIds.slice(DELETE_BATCH),
+  }
+  const done =
+    remaining.memberIds.length === 0 &&
+    remaining.projectIds.length === 0 &&
+    remaining.taskIds.length === 0
+  if (!done) {
+    await ctx.scheduler.runAfter(0, internal.spaces.continueDeleteSpace, {
+      side: remaining,
+    })
+    return
+  }
+  // Last side: everything else is gone, so the space itself can go.
+  await ctx.db.delete(side.spaceId as Doc<'spaces'>['_id'])
+}
+
+export const continueDeleteSpace = internalMutation({
+  args: {
+    side: v.object({
+      spaceId: v.string(),
+      appSpaceId: v.string(),
+      memberIds: v.array(v.string()),
+      projectIds: v.array(v.string()),
+      taskIds: v.array(v.string()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    await deleteSpaceSide(ctx, args.side)
   },
 })

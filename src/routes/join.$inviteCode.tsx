@@ -139,14 +139,14 @@ function JoinComponent() {
               such as K7M4PQX2RT.
             </p>
             <Link to="/" className="no-underline">
-              <Button variant="outline" className="w-full">
+              <Button variant="outline" className="mb-4 w-full">
                 Back to board
               </Button>
             </Link>
           </div>
         )}
       </div>
-      <p className="mt-4 text-center text-xs text-muted-foreground">
+      <p className="text-center text-xs text-muted-foreground">
         Life-OS Spaces · Trello destroyer — no paywalls, no limits, real-time
         Convex sync.
       </p>

@@ -10,7 +10,9 @@ import tailwindcss from '@tailwindcss/vite'
 const config = defineConfig(({ command }) => ({
   resolve: { tsconfigPaths: true },
   plugins: [
-    devtools(),
+    // Dev tools ship no bytes to production; `command === 'serve'` keeps the
+    // plugin out of the build graph entirely.
+    command === 'serve' ? devtools() : undefined,
     tailwindcss(),
     tanstackStart(),
     command === 'build' ? nitro() : undefined,
