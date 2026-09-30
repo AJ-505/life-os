@@ -9,8 +9,10 @@ import { internal } from './_generated/api'
  * has no more matching rows, so one deployment can finish the migration over
  * many transactions without blocking regular traffic.
  *
- * Run once via `npx convex run internal.migrations.backfillSpaceId` — it
- * schedules its own continuations from there.
+ * Run once, per deployment, with the tasks phase — it schedules the projects
+ * phase itself when tasks drain:
+ *
+ *   npx convex run --prod migrations:backfillSpaceId '{"phase":"tasks"}'
  */
 
 /** Rows written before `spaceId` was `null`-normalized carry no value at all,
