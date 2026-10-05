@@ -14,7 +14,7 @@ import {
   shapeProject,
   shapeTask,
 } from './lib'
-import { eventIdsForTasks } from './calendar'
+import { eventsToDelete } from './calendar'
 
 import type { Doc } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
@@ -205,7 +205,16 @@ export const createProject = mutation({
 
     // The client supplies the id so creation is optimistic; a duplicate on the
     // same board means an optimistic retry already landed — success, not error.
-    if (await assertScopeIdFree(ctx, userId, args.id, spaceId, 'projects', 'project'))
+    if (
+      await assertScopeIdFree(
+        ctx,
+        userId,
+        args.id,
+        spaceId,
+        'projects',
+        'project',
+      )
+    )
       return
 
     await ctx.db.insert('projects', {
@@ -352,7 +361,14 @@ export const createTask = mutation({
         throw new Error('A subtask must live on the same board as its parent')
     }
     if (
-      await assertScopeIdFree(ctx, userId, args.id, project.spaceId ?? null, 'tasks', 'task')
+      await assertScopeIdFree(
+        ctx,
+        userId,
+        args.id,
+        project.spaceId ?? null,
+        'tasks',
+        'task',
+      )
     )
       return
     await ctx.db.insert('tasks', {
@@ -427,17 +443,17 @@ async function scheduleCalendarSync(
 }
 
 /** Best-effort event deletion for rows about to disappear. The rule for which
- *  events a personal task owns lives in one place (see `eventIdsForTasks`). */
+ *  events a personal task owns lives in one place (see `eventsToDelete`). */
 async function scheduleEventCleanup(
   ctx: MutationCtx,
   userId: string,
   tasks: Array<Doc<'tasks'>>,
 ) {
-  const eventIds = eventIdsForTasks(tasks)
-  if (eventIds.length === 0) return
+  const events = eventsToDelete(tasks)
+  if (events.length === 0) return
   await ctx.scheduler.runAfter(0, internal.calendar.deleteEventsForUser, {
     userId,
-    eventIds,
+    events,
   })
 }
 
@@ -476,66 +492,81 @@ function withDescendants(
   return found
 }
 
-/** Convex bounds one transaction, so a delete that could outgrow it hands the
- *  rest to a scheduled continuation instead of failing whole and leaving the
- *  space half-removed. */
+/**
+ * Convex bounds one transaction, so a delete that could outgrow it hands the
+ * rest to a scheduled continuation instead of failing whole and leaving the
+ * space half-removed.
+ *
+ * A scheduled pass cannot read the rows it was handed, so it carries each task
+ * twice: the `_id` it deletes and the app-facing `id` its activity rows are
+ * keyed on. Handing over `_id`s alone matches nothing in that index and
+ * orphans every deleted task's history forever.
+ */
 const DELETE_BATCH = 200
+
+type TaskToDelete = { _id: string; id: string }
 
 export const continueDeleteTasks = internalMutation({
   args: {
-    ids: v.array(v.string()),
+    tasks: v.array(v.object({ _id: v.string(), id: v.string() })),
     spaceId: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
-    const batch = args.ids.slice(0, DELETE_BATCH)
-    await Promise.all([
-      ...batch.map((id) => ctx.db.delete(id as Doc<'tasks'>['_id'])),
-      ...(args.spaceId
-        ? batch.map((id) =>
-            ctx.db
-              .query('taskActivity')
-              .withIndex('by_space_task', (q) =>
-                q.eq('spaceId', args.spaceId!).eq('taskId', id),
-              )
-              .collect()
-              .then((rows) =>
-                Promise.all(rows.map((row) => ctx.db.delete(row._id))),
-              ),
-          )
-        : []),
-    ])
-    if (args.ids.length > batch.length) {
+    const batch = args.tasks.slice(0, DELETE_BATCH)
+    await Promise.all(
+      batch.map((task) => ctx.db.delete(task._id as Doc<'tasks'>['_id'])),
+    )
+    if (args.spaceId) await deleteActivityRows(ctx, args.spaceId, batch)
+    if (args.tasks.length > batch.length) {
       await ctx.scheduler.runAfter(0, internal.tracker.continueDeleteTasks, {
-        ids: args.ids.slice(batch.length),
+        tasks: args.tasks.slice(batch.length),
         spaceId: args.spaceId,
       })
     }
   },
 })
 
+/** The activity rows behind a batch of tasks, keyed by app-facing task id. */
+async function deleteActivityRows(
+  ctx: MutationCtx,
+  spaceId: string,
+  tasks: Array<TaskToDelete>,
+) {
+  const rows = await Promise.all(
+    tasks.map((task) =>
+      ctx.db
+        .query('taskActivity')
+        .withIndex('by_space_task', (q) =>
+          q.eq('spaceId', spaceId).eq('taskId', task.id),
+        )
+        .collect(),
+    ),
+  )
+  await Promise.all(rows.flat().map((row) => ctx.db.delete(row._id)))
+}
+
 async function deleteTasksBatched(
   ctx: MutationCtx,
   tasks: Array<Doc<'tasks'>>,
   spaceId: string | null,
 ) {
-  const ids = tasks.map((task) => task._id)
-  const batch = ids.slice(0, DELETE_BATCH)
-  await Promise.all(batch.map((id) => ctx.db.delete(id)))
+  const batch = tasks.slice(0, DELETE_BATCH)
+  await Promise.all(
+    batch.map((task) => ctx.db.delete(task._id as Doc<'tasks'>['_id'])),
+  )
   // Activity rows for a space's tasks go with them, batched the same way.
-  if (spaceId) {
-    for (const task of batch.length ? tasks.slice(0, batch.length) : []) {
-      const rows = await ctx.db
-        .query('taskActivity')
-        .withIndex('by_space_task', (q) =>
-          q.eq('spaceId', spaceId).eq('taskId', task.id),
-        )
-        .collect()
-      await Promise.all(rows.map((row) => ctx.db.delete(row._id)))
-    }
-  }
-  if (ids.length > batch.length) {
+  if (spaceId)
+    await deleteActivityRows(
+      ctx,
+      spaceId,
+      batch.map((task) => ({ _id: task._id, id: task.id })),
+    )
+  if (tasks.length > batch.length) {
     await ctx.scheduler.runAfter(0, internal.tracker.continueDeleteTasks, {
-      ids: ids.slice(batch.length),
+      tasks: tasks.slice(batch.length).map((task) => ({
+        _id: task._id,
+        id: task.id,
+      })),
       spaceId,
     })
   }
@@ -574,7 +605,7 @@ export const updateTask = mutation({
       // Preserve the old stamp when un-ticking, so a task that gets re-opened
       // and finished again lands at the top of the finished pile by when it was
       // actually finished this time, not by when it was finished months ago.
-      patch.doneAt = done ? Date.now() : task.doneAt ?? null
+      patch.doneAt = done ? Date.now() : (task.doneAt ?? null)
     }
     await ctx.db.patch(task._id, patch)
     await scheduleCalendarSync(ctx, userId, task, patch)

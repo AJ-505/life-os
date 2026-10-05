@@ -21,8 +21,7 @@ import { v } from 'convex/values'
  * document from an index when the indexed field is missing) and forced every
  * personal read to scan the user's whole index and filter in JS. The field is
  * now always present — `convex/migrations.ts` backfills old rows to `null` —
- * so personal reads are an index range. Every read still treats falsy as
- * personal, so the migration can land before or after the code.
+ * so personal reads are an index range.
  */
 export default defineSchema({
   projects: defineTable({
@@ -106,7 +105,11 @@ export default defineSchema({
     // same query for every user and would leak across accounts whose
     // client-generated ids collide.
     .index('by_user_project', ['userId', 'projectId'])
-    .index('by_space_project', ['spaceId', 'projectId']),
+    .index('by_space_project', ['spaceId', 'projectId'])
+    // Removing someone has to find the tasks that name them. Without this the
+    // only way in is a whole-space scan, which is the unbounded read the space
+    // delete used to do.
+    .index('by_space_assignee', ['spaceId', 'assigneeId']),
 
   /** A small, denormalized directory of the names collaborators see. It is
    *  deliberately not the source of authorization: identity still comes from
@@ -140,8 +143,7 @@ export default defineSchema({
     toUserId: v.optional(v.union(v.string(), v.null())),
     detail: v.optional(v.string()),
     createdAt: v.number(),
-  })
-    .index('by_space_task', ['spaceId', 'taskId']),
+  }).index('by_space_task', ['spaceId', 'taskId']),
 
   spaces: defineTable({
     id: v.string(),

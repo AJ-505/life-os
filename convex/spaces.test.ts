@@ -1,5 +1,5 @@
 import { convexTest } from 'convex-test'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from './_generated/api'
 import schema from './schema'
@@ -24,6 +24,14 @@ const modules = import.meta.glob([
 type T = TestConvex<typeof schema>
 
 const asUser = (t: T, subject: string) => t.withIdentity({ subject })
+
+/** The delete cascade hands its work to the scheduler, and draining that queue
+ *  is what makes "it finished" an assertion rather than a hope. */
+beforeEach(() => vi.useFakeTimers())
+afterEach(() => vi.useRealTimers())
+
+/** Run every scheduled function, and anything they schedule, to completion. */
+const drainScheduler = (t: T) => t.finishAllScheduledFunctions(vi.runAllTimers)
 
 /** A two-member space: `user_a` owns it, `user_b` joined. */
 async function twoMemberSpace(t: T) {
@@ -131,7 +139,7 @@ describe('spaces: lifecycle and authorization', () => {
 })
 
 describe('spaces: known bugs', () => {
-  it.fails('deleteSpace removes the tasks’ activity rows', async () => {
+  it('deleteSpace removes the tasks’ activity rows', async () => {
     const t = convexTest(schema, modules)
     const space = await twoMemberSpace(t)
     await sharedProjectAndTask(t, space.id)
@@ -139,16 +147,99 @@ describe('spaces: known bugs', () => {
     await asUser(t, 'user_a').mutation(api.spaces.deleteSpace, {
       spaceId: space.id,
     })
+    await drainScheduler(t)
 
     const activity = await t.run(async (ctx) =>
       ctx.db.query('taskActivity').collect(),
     )
-    // S-1: the cascade passes the task's Convex _id to the activity lookup,
-    // which is keyed by the app-facing id, so nothing is deleted.
     expect(activity).toHaveLength(0)
   })
 
-  it.fails('removing a member unassigns their tasks', async () => {
+  it('deleteSpace removes every row the space held, not just the first page', async () => {
+    const t = convexTest(schema, modules)
+    const space = await twoMemberSpace(t)
+    await sharedProjectAndTask(t, space.id)
+
+    await asUser(t, 'user_a').mutation(api.spaces.deleteSpace, {
+      spaceId: space.id,
+    })
+    await drainScheduler(t)
+
+    // Asserts completion rather than a resolved promise: a cascade that
+    // started, deleted the first page and stopped would still resolve.
+    const left = await t.run(async (ctx) => ({
+      tasks: await ctx.db.query('tasks').collect(),
+      projects: await ctx.db.query('projects').collect(),
+      members: await ctx.db.query('spaceMembers').collect(),
+      activity: await ctx.db.query('taskActivity').collect(),
+      spaces: await ctx.db
+        .query('spaces')
+        .withIndex('by_app_id', (q) => q.eq('id', space.id))
+        .collect(),
+    }))
+    expect(left.tasks).toHaveLength(0)
+    expect(left.projects).toHaveLength(0)
+    expect(left.members).toHaveLength(0)
+    expect(left.activity).toHaveLength(0)
+    expect(left.spaces).toHaveLength(0)
+  })
+
+  it('finishes a cascade that stopped part way, on a second click', async () => {
+    const t = convexTest(schema, modules)
+    const space = await twoMemberSpace(t)
+    // More tasks than one page, so the first click cannot finish and really
+    // does leave the rest to a continuation.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 150; i++) {
+        await ctx.db.insert('tasks', {
+          userId: 'user_a',
+          id: `t${i}`,
+          projectId: 'p1',
+          parentId: null,
+          title: `Task ${i}`,
+          notes: null,
+          position: i,
+          done: false,
+          doneAt: null,
+          archived: false,
+          dueAt: null,
+          inFocus: false,
+          focusOrder: 0,
+          createdAt: 1,
+          spaceId: space.id,
+        })
+      }
+    })
+
+    // Click once and let none of its continuation run: the state a pass that
+    // died mid-cascade leaves behind.
+    await asUser(t, 'user_a').mutation(api.spaces.deleteSpace, {
+      spaceId: space.id,
+    })
+    const midway = await asUser(t, 'user_a').query(api.spaces.getMySpaces, {})
+    // Membership survives, so the owner can still reach Delete.
+    expect(midway.some((s) => s.id === space.id)).toBe(true)
+
+    // Clicking again is the whole recovery story, and it has to leave nothing.
+    await asUser(t, 'user_a').mutation(api.spaces.deleteSpace, {
+      spaceId: space.id,
+    })
+    await drainScheduler(t)
+
+    const left = await t.run(async (ctx) => ({
+      tasks: await ctx.db.query('tasks').collect(),
+      members: await ctx.db.query('spaceMembers').collect(),
+      spaces: await ctx.db
+        .query('spaces')
+        .withIndex('by_app_id', (q) => q.eq('id', space.id))
+        .collect(),
+    }))
+    expect(left.tasks).toHaveLength(0)
+    expect(left.members).toHaveLength(0)
+    expect(left.spaces).toHaveLength(0)
+  })
+
+  it('removing a member unassigns their tasks', async () => {
     const t = convexTest(schema, modules)
     const space = await twoMemberSpace(t)
     await sharedProjectAndTask(t, space.id)
@@ -157,72 +248,92 @@ describe('spaces: known bugs', () => {
       spaceId: space.id,
       userId: 'user_b',
     })
+    await drainScheduler(t)
 
     const board = await asUser(t, 'user_a').query(api.tracker.getBoard, {
       spaceId: space.id,
     })
     const task = board.flatMap((p) => p.tasks).find((x) => x.id === 't1')
-    // S-3: removeMember drops the membership but leaves assigneeId behind.
     expect(task?.assigneeId).toBeNull()
   })
 
-  it.fails(
-    'deleteSpace does not read the whole space in one transaction',
-    async () => {
-      // Convex caps a transaction at ~32k docs / 16MB read by default. Lower it
-      // so the unbounded first read is visible at test scale.
-      const t = convexTest({
-        schema,
-        modules,
-        transactionLimits: { documentsRead: 250 },
+  it('leaving a space unassigns the leaver’s tasks too', async () => {
+    const t = convexTest(schema, modules)
+    const space = await twoMemberSpace(t)
+    await sharedProjectAndTask(t, space.id)
+
+    await asUser(t, 'user_b').mutation(api.spaces.leaveSpace, {
+      spaceId: space.id,
+    })
+    await drainScheduler(t)
+
+    const board = await asUser(t, 'user_a').query(api.tracker.getBoard, {
+      spaceId: space.id,
+    })
+    const task = board.flatMap((p) => p.tasks).find((x) => x.id === 't1')
+    expect(task?.assigneeId).toBeNull()
+  })
+
+  it('deleteSpace does not read the whole space in one transaction', async () => {
+    // Convex caps a transaction at ~32k docs / 16MB read by default. Lower it
+    // so the unbounded first read is visible at test scale. Every page is a
+    // read and so is every delete of one, so 300 tasks have to go in at least
+    // three passes — which is the whole point of the phase machine.
+    const t = convexTest({
+      schema,
+      modules,
+      transactionLimits: { documentsRead: 250 },
+    })
+    const space = await asUser(t, 'user_a').mutation(api.spaces.createSpace, {
+      name: 'Big',
+    })
+    await t.run(async (ctx) => {
+      await ctx.db.insert('projects', {
+        userId: 'user_a',
+        id: 'p1',
+        name: 'P',
+        color: 'moss',
+        status: 'active',
+        collapsed: false,
+        gridCol: 0,
+        gridRow: 0,
+        targetDate: null,
+        createdAt: 1,
+        finishedAt: null,
+        shelvedAt: null,
+        spaceId: space.id,
       })
-      const space = await asUser(t, 'user_a').mutation(api.spaces.createSpace, {
-        name: 'Big',
-      })
-      await t.run(async (ctx) => {
-        await ctx.db.insert('projects', {
+      for (let i = 0; i < 300; i++) {
+        await ctx.db.insert('tasks', {
           userId: 'user_a',
-          id: 'p1',
-          name: 'P',
-          color: 'moss',
-          status: 'active',
-          collapsed: false,
-          gridCol: 0,
-          gridRow: 0,
-          targetDate: null,
+          id: `t${i}`,
+          projectId: 'p1',
+          parentId: null,
+          title: `Task ${i}`,
+          notes: null,
+          position: i,
+          done: false,
+          doneAt: null,
+          archived: false,
+          dueAt: null,
+          inFocus: false,
+          focusOrder: 0,
           createdAt: 1,
-          finishedAt: null,
-          shelvedAt: null,
           spaceId: space.id,
         })
-        for (let i = 0; i < 300; i++) {
-          await ctx.db.insert('tasks', {
-            userId: 'user_a',
-            id: `t${i}`,
-            projectId: 'p1',
-            parentId: null,
-            title: `Task ${i}`,
-            notes: null,
-            position: i,
-            done: false,
-            doneAt: null,
-            archived: false,
-            dueAt: null,
-            inFocus: false,
-            focusOrder: 0,
-            createdAt: 1,
-            spaceId: space.id,
-          })
-        }
-      })
+      }
+    })
 
-      // S-4: deleteSpace .collect()s members, projects and tasks before it
-      // batches any delete, so a large space cannot be deleted at all.
-      await expect(
-        asUser(t, 'user_a').mutation(api.spaces.deleteSpace, {
-          spaceId: space.id,
-        }),
-      ).resolves.toBeUndefined()
-    },
-  )
+    await asUser(t, 'user_a').mutation(api.spaces.deleteSpace, {
+      spaceId: space.id,
+    })
+    await drainScheduler(t)
+
+    const left = await t.run(async (ctx) => ({
+      tasks: await ctx.db.query('tasks').collect(),
+      projects: await ctx.db.query('projects').collect(),
+    }))
+    expect(left.tasks).toHaveLength(0)
+    expect(left.projects).toHaveLength(0)
+  })
 })

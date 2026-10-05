@@ -781,7 +781,18 @@ export function TaskDetails({
 
           {historyOpen ? <TaskHistoryPanel taskId={task.id} /> : null}
 
-          {CALENDAR_ENABLED && spaceId === null ? (
+          {/* Three states, not two. A personal task with the flag on gets the
+              controls. A personal task with the flag off is told the feature is
+              coming, which is true. A shared task is told calendar sync is
+              personal only, which is also true - the old code showed it the
+              coming-soon card, telling a collaborator to wait for a feature
+              that had already shipped to them as unavailable. */}
+          {!CALENDAR_ENABLED ? (
+            <ComingSoon
+              title="Calendar sync"
+              description="Google Calendar integration is on its way."
+            />
+          ) : spaceId === null ? (
             <TaskCalendarFields
               localDueAt={localDueAt}
               localAddToCal={localAddToCal}
@@ -791,8 +802,9 @@ export function TaskDetails({
             />
           ) : (
             <ComingSoon
+              status="Personal only"
               title="Calendar sync"
-              description="Google Calendar integration is on its way."
+              description="Google Calendar sync runs on your own board, not on a shared one."
             />
           )}
 

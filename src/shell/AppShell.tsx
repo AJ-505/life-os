@@ -49,6 +49,7 @@ import {
   calendarSettingsQueryOptions,
   useUpdateCalendarSettings,
 } from '#/settings/queries'
+import type { SyncOutcome } from '#/settings/googleCalendar'
 import {
   useEnsureTimezone,
   useGoogleCalendar,
@@ -179,6 +180,68 @@ function EnsureTimezone() {
 }
 
 /**
+ * How many calendar pushes Resync has in flight at once. Google rate limits per
+ * user, so the whole board going out in one tick is what turns a resync into a
+ * wall of "rate limited, try later".
+ */
+const RESYNC_CONCURRENCY = 4
+
+/** Run the work with at most `limit` in flight, keeping the input order in the
+ *  results. A task list is short enough that a worker pool is clearer than a
+ *  batching loop that has to remember where it left off. */
+async function runBounded<T>(
+  work: Array<() => Promise<T>>,
+  limit: number,
+): Promise<Array<T>> {
+  const results = new Array<T>(work.length)
+  let next = 0
+  const runOne = async () => {
+    for (let index = next++; index < work.length; index = next++) {
+      results[index] = await work[index]()
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(limit, work.length) }, runOne),
+  )
+  return results
+}
+
+/** One toast for a whole resync, naming the reason that actually occurred most
+ *  often rather than whichever failed first. A rate-limited run used to attach
+ *  "Reconnect Google above" to it, telling someone whose key was fine to go and
+ *  fix something that was not broken. */
+function reportResync(results: Array<SyncOutcome>, total: number) {
+  const updated = results.filter((r) => r.ok && !r.silent).length
+  const failures = results.filter((r) => !r.ok)
+  const tasks = `of ${total} synced ${total === 1 ? 'task' : 'tasks'}`
+  if (failures.length === 0) {
+    toast.success(`Resync finished: ${updated} updated ${tasks}`)
+    return
+  }
+  toast.error(
+    `Resync finished: ${updated} updated, ${failures.length} failed ${tasks}`,
+    { description: commonReason(failures) },
+  )
+}
+
+/** The failure most of the run shared. Falling back to the first keeps a run
+ *  where every failure was different from saying nothing at all. */
+function commonReason(failures: Array<SyncOutcome>) {
+  const failed = failures.filter((f) => !f.ok)
+  const counts = new Map<string, { n: number; outcome: SyncOutcome }>()
+  for (const failure of failed) {
+    const seen = counts.get(failure.message)
+    if (seen) seen.n += 1
+    else counts.set(failure.message, { n: 1, outcome: failure })
+  }
+  const top = [...counts.values()].sort((a, b) => b.n - a.n)[0]
+  if (!top || top.outcome.ok) return ''
+  return top.outcome.needsReconnect
+    ? `${top.outcome.message} Reconnect Google above.`
+    : top.outcome.message
+}
+
+/**
  * The whole calendar surface lives in this child, so a build with the flag off
  * never mounts it and never runs a settings read. That is the difference
  * between a gate and a grille: the previous version rendered ComingSoon while
@@ -241,29 +304,20 @@ function CalendarSettings() {
   }
 
   const handleResync = async () => {
+    if (resyncing) return
     setResyncing(true)
-    const results = await Promise.all(
-      syncedTasks.map((t) => syncToCalendar(t.id)),
-    )
-    setResyncing(false)
-    const updated = results.filter((r) => r.ok && !r.silent).length
-    const failures = results.filter((r) => !r.ok)
-    const detail = `of ${syncedTasks.length} synced ${syncedTasks.length === 1 ? 'task' : 'tasks'}`
-    if (failures.length === 0) {
-      toast.success(`Resync finished: ${updated} updated ${detail}`)
-      return
+    try {
+      // Four at a time. All at once meant one Google request per synced task
+      // in the same tick, which is the shape that earns a 429 and then makes
+      // every task report the same rate-limit message.
+      const results = await runBounded(
+        syncedTasks.map((t) => () => syncToCalendar(t.id)),
+        RESYNC_CONCURRENCY,
+      )
+      reportResync(results, syncedTasks.length)
+    } finally {
+      setResyncing(false)
     }
-    // One message per reason lives beside the action's result type, so this
-    // reads the same reasons the calendar surfaces do.
-    const reconnect = failures.some((r) => r.needsReconnect)
-    toast.error(
-      `Resync finished: ${updated} updated, ${failures.length} failed ${detail}`,
-      {
-        description: reconnect
-          ? `${failures[0].message}. Reconnect Google above.`
-          : failures[0].message,
-      },
-    )
   }
 
   return (

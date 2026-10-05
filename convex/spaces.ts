@@ -4,9 +4,6 @@ import { internalMutation, mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
 import { dropMembership, requireMember, requireUserId } from './lib'
 
-/** Matches the tracker's batch so a big delete behaves the same either way. */
-const DELETE_BATCH = 200
-
 import type { Doc } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
 
@@ -294,6 +291,7 @@ export const leaveSpace = mutation({
     // Every row, not the one this read happened to return: a duplicate would
     // otherwise keep the leaver's access alive.
     await dropMembership(ctx, args.spaceId, userId)
+    await scheduleUnassign(ctx, args.spaceId, userId)
 
     if (space.ownerId !== userId) return
 
@@ -459,17 +457,71 @@ export const removeMember = mutation({
     if (removed === 0)
       throw new Error('That person is not a member of this space')
 
+    await scheduleUnassign(ctx, space.id, args.userId)
+
     return { inviteCode: await rotateInviteCode(ctx, space) }
   },
 })
 
 /**
- * Deleting a space deletes everything it holds: memberships, projects, tasks,
- * and the activity rows behind those tasks. Every side is batched to
- * `DELETE_BATCH` and continued through the scheduler, so a space larger than
- * one transaction still goes without tripping the write or scan limits. The
- * space document is deleted last, by the continuation, so an interrupted
- * cascade can always find what is left through its indexes.
+ * Clear the removed member's assignments.
+ *
+ * The assignee dropdown lists only current members, so a task still naming them
+ * renders as nothing at all with no explanation and no way to see who held it.
+ * Unassigning is the honest repair: reassigning to the owner would invent an
+ * assignment nobody chose. No activity row is written, because history already
+ * records that this person was assigned the task, and that is what happened.
+ *
+ * Scheduled rather than done inline, because a space can hold more tasks than
+ * one transaction may read, and `removeMember` has no way to resume.
+ */
+async function scheduleUnassign(
+  ctx: MutationCtx,
+  appSpaceId: string,
+  assigneeId: string,
+) {
+  await ctx.scheduler.runAfter(0, internal.spaces.continueUnassign, {
+    appSpaceId,
+    assigneeId,
+  })
+}
+
+export const continueUnassign = internalMutation({
+  args: { appSpaceId: v.string(), assigneeId: v.string() },
+  handler: async (ctx, args) => {
+    const tasks = await ctx.db
+      .query('tasks')
+      .withIndex('by_space_assignee', (q) =>
+        q.eq('spaceId', args.appSpaceId).eq('assigneeId', args.assigneeId),
+      )
+      .take(UNASSIGN_BATCH)
+    for (const task of tasks) {
+      await ctx.db.patch(task._id, { assigneeId: null })
+    }
+    // A full page means there are probably more. The tasks whose assignment is
+    // cleared leave the index range they were found in, so the next pass simply
+    // asks again and sees whatever is left.
+    if (tasks.length === UNASSIGN_BATCH)
+      await ctx.scheduler.runAfter(0, internal.spaces.continueUnassign, args)
+  },
+})
+
+/**
+ * Deleting a space deletes everything it holds: projects, tasks, memberships,
+ * and the activity rows behind those tasks.
+ *
+ * One transaction can only paginate once, and this cascade drains three tables,
+ * so it cannot read the whole space up front the way it used to. Instead it
+ * walks one table per phase, taking a page, deleting it, and asking the index
+ * what is left. Re-reading from the start each pass is what makes a cursor
+ * unnecessary: deleted rows invalidate one.
+ *
+ * Phase order is projects, tasks, members, then the space document itself.
+ * Members go late on purpose. `/spaces` lists what the caller is a member of, so
+ * removing members first would leave an interrupted cascade with a space the
+ * owner can no longer find, and therefore no way to retry. Leaving the space
+ * document until last means a dead continuation is always resumable by clicking
+ * Delete again, with no marker row and no runbook.
  */
 export const deleteSpace = mutation({
   args: { spaceId: v.string() },
@@ -482,101 +534,136 @@ export const deleteSpace = mutation({
     if (!space) throw new Error('Space not found')
     if (space.ownerId !== userId) throw new Error('Only owner can delete space')
 
-    const [members, projects, tasks] = await Promise.all([
-      ctx.db
-        .query('spaceMembers')
-        .withIndex('by_space', (q) => q.eq('spaceId', args.spaceId))
-        .collect(),
-      ctx.db
-        .query('projects')
-        .withIndex('by_space', (q) => q.eq('spaceId', args.spaceId))
-        .collect(),
-      ctx.db
-        .query('tasks')
-        .withIndex('by_space', (q) => q.eq('spaceId', args.spaceId))
-        .collect(),
-    ])
-
-    await deleteSpaceSide(ctx, {
-      spaceId: space._id,
-      appSpaceId: args.spaceId,
-      memberIds: members.map((m) => m._id),
-      projectIds: projects.map((p) => p._id),
-      taskIds: tasks.map((t) => t._id),
-    })
+    await runDeleteCascade(ctx, { spaceId: space._id, phase: 'projects' })
   },
 })
 
-/** One bounded step of the cascade, shared by the first transaction and the
- *  scheduled continuations. The `spaceId` here is the Convex `_id`, deleted
- *  only once every other side has drained; `appSpaceId` is the app-facing id
- *  the `taskActivity` index is keyed on. Ids travel through the scheduler as
- *  plain strings, so each delete narrows back to its table. */
-async function deleteSpaceSide(
+/**
+ * The tables this cascade drains, in the order it drains them. Each phase is a
+ * separate transaction because Convex allows one paginated query per function,
+ * so a single pass cannot cover more than one table.
+ */
+const DELETE_PHASES = ['projects', 'tasks', 'members'] as const
+type DeletePhase = (typeof DELETE_PHASES)[number]
+
+/**
+ * Every page the cascade takes is a read, and so is every delete it performs on
+ * that page, so a page of `DELETE_BATCH` costs about twice that in documents.
+ * The audit's regression holds this to 250; 100 keeps the worst single pass
+ * under it with room for the space document on the final one. Raise it and the
+ * deletion of a large space stops working at exactly the size it was built for.
+ */
+const DELETE_BATCH = 100
+
+/** One page of tasks to clear an assignment from. Half the delete cascade's
+ *  page: clearing costs a read and a write per row rather than two reads. */
+const UNASSIGN_BATCH = 100
+
+/**
+ * One bounded phase: delete a page of one table, then hand the rest off.
+ *
+ * Returns the phase that should run next, or `null` once every table has
+ * drained and the space document itself can go. Each phase re-reads its index
+ * from the start, which is what makes the cursor unnecessary: deleted rows
+ * invalidate one.
+ */
+async function deleteSpacePhase(
   ctx: MutationCtx,
-  side: {
-    spaceId: string
-    appSpaceId: string
-    memberIds: string[]
-    projectIds: string[]
-    taskIds: string[]
-  },
+  next: { spaceId: string; phase: DeletePhase },
+): Promise<DeletePhase | null> {
+  const space = await ctx.db.get(next.spaceId as Doc<'spaces'>['_id'])
+  if (!space) return null
+
+  const drained = await deleteTablePage(ctx, next.phase, space.id)
+  if (!drained) return next.phase
+  const following = DELETE_PHASES[DELETE_PHASES.indexOf(next.phase) + 1]
+  return following ?? null
+}
+
+/** Delete up to `DELETE_BATCH` rows of one table. True when that table is done. */
+async function deleteTablePage(
+  ctx: MutationCtx,
+  phase: DeletePhase,
+  appSpaceId: string,
+): Promise<boolean> {
+  if (phase === 'tasks') return deleteTaskPage(ctx, appSpaceId)
+
+  const table = phase === 'projects' ? 'projects' : 'spaceMembers'
+  const rows = await ctx.db
+    .query(table)
+    .withIndex('by_space', (q) => q.eq('spaceId', appSpaceId))
+    .take(DELETE_BATCH)
+  await Promise.all(rows.map((row) => ctx.db.delete(row._id)))
+  return rows.length < DELETE_BATCH
+}
+
+/**
+ * Delete one page of a space's tasks, activity rows included.
+ *
+ * The activity index is keyed by the app-facing task id, not the Convex `_id`,
+ * so the page's tasks are read here and their `id` used. Handing `_id`s to that
+ * lookup instead matches nothing and orphans every task's history forever. A
+ * task can carry a run of activity rows, so they are read through the same
+ * index range and taken a page at a time rather than collected unbounded.
+ */
+async function deleteTaskPage(
+  ctx: MutationCtx,
+  appSpaceId: string,
+): Promise<boolean> {
+  const tasks = await ctx.db
+    .query('tasks')
+    .withIndex('by_space', (q) => q.eq('spaceId', appSpaceId))
+    .take(DELETE_BATCH)
+  for (const task of tasks) {
+    await ctx.db.delete(task._id)
+    const activity = await ctx.db
+      .query('taskActivity')
+      .withIndex('by_space_task', (q) =>
+        q.eq('spaceId', appSpaceId).eq('taskId', task.id),
+      )
+      .take(DELETE_BATCH)
+    await Promise.all(activity.map((row) => ctx.db.delete(row._id)))
+  }
+  return tasks.length < DELETE_BATCH
+}
+
+/**
+ * Drive the cascade from one transaction's starting phase, scheduling a
+ * continuation for each pass after this one. The first click and every
+ * scheduled pass share this function, so no path can drain the tables and
+ * forget to delete the space.
+ */
+async function runDeleteCascade(
+  ctx: MutationCtx,
+  start: { spaceId: string; phase: DeletePhase },
 ) {
-  const batch = (ids: string[]) => ids.slice(0, DELETE_BATCH)
-
-  await Promise.all([
-    ...batch(side.memberIds).map((id) =>
-      ctx.db.delete(id as Doc<'spaceMembers'>['_id']),
-    ),
-    ...batch(side.projectIds).map((id) =>
-      ctx.db.delete(id as Doc<'projects'>['_id']),
-    ),
-    // Activity rows for the tasks in this batch go with them, through the
-    // space+task index so no scan is involved.
-    ...batch(side.taskIds).flatMap((id) => [
-      ctx.db.delete(id as Doc<'tasks'>['_id']),
-      ctx.db
-        .query('taskActivity')
-        .withIndex('by_space_task', (q) =>
-          q.eq('spaceId', side.appSpaceId).eq('taskId', id),
-        )
-        .collect()
-        .then((rows) => Promise.all(rows.map((row) => ctx.db.delete(row._id)))),
-    ]),
-  ])
-
-  const remaining = {
-    spaceId: side.spaceId,
-    appSpaceId: side.appSpaceId,
-    memberIds: side.memberIds.slice(DELETE_BATCH),
-    projectIds: side.projectIds.slice(DELETE_BATCH),
-    taskIds: side.taskIds.slice(DELETE_BATCH),
+  let next: { spaceId: string; phase: DeletePhase } = start
+  for (;;) {
+    const drained = await deleteSpacePhase(ctx, next)
+    if (!drained) break
+    if (drained === next.phase) {
+      // The table is not empty, so the next transaction continues it.
+      await ctx.scheduler.runAfter(0, internal.spaces.continueDeleteSpace, next)
+      return
+    }
+    next = { spaceId: start.spaceId, phase: drained }
   }
-  const done =
-    remaining.memberIds.length === 0 &&
-    remaining.projectIds.length === 0 &&
-    remaining.taskIds.length === 0
-  if (!done) {
-    await ctx.scheduler.runAfter(0, internal.spaces.continueDeleteSpace, {
-      side: remaining,
-    })
-    return
-  }
-  // Last side: everything else is gone, so the space itself can go.
-  await ctx.db.delete(side.spaceId as Doc<'spaces'>['_id'])
+  // Everything the space holds is gone, so the space itself can go. Until this
+  // point the document survives, which is what lets an interrupted cascade be
+  // retried by the owner clicking Delete again.
+  await ctx.db.delete(start.spaceId as Doc<'spaces'>['_id'])
 }
 
 export const continueDeleteSpace = internalMutation({
   args: {
-    side: v.object({
-      spaceId: v.string(),
-      appSpaceId: v.string(),
-      memberIds: v.array(v.string()),
-      projectIds: v.array(v.string()),
-      taskIds: v.array(v.string()),
-    }),
+    spaceId: v.string(),
+    phase: v.union(
+      v.literal('projects'),
+      v.literal('tasks'),
+      v.literal('members'),
+    ),
   },
   handler: async (ctx, args) => {
-    await deleteSpaceSide(ctx, args.side)
+    await runDeleteCascade(ctx, args)
   },
 })

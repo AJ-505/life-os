@@ -110,12 +110,22 @@ export function useGoogleCalendar() {
 
 /* ------------------------------------------------------------------- sync */
 
-/** Kept beside the action's result type so a new failure case shows up as a
- *  missing key here rather than as a silent fallthrough. */
-const MESSAGES: Record<string, string> = {
+/** Every outcome the action can report, with the words a person reads. Typed
+ *  over the server's own union, so adding a case there is a compile error here
+ *  rather than a silent fallthrough to a generic message. */
+type SyncMessage = Record<SyncAction | SyncReason, string>
+
+type SyncResultShape = Awaited<
+  ReturnType<ReturnType<typeof useAction<typeof api.calendar.syncTask>>>
+>
+type SyncAction = Extract<SyncResultShape, { ok: true }>['action']
+type SyncReason = Extract<SyncResultShape, { ok: false }>['reason']
+
+const MESSAGES: SyncMessage = {
   created: 'Added to Google Calendar',
   updated: 'Updated in Google Calendar',
   deleted: 'Removed from Google Calendar',
+  noop: 'Calendar updated',
   event_removed: 'That event was removed in Google Calendar',
   not_connected: 'Connect Google Calendar in Settings first',
   reauth_required: 'Google Calendar needs reconnecting',
@@ -129,12 +139,13 @@ const MESSAGES: Record<string, string> = {
 }
 
 /** The reasons whose fix is a reconnect, so a caller can offer the action
- *  rather than only show a message. */
-const RECONNECT_REASONS = new Set([
+ *  rather than only show a message. `not_configured` is deliberately absent:
+ *  the secret is ours and the user cannot see it, so a reconnect button would
+ *  be an offer to do nothing. */
+const RECONNECT_REASONS: Set<SyncReason> = new Set([
   'not_connected',
   'reauth_required',
   'missing_scope',
-  'not_configured',
 ])
 
 export type SyncOutcome =
@@ -157,12 +168,12 @@ export function useSyncTaskToCalendar() {
           ? {
               ok: true,
               silent: result.action === 'noop',
-              message: MESSAGES[result.action] ?? 'Calendar updated',
+              message: MESSAGES[result.action],
               link: result.link,
             }
           : {
               ok: false,
-              message: MESSAGES[result.reason] ?? 'Calendar sync failed',
+              message: MESSAGES[result.reason],
               detail: result.detail,
               needsReconnect: RECONNECT_REASONS.has(result.reason),
             },

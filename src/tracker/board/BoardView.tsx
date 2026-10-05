@@ -16,6 +16,7 @@ import {
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { Check, Crosshair, Plus } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { cn, useLocalFlag } from '#/design-system'
 import { Button } from '#/design-system/ui/button'
@@ -218,18 +219,36 @@ function NewProjectDialog({
   const submit = () => {
     const n = name.trim()
     if (!n) return
-    createProject.mutate({
-      id: newId(),
-      name: n,
-      color,
-      spaceId,
-      gridCol,
-      gridRow: positionAfter(
-        columnProjects(board, gridCol).map((p) => ({ position: p.gridRow })),
-      ),
-    })
-    setName('')
-    onClose()
+    // The button disables while pending but Enter never touched that state, so
+    // two quick presses made two projects. The guard sits here so both paths
+    // get it rather than the one that remembered.
+    if (createProject.isPending) return
+    // The name and the dialog are held until the mutation resolves. Clearing
+    // them on the way out threw away what the person typed whenever the create
+    // failed, and they had nothing left to retry with.
+    createProject.mutate(
+      {
+        id: newId(),
+        name: n,
+        color,
+        spaceId,
+        gridCol,
+        gridRow: positionAfter(
+          columnProjects(board, gridCol).map((p) => ({ position: p.gridRow })),
+        ),
+      },
+      {
+        onSuccess: () => {
+          setName('')
+          onClose()
+        },
+        onError: (e: unknown) => {
+          toast.error('Could not create the project', {
+            description: e instanceof Error ? e.message : String(e),
+          })
+        },
+      },
+    )
   }
 
   return (
@@ -245,7 +264,11 @@ function NewProjectDialog({
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && submit()}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return
+                e.preventDefault()
+                submit()
+              }}
               placeholder="e.g. PAU Archive, Sem 2, Apartment hunt…"
             />
           </div>
@@ -274,8 +297,12 @@ function NewProjectDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button size="sm" onClick={submit} disabled={!name.trim()}>
-            Create
+          <Button
+            size="sm"
+            onClick={submit}
+            disabled={!name.trim() || createProject.isPending}
+          >
+            {createProject.isPending ? 'Creating…' : 'Create'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -5,7 +5,7 @@ import type { Infer } from 'convex/values'
 import { internalMutation, mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
 import { requireUserId } from './lib'
-import { eventIdsForTasks } from './calendar'
+import { eventsToDelete } from './calendar'
 
 import type { Doc } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
@@ -153,22 +153,24 @@ export const importBackup = mutation({
     const snapshotById = new Map(
       data.tasks.map((task) => [task.id, task.calendarEventId ?? null]),
     )
-    const staleEventIds = new Set<string>()
+    const staleEvents = new Map<string, { taskId: string; eventId: string }>()
     for (const task of tasks) {
       const live = task.calendarEventId ?? null
       const snapshot = snapshotById.get(task.id) ?? null
-      if (live && live !== snapshot) staleEventIds.add(live)
+      if (live && live !== snapshot) {
+        staleEvents.set(live, { taskId: task.id, eventId: live })
+      }
     }
     // The derived id only matters where no event was recorded, which is the
-    // case `eventIdsForTasks` covers for exactly these tasks.
-    for (const id of eventIdsForTasks(
+    // case `eventsToDelete` covers for exactly these tasks.
+    for (const event of eventsToDelete(
       tasks.filter((task) => !task.calendarEventId),
     ))
-      staleEventIds.add(id)
-    if (staleEventIds.size > 0) {
+      staleEvents.set(event.eventId, event)
+    if (staleEvents.size > 0) {
       await ctx.scheduler.runAfter(0, internal.calendar.deleteEventsForUser, {
         userId,
-        eventIds: [...staleEventIds],
+        events: [...staleEvents.values()],
       })
     }
 

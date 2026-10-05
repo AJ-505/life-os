@@ -7,10 +7,10 @@ import type { ProjectWithTasks, Task } from '../types'
 /**
  * Client subtree walk, from the 2026-10-03 audit.
  *
- * The server's walks carry a `visited` set because a restored backup can carry
- * a parent cycle. `descendantIds` does not, so a cycle recurses until the stack
- * blows. `it.fails` documents it without turning CI red; remove `.fails` when
- * the function gets a visited set.
+ * The server's walks carry a `seen` set because a restored backup can carry a
+ * parent cycle. `descendantIds` did not, so a cycle recursed until the stack
+ * blew. The cycle case below states the value it wants rather than "does not
+ * throw", because an unbounded walk that threw nothing would also pass that.
  */
 
 function task(id: string, parentId: string | null): Task {
@@ -47,11 +47,19 @@ describe('descendantIds', () => {
     expect(descendantIds(tasks, 'root').sort()).toEqual(['child', 'grandchild'])
   })
 
-  it.fails('terminates on a parent cycle', () => {
+  it('terminates on a parent cycle, and still returns the other half', () => {
     // a is b's child and b is a's child: unreachable through the mutations,
     // but reachable through a hand-edited or round-tripped backup import.
+    // Skipping a candidate already seen, rather than bailing when the walk
+    // comes back around, is what keeps `b` in the answer for `a`.
     const cyclic = [task('a', 'b'), task('b', 'a')]
-    expect(() => descendantIds(cyclic, 'a')).not.toThrow()
+    expect(descendantIds(cyclic, 'a')).toEqual(['b'])
+    expect(descendantIds(cyclic, 'b')).toEqual(['a'])
+  })
+
+  it('stops a cycle from swallowing a real subtask', () => {
+    const cyclic = [task('a', 'b'), task('b', 'a'), task('real', 'b')]
+    expect(descendantIds(cyclic, 'a').sort()).toEqual(['b', 'real'])
   })
 })
 
@@ -170,7 +178,9 @@ describe('focusDrop', () => {
     // `c` is finished, so its place in the list comes from when it was finished
     // rather than its stored order. The drop must leave that order alone
     // instead of honouring the pointer.
-    expect(focusDrop(board, 'c', { kind: 'fitem', key: 'a' }, 'before')).toBe(1024)
+    expect(focusDrop(board, 'c', { kind: 'fitem', key: 'a' }, 'before')).toBe(
+      1024,
+    )
   })
 
   it('positions open rows against other open rows, ignoring finished ones', () => {

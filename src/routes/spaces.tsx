@@ -75,6 +75,10 @@ function SpacesView() {
   const handleCreate = () => {
     const n = name.trim()
     if (!n) return
+    // The button disables itself while pending, but Enter never touched that
+    // state, so two quick presses made two spaces. The guard lives here so both
+    // paths get it rather than the one that remembered.
+    if (createSpace.isPending) return
     createSpace.mutate(
       { name: n },
       {
@@ -295,7 +299,11 @@ function SpacesView() {
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return
+                e.preventDefault()
+                handleCreate()
+              }}
               placeholder="e.g. Design Sprint, Family Trip"
             />
           </div>

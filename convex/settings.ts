@@ -3,7 +3,7 @@ import { v } from 'convex/values'
 import { internalMutation, mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
 import { getUserSettings, requireUserId } from './lib'
-import { eventIdsForTasks } from './calendar'
+import { eventsToDelete } from './calendar'
 
 import type { MutationCtx } from './_generated/server'
 import type { Doc } from './_generated/dataModel'
@@ -68,11 +68,14 @@ export const continueSyncOffCleanup = internalMutation({
       .query('tasks')
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
       .paginate({ numItems: 500, cursor: args.cursor })
-    const eventIds = eventIdsForTasks(page.page)
-    if (eventIds.length > 0) {
+    // One home for the rule: which events these tasks own, and which task each
+    // id belongs to. The task id rides along so the action can clear the row
+    // that still points at the event it just removed.
+    const events = eventsToDelete(page.page)
+    if (events.length > 0) {
       await ctx.scheduler.runAfter(0, internal.calendar.deleteEventsForUser, {
         userId: args.userId,
-        eventIds,
+        events,
       })
     }
     if (!page.isDone) {

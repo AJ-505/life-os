@@ -7,7 +7,7 @@ import {
   internalMutation,
   internalQuery,
 } from './_generated/server'
-import type { ActionCtx } from './_generated/server'
+import type { ActionCtx, MutationCtx } from './_generated/server'
 import { internal } from './_generated/api'
 import { getUserSettings, requireUserId, taskByAppId } from './lib'
 
@@ -79,8 +79,14 @@ export function tryDerivedEventId(taskId: string): string | null {
 
 /** The Google events a personal task owns: the id we recorded, plus the id an
  *  in-flight create would have used. One home for the rule, because tracker,
- *  settings and backup all need it. */
-export function eventIdsForTasks(
+ *  settings and backup all need it.
+ *
+ *  Each id carries the task that owns it. A delete can then clear the id it
+ *  removed instead of leaving the task pointing at an event that is gone. A
+ *  task whose only id is the derived one is named by that derived id: the row
+ *  never stored it, so there is nothing to clear and the `expect` guard simply
+ *  will not match. */
+export function eventsToDelete(
   tasks: Array<{
     id: string
     spaceId?: string | null
@@ -88,18 +94,20 @@ export function eventIdsForTasks(
     addToCalendar?: boolean
     dueAt: number | null
   }>,
-): Array<string> {
-  const ids = new Set<string>()
+): Array<EventToDelete> {
+  const byEventId = new Map<string, EventToDelete>()
   for (const task of tasks) {
     if (task.spaceId) continue
     const stored = task.calendarEventId ?? null
-    if (stored) ids.add(stored)
+    if (stored) byEventId.set(stored, { taskId: task.id, eventId: stored })
     if (task.addToCalendar === true && task.dueAt !== null) {
       const derived = tryDerivedEventId(task.id)
-      if (derived) ids.add(derived)
+      if (derived && !byEventId.has(derived)) {
+        byEventId.set(derived, { taskId: task.id, eventId: derived })
+      }
     }
   }
-  return [...ids]
+  return [...byEventId.values()]
 }
 
 /* ------------------------------------------------------------------ result
@@ -144,6 +152,15 @@ type Snapshot = {
   timeZone: string | null
 }
 
+/** One task whose Google event is being removed, carried as a pair so the
+ *  action knows which id to clear on which row. A bare id cannot be attributed
+ *  back to a task, which is what leaves the dangling id the audit found. */
+const eventToDelete = v.object({
+  taskId: v.string(),
+  eventId: v.string(),
+})
+type EventToDelete = { taskId: string; eventId: string }
+
 /** The task's calendar-relevant state, or null when the row is gone. Returning
  *  null rather than throwing is deliberate: a delete that lands between the
  *  schedule and the run is a terminal no-op, not a failed job. */
@@ -174,12 +191,42 @@ export const taskForSync = internalQuery({
   },
 })
 
-/**
- * Record the Google event id, but only if the row still holds the value the
- * caller read. Two things follow from that guard: a delete can never be
- * clobbered by a create that was already in flight, and when the guard fails
- * the event we just made is untracked, so it is deleted rather than leaked.
- */
+/** Record the Google event id, but only if the row still holds the value the
+ *  caller read. Two things follow from that guard: a delete can never be
+ *  clobbered by a create that was already in flight, and when the guard fails
+ *  the event we just made is untracked, so it is deleted rather than leaked.
+ *
+ *  A plain function, not a mutation builder, so `clearEventIds` can apply the
+ *  same rule to a page of tasks inside one transaction. */
+async function applyEventId(
+  ctx: MutationCtx,
+  args: {
+    userId: string
+    taskId: string
+    calendarEventId: string | null
+    expect: string | null
+  },
+) {
+  // `.first()` for the same reason as `taskForSync`.
+  const task = await taskByAppId(ctx, args.userId, args.taskId)
+  const current = task ? (task.calendarEventId ?? null) : null
+  if (task && current === args.expect) {
+    await ctx.db.patch(task._id, { calendarEventId: args.calendarEventId })
+    return
+  }
+  // The guard failed, so the event we were about to record is untracked and
+  // has to go. Unless it is already the recorded one, which happens when two
+  // create attempts converge on the same deterministic id: deleting then
+  // would remove an event the caller believes it just created.
+  if (args.calendarEventId && args.calendarEventId !== current) {
+    await ctx.scheduler.runAfter(0, internal.calendar.deleteEventsForUser, {
+      userId: args.userId,
+      events: [{ taskId: args.taskId, eventId: args.calendarEventId }],
+    })
+  }
+}
+
+/** The action-facing entry point for the same rule. */
 export const setEventId = internalMutation({
   args: {
     userId: v.string(),
@@ -188,23 +235,7 @@ export const setEventId = internalMutation({
     expect: v.union(v.string(), v.null()),
   },
   handler: async (ctx, args) => {
-    // `.first()` for the same reason as `taskForSync`.
-    const task = await taskByAppId(ctx, args.userId, args.taskId)
-    const current = task ? (task.calendarEventId ?? null) : null
-    if (task && current === args.expect) {
-      await ctx.db.patch(task._id, { calendarEventId: args.calendarEventId })
-      return
-    }
-    // The guard failed, so the event we were about to record is untracked and
-    // has to go. Unless it is already the recorded one, which happens when two
-    // create attempts converge on the same deterministic id: deleting then
-    // would remove an event the caller believes it just created.
-    if (args.calendarEventId && args.calendarEventId !== current) {
-      await ctx.scheduler.runAfter(0, internal.calendar.deleteEventsForUser, {
-        userId: args.userId,
-        eventIds: [args.calendarEventId],
-      })
-    }
+    await applyEventId(ctx, args)
   },
 })
 
@@ -249,11 +280,48 @@ async function readEvent(response: Response) {
   }
 }
 
+/**
+ * What a non-OK status from Clerk means, or `null` when it means "try the next
+ * provider slug".
+ *
+ * 401 and 403 are the deployment's own secret failing, which is one broken key
+ * for every user rather than something any one of them can fix. Clerk's
+ * user-scoped endpoint cannot tell a bad key from an unknown user id, and one
+ * bad key is far likelier than a stale user id, so the operator reading wins
+ * and the raw status rides along for whoever reads the detail.
+ */
+function clerkRefusal(status: number) {
+  if (status === 401 || status === 403)
+    return {
+      ok: false as const,
+      reason: 'not_configured' as const,
+      detail: `Clerk rejected this deployment's API key with ${status}. CLERK_SECRET_KEY is wrong or lacks permission. The user cannot fix this.`,
+    }
+  if (status === 429)
+    return {
+      ok: false as const,
+      reason: 'rate_limited' as const,
+      detail: 'Clerk is rate limiting us. Try again in a minute.',
+    }
+  if (status >= 500)
+    return {
+      ok: false as const,
+      reason: 'google_error' as const,
+      detail: `Clerk returned ${status} while fetching the Google token.`,
+    }
+  return null
+}
+
 async function googleAccessToken(clerkUserId: string): Promise<
   | { ok: true; token: string; scopes: Array<string> }
   | {
       ok: false
-      reason: 'not_configured' | 'not_connected' | 'reauth_required'
+      reason:
+        | 'not_configured'
+        | 'not_connected'
+        | 'reauth_required'
+        | 'rate_limited'
+        | 'google_error'
       detail: string
     }
 > {
@@ -274,6 +342,14 @@ async function googleAccessToken(clerkUserId: string): Promise<
     )
     if (!attempt.ok) continue
     const res = attempt.response
+    // A status that means the credential is wrong will be wrong for the second
+    // provider slug too, so trying it only delays the same answer. Retrying on
+    // any non-OK is what reported one bad deployment secret as "this user has
+    // no Google account" - a user-action message for an operator's problem.
+    const refused = clerkRefusal(res.status)
+    if (refused) return refused
+    // 404 means this slug is simply not the linked provider, so the next one
+    // is worth trying.
     if (!res.ok) continue
 
     // Clerk returns a bare array on older API versions and a paginated
@@ -374,7 +450,12 @@ function eventBody(snapshot: Snapshot, timeZone: string) {
 }
 
 /** What a push depends on. Compared after the request to catch an edit that
- *  landed while the request was in flight. */
+ *  landed while the request was in flight.
+ *
+ *  `calendarEventId` is deliberately absent. The second pass exists to carry a
+ *  newer *edit*, and a Resync that recreated the event changes only the id;
+ *  counting it here would send every Resync round a second create. Adding this
+ *  field looks like a harmless completion and is not one. */
 function contentKey(snapshot: Snapshot): string {
   return JSON.stringify([
     snapshot.title,
@@ -672,11 +753,40 @@ async function runSync(
 
 /* ------------------------------------------------------------------ public */
 
-/** Explicit push for the signed-in user, awaited by the Resync control. */
+/**
+ * Explicit push for the signed-in user, awaited by the Resync control.
+ *
+ * The Resync button promises to put back events deleted in Google, so before
+ * syncing it clears an id that is already the one a create would have used.
+ * The push then takes its normal create path and the event is back in the same
+ * click, rather than the first click clearing the id and a second one creating.
+ *
+ * Only that exact id is cleared. When Google assigned a different id - or a
+ * backup brought one in - the event may still exist under it, so it is patched
+ * instead, and a patch against an event that is gone returns `event_removed` as
+ * it always has. The background scheduler never comes through here, so it keeps
+ * refusing to resurrect what the user deleted in Google.
+ */
 export const syncTask = action({
   args: { taskId: v.string() },
   handler: async (ctx, args): Promise<SyncResult> => {
     const userId = await requireUserId(ctx)
+    const snapshot = await ctx.runQuery(internal.calendar.taskForSync, {
+      userId,
+      taskId: args.taskId,
+    })
+    const stale =
+      snapshot?.calendarEventId === tryDerivedEventId(args.taskId)
+        ? snapshot.calendarEventId
+        : null
+    if (stale) {
+      await ctx.runMutation(internal.calendar.setEventId, {
+        userId,
+        taskId: args.taskId,
+        calendarEventId: null,
+        expect: stale,
+      })
+    }
     return await runSync(ctx, userId, args.taskId)
   },
 })
@@ -690,19 +800,60 @@ export const syncTaskForUser = internalAction({
   },
 })
 
-/** Best-effort deletion of events whose task is gone. A 404 or a 410 means the
- *  event is already gone, which is the state we wanted. */
+/**
+ * Best-effort deletion of events, clearing the task's id when Google confirms
+ * the event is gone.
+ *
+ * The confirmation is the whole point. A 404 or 410 means the event really is
+ * gone, so the stored id is stale and clearing it leaves the task ready for a
+ * fresh push. Any other failure - no token, no scope, a 429, a 500 - leaves the
+ * id alone, so a later attempt still knows which event to try for.
+ */
 export const deleteEventsForUser = internalAction({
-  args: { userId: v.string(), eventIds: v.array(v.string()) },
-  handler: async (_ctx, args) => {
-    if (args.eventIds.length === 0) return
+  args: { userId: v.string(), events: v.array(eventToDelete) },
+  handler: async (ctx, args) => {
+    if (args.events.length === 0) return
     const auth = await googleAccessToken(args.userId)
     if (!auth.ok) return
     if (!auth.scopes.includes(GOOGLE_EVENTS_SCOPE)) return
     const headers = { Authorization: `Bearer ${auth.token}` }
-    for (const eventId of args.eventIds) {
-      // Best effort: one unreachable delete must not stop the rest.
-      await request(`${GCAL}/${eventId}`, { method: 'DELETE', headers })
+    const gone: Array<EventToDelete> = []
+    // Best effort: one unreachable delete must not stop the rest. Only a reply
+    // that actually arrived can confirm anything, so a thrown request is not
+    // treated as a confirmation.
+    for (const event of args.events) {
+      const sent = await request(`${GCAL}/${event.eventId}`, {
+        method: 'DELETE',
+        headers,
+      })
+      if (!sent.ok) continue
+      const { status } = sent.response
+      if (sent.response.ok || status === 404 || status === 410) {
+        gone.push(event)
+      }
+    }
+    await ctx.runMutation(internal.calendar.clearEventIds, {
+      userId: args.userId,
+      events: gone,
+    })
+  },
+})
+
+/**
+ * Clear the recorded id of every event confirmed deleted, guarding on the value
+ * being replaced so a sync that ran in the meantime is not overwritten with the
+ * null from a delete that has now been superseded.
+ */
+export const clearEventIds = internalMutation({
+  args: { userId: v.string(), events: v.array(eventToDelete) },
+  handler: async (ctx, args) => {
+    for (const event of args.events) {
+      await applyEventId(ctx, {
+        userId: args.userId,
+        taskId: event.taskId,
+        calendarEventId: null,
+        expect: event.eventId,
+      })
     }
   },
 })

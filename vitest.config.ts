@@ -26,6 +26,11 @@ export default defineConfig({
           environment: 'edge-runtime',
           include: ['convex/**/*.test.ts'],
           setupFiles: ['./convex/test.setup.ts'],
+          // The default is 5s per test. A `convex-test` run loads every function
+          // module and compiles the schema on the first call in a file, so the
+          // first test in each file pays that cost alone. Under 5s it passed
+          // or failed on how busy the machine was, which is not a signal.
+          testTimeout: 30_000,
         },
       },
     ],

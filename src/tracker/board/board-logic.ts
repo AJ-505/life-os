@@ -21,7 +21,10 @@ export function parseDragId(raw: string | number): {
   if (at === -1) return null
   const kind = s.slice(0, at)
   if (!['proj', 'task', 'fitem', 'col', 'list'].includes(kind)) return null
-  return { kind: kind as 'proj' | 'task' | 'fitem' | 'col' | 'list', key: s.slice(at + 1) }
+  return {
+    kind: kind as 'proj' | 'task' | 'fitem' | 'col' | 'list',
+    key: s.slice(at + 1),
+  }
 }
 
 export function activeProjects(board: BoardData): Array<ProjectWithTasks> {
@@ -83,6 +86,10 @@ export type TaskNode = { task: Task; children: Array<TaskNode> }
 /**
  * Visible task tree for a project card. A row stays visible while anything
  * in its subtree is (so finishing a parent never hides open subtasks).
+ *
+ * `build` needs no cycle guard, unlike `descendantIds`: it walks down from
+ * `null`, and a task inside a cycle has a non-null `parentId`, so nothing in
+ * a cycle is ever reachable from a root and the walk cannot revisit a node.
  */
 export function taskTree(
   project: ProjectWithTasks,
@@ -111,12 +118,22 @@ export function visibleTasks(
   return taskTree(project, showDone).map((n) => n.task)
 }
 
-/** Every descendant task id of `id`, for cascade-style cache updates. */
+/**
+ * Every descendant task id of `id`, for cascade-style cache updates.
+ *
+ * The `seen` set carries the requested id too, so a `parentId` cycle - reachable
+ * through a restored backup, which validates nothing - terminates instead of
+ * blowing the stack inside an optimistic delete. A candidate already seen is
+ * skipped rather than pushed, so asking about one half of a two-task cycle still
+ * returns the other half.
+ */
 export function descendantIds(tasks: Array<Task>, id: string): Array<string> {
   const out: Array<string> = []
+  const seen = new Set([id])
   const walk = (parent: string) => {
     for (const t of tasks) {
-      if (t.parentId === parent) {
+      if (t.parentId === parent && !seen.has(t.id)) {
+        seen.add(t.id)
         out.push(t.id)
         walk(t.id)
       }
@@ -184,7 +201,10 @@ export function projectDrop(
       (p) => p.id !== activeProjectId,
     )
     const last = rows.at(-1)
-    return { gridCol: col, gridRow: last ? last.gridRow + POSITION_GAP : POSITION_GAP }
+    return {
+      gridCol: col,
+      gridRow: last ? last.gridRow + POSITION_GAP : POSITION_GAP,
+    }
   }
   if (over.key === activeProjectId) return null
   const overProject = board.find((p) => p.id === over.key)
@@ -265,7 +285,11 @@ export function focusDrop(
 
   const items = all.filter((e) => !e.task.done && e.task.id !== activeTaskId)
   const last = items.at(-1)
-  if (over.kind === 'focuszone' || over.key === activeTaskId || items.length === 0) {
+  if (
+    over.kind === 'focuszone' ||
+    over.key === activeTaskId ||
+    items.length === 0
+  ) {
     return last ? last.task.focusOrder + POSITION_GAP : POSITION_GAP
   }
   const base = items.findIndex((e) => e.task.id === over.key)
