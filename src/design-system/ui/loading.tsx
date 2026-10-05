@@ -19,9 +19,10 @@ export function Bar({ className }: { className?: string }) {
   return <div aria-hidden className={cn('rounded-md bg-foreground/10', className)} />
 }
 
-/** Softens a facsimile of the real page. Everything inside is decoration: it is
- *  hidden from assistive tech, which hears one "Loading" instead of a page of
- *  empty text, and it cannot be clicked or selected. */
+/** Softens a facsimile of the real page. Everything inside is decoration: it
+ *  cannot be clicked or selected, and assistive tech hears the one `label`
+ *  instead of a page of empty text. Each `Bar` hides itself; the caller keeps
+ *  any other child decorative so nothing is read out. */
 export function LoadingVeil({
   label = 'Loading',
   className,
@@ -59,7 +60,7 @@ export function PageFacsimile() {
           <Bar className="h-4 w-24" />
           <Bar className="h-3.5 w-40" />
         </div>
-        <div className="board-scroll min-h-0 flex-1 p-4">
+        <div className="board-scroll min-h-0 flex-1 overflow-y-auto p-4">
           <div className="mx-auto flex max-w-3xl flex-col gap-3">
             <Bar className="h-24 w-full rounded-xl" />
             <Bar className="h-24 w-full rounded-xl" />

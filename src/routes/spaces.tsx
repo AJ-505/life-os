@@ -75,10 +75,19 @@ function SpacesView() {
     kind: 'leave' | 'delete'
   } | null>(null)
 
-  // The `= []` default stays: `retry: false` means a failed request settles
-  // with no data, and the header below reads `spaces.length` on every render,
-  // so without it a network error becomes a crash instead of an empty grid.
-  const { data: spaces = [], isLoading, isError, refetch } = useQuery({
+  // The `= []` default stays: a failed request settles with no data and the
+  // header reads `spaces.length` on every render, so without it an error would
+  // crash instead of showing the error panel.
+  //
+  // `isPending`, not `isLoading`: `isLoading` is `isPending && isFetching`, so
+  // an offline pause (`fetchStatus: 'paused'`) is pending but not loading, and
+  // would fall through to "No spaces yet." — the exact false-empty this fixes.
+  const {
+    data: spaces = [],
+    isPending,
+    isError,
+    refetch,
+  } = useQuery({
     ...mySpacesQueryOptions,
     retry: false,
     enabled: SPACES_ENABLED,
@@ -169,7 +178,7 @@ function SpacesView() {
               specific, wrong claim about a list nobody has read yet — and on
               error there is no list at all, so it must not claim zero either. */}
           <span className="os-label hidden sm:inline">
-            {isLoading || isError
+            {isPending || isError
               ? '… · collaborative boards'
               : `${spaces.length} spaces · collaborative boards`}
           </span>
@@ -185,7 +194,7 @@ function SpacesView() {
 
       <div className="board-scroll min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mx-auto flex max-w-3xl flex-col gap-6">
-          {isLoading ? (
+          {isPending ? (
             <SpacesFacsimile />
           ) : isError ? (
             <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed p-10 text-center">

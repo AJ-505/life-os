@@ -3,10 +3,10 @@ import { Bar, LoadingVeil } from '#/design-system'
 /**
  * A blurred copy of the board, shown while the board query resolves.
  *
- * This is what the router's `defaultPendingComponent` renders, and it is the
- * fallback for the Suspense boundary TanStack Router already draws around the
- * routed content — see `Match.js` `renderPending`. The panel used to blank
- * because that fallback resolved to `null`.
+ * This is the fallback of the Suspense boundary the board routes draw around
+ * `BoardView`. It is not the router's `defaultPendingComponent` (`PageFacsimile`
+ * is that); it stands in for the board specifically, after the route has
+ * mounted and its Convex query has started.
  *
  * It mirrors the real board's geometry on purpose: the same header height, the
  * same `w-[82vw]`/`sm:w-[300px]` columns, the same card stack, and — on the
@@ -85,7 +85,7 @@ export function BoardFacsimile({ spaceId }: { spaceId: string | null }) {
               <Bar className="h-5 w-9 rounded-full" />
               <Bar className="h-8 w-24 rounded-md" />
               {spaceId === null ? (
-                <Bar className="hidden size-8 rounded-md lg:block" />
+                <Bar className="hidden size-9 rounded-md lg:block" />
               ) : null}
             </div>
           </div>
@@ -101,8 +101,9 @@ export function BoardFacsimile({ spaceId }: { spaceId: string | null }) {
         </div>
 
         {/* Focus rail: a personal board opens it by default (320px = `w-80`,
-            `lg` and up). Without this the canvas is 320px too wide, so the
-            columns shift left when the real rail mounts. */}
+            `lg` and up). It is a sibling of the `flex-1` canvas column, so
+            without it the canvas is 320px wider than the real one and how much
+            of the row sits in view is wrong until the rail mounts. */}
         {spaceId === null ? (
           <div className="hidden w-80 shrink-0 border-l bg-sidebar/50 lg:block" />
         ) : null}

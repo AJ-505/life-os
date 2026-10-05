@@ -23,10 +23,10 @@ export function boardQueryOptions(spaceId: string | null) {
   return convexQuery(api.tracker.getBoard, { spaceId })
 }
 
-/** `convexQuery` is a live reactive query (`staleTime: Infinity`), so the
- *  entry never goes stale and the intent prefetch stays warm: the click after a
- *  hover reads the subscribed data, and the entry is only dropped once its
- *  subscription is closed. */
+/** `convexQuery` returns `staleTime: Infinity`; `ConvexQueryClient` is what
+ *  makes it live, watching the cache entry on `added` and unsubscribing when it
+ *  is collected at `gcTime`. So an intent prefetch stays warm: the click after
+ *  a hover reads the subscribed data, and collection is what ends the watch. */
 export function taskHistoryQueryOptions(taskId: string | null) {
   return convexQuery(api.tracker.getTaskHistory, taskId ? { taskId } : 'skip')
 }
