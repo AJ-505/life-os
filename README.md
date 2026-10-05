@@ -138,7 +138,14 @@ npx convex env set CLERK_SECRET_KEY sk_...
 ```bash
 pnpm typecheck   # tsc over the app and over convex
 pnpm lint        # oxlint
+pnpm test        # vitest: app logic under node, Convex functions under the edge runtime
 ```
+
+The test suite is small and deliberate. It guards the authorization and
+lifecycle rules the UI cannot prove, plus a `known bugs` block. Each known-bug
+case uses `it.fails`: it states the behaviour we want and is red on purpose, so
+the suite stays green while the bug is open. When a fix lands the case starts
+passing, `it.fails` turns that into a failure, and the `.fails` comes off.
 
 ## Deploying
 
@@ -167,7 +174,7 @@ Vercel builds the front end; Convex deploys its own functions.
 1. **Convex.** `npx convex deploy` from the repo root. The two secrets above must already be set on the production deployment.
 2. **Vercel.** Build env: `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_CONVEX_URL`, `VITE_ENABLE_SPACES`, `VITE_ENABLE_CALENDAR`. Vite inlines all four at build time, so changing a flag needs a rebuild, not just a redeploy.
 3. **Clerk.** A **production** instance, with Google enabled as a social connection and `https://www.googleapis.com/auth/calendar.events` declared as a sensitive scope on the consent screen. A development instance works locally; it cannot be verified for a sensitive scope, which is a Google review with lead time rather than a code change.
-4. **CI.** `.github/workflows/ci.yml` runs lint and a typecheck on every push.
+4. **CI.** `.github/workflows/ci.yml` runs lint, a typecheck and the test suite on every push.
 
 Order matters: deploy Convex and set its secrets before the front end that points at it, and flip a feature flag only after the surface it unlocks has been deployed.
 

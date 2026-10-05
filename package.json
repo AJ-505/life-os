@@ -12,6 +12,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p convex/tsconfig.json",
+    "test": "vitest run",
     "lint": "oxlint",
     "format": "prettier --write . && oxlint --fix",
     "check": "prettier --check .",
