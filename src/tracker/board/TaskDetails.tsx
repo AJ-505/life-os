@@ -313,10 +313,17 @@ function HistoryFrame({ children }: { children: React.ReactNode }) {
 }
 
 function TaskHistoryPanel({ taskId }: { taskId: string }) {
-  const { data: history = [], isLoading, isError, refetch } = useQuery(
-    taskHistoryQueryOptions(taskId),
-  )
-  if (isLoading) {
+  // `isPending` (not `isLoading`): `isLoading` is `isPending && isFetching`, so
+  // an offline pause (`fetchStatus: 'paused'`) is pending but not loading, and
+  // would fall through to "No history yet." — a false claim about a read that
+  // never happened.
+  const {
+    data: history = [],
+    isPending,
+    isError,
+    refetch,
+  } = useQuery(taskHistoryQueryOptions(taskId))
+  if (isPending) {
     // A blurred facsimile of three events, not a spinner. Same frame, same row
     // geometry, so the panel keeps its height when the data lands.
     return (

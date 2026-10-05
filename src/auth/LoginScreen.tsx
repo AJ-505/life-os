@@ -68,7 +68,8 @@ export function LoginScreen() {
         }
 
         toast.error('Could not start Google sign-in.', {
-          description: error.message,
+          description:
+            error instanceof Error ? error.message : String(error),
         })
       }
     } catch (error) {
