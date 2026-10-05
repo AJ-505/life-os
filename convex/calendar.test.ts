@@ -45,7 +45,11 @@ const drainScheduler = (t: T) => t.finishAllScheduledFunctions(vi.runAllTimers)
 /** A personal task that already owns a Google event. */
 async function seedSyncedTask(
   t: T,
-  overrides: { calendarEventId?: string | null } = {},
+  overrides: {
+    calendarEventId?: string | null
+    done?: boolean
+    addToCalendar?: boolean
+  } = {},
 ) {
   await t.run(async (ctx) => {
     await ctx.db.insert('userSettings', {
@@ -65,11 +69,11 @@ async function seedSyncedTask(
       title: 'Task',
       notes: null,
       position: 1,
-      done: false,
+      done: overrides.done ?? false,
       doneAt: null,
       archived: false,
       dueAt: Date.UTC(2026, 0, 2, 9, 0, 0),
-      addToCalendar: true,
+      addToCalendar: overrides.addToCalendar ?? true,
       calendarEventId:
         overrides.calendarEventId === undefined
           ? DERIVED
@@ -203,6 +207,30 @@ describe('calendar', () => {
     expect(result).toMatchObject({ ok: true, action: 'updated' })
     expect((await readTask(t))?.calendarEventId).toBe('googleChose1')
     expect(creates(google)).toHaveLength(0)
+  })
+
+  it('deletes the event of a task that no longer wants one, instead of clearing the id', async () => {
+    const t = convexTest(schema, modules)
+    // A done task whose completion-time delete failed, so the id is still the
+    // derived one. Resync must remove the event it names, not throw the id away.
+    await seedSyncedTask(t, { done: true })
+    const google = stubGoogle({})
+    vi.stubGlobal('fetch', google)
+
+    const result = await asUser(t).action(api.calendar.syncTask, {
+      taskId: TASK_ID,
+    })
+
+    expect(result).toMatchObject({ ok: true, action: 'deleted' })
+    const deletes = google.mock.calls.filter(
+      ([input, init]) =>
+        String(input).startsWith(`${GCAL}/`) &&
+        (init?.method ?? 'GET').toUpperCase() === 'DELETE',
+    )
+    // The event is gone from Google, so the id is cleared as a consequence of
+    // the delete, not instead of it.
+    expect(deletes).toHaveLength(1)
+    expect((await readTask(t))?.calendarEventId).toBeNull()
   })
 
   it('turning sync off clears calendarEventId on the task', async () => {

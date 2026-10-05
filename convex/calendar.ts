@@ -1,4 +1,5 @@
 import { v } from 'convex/values'
+import type { Infer } from 'convex/values'
 import * as z from 'zod'
 
 import {
@@ -63,15 +64,9 @@ const googleEvent = z.object({
 })
 
 /** A stable Google event id for a task. This is what makes a retried create
- *  converge instead of duplicating. */
-export function derivedEventId(taskId: string): string {
-  const id = tryDerivedEventId(taskId)
-  if (!id) throw new Error(`Cannot derive a Google event id from "${taskId}"`)
-  return id
-}
-
-/** Same mapping, for callers that must not fail: a backup can carry an id we
- *  cannot map, and that must not make a delete or a restore impossible. */
+ *  converge instead of duplicating, and a task id we cannot map returns null
+ *  rather than throwing: a backup can carry one, and that must not make a
+ *  delete or a restore impossible. */
 export function tryDerivedEventId(taskId: string): string | null {
   const id = taskId.replace(/-/g, '').toLowerCase()
   return EVENT_ID.test(id) ? id : null
@@ -159,7 +154,7 @@ const eventToDelete = v.object({
   taskId: v.string(),
   eventId: v.string(),
 })
-type EventToDelete = { taskId: string; eventId: string }
+type EventToDelete = Infer<typeof eventToDelete>
 
 /** The task's calendar-relevant state, or null when the row is gone. Returning
  *  null rather than throwing is deliberate: a delete that lands between the
@@ -761,6 +756,11 @@ async function runSync(
  * The push then takes its normal create path and the event is back in the same
  * click, rather than the first click clearing the id and a second one creating.
  *
+ * The clear happens only while the task still wants an event. When it does not,
+ * the id is what the delete branch needs to find and remove the event, and
+ * clearing it first would leave the event on the calendar with nothing left
+ * pointing at it - a leak, not a resync.
+ *
  * Only that exact id is cleared. When Google assigned a different id - or a
  * backup brought one in - the event may still exist under it, so it is patched
  * instead, and a patch against an event that is gone returns `event_removed` as
@@ -776,7 +776,9 @@ export const syncTask = action({
       taskId: args.taskId,
     })
     const stale =
-      snapshot?.calendarEventId === tryDerivedEventId(args.taskId)
+      snapshot &&
+      wantsEvent(snapshot) &&
+      snapshot.calendarEventId === tryDerivedEventId(args.taskId)
         ? snapshot.calendarEventId
         : null
     if (stale) {
@@ -832,6 +834,8 @@ export const deleteEventsForUser = internalAction({
         gone.push(event)
       }
     }
+    // Nothing confirmed means nothing to clear, and a mutation is not free.
+    if (gone.length === 0) return
     await ctx.runMutation(internal.calendar.clearEventIds, {
       userId: args.userId,
       events: gone,

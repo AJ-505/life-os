@@ -21,7 +21,9 @@ import { v } from 'convex/values'
  * document from an index when the indexed field is missing) and forced every
  * personal read to scan the user's whole index and filter in JS. The field is
  * now always present — `convex/migrations.ts` backfills old rows to `null` —
- * so personal reads are an index range.
+ * so personal reads are an index range. The order is enforced, not left to
+ * memory: `convex:deploy` runs the backfill against production right after the
+ * deploy, so no build serves personal reads before the rows are migrated.
  */
 export default defineSchema({
   projects: defineTable({

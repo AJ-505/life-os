@@ -542,8 +542,14 @@ export const deleteSpace = mutation({
  * The tables this cascade drains, in the order it drains them. Each phase is a
  * separate transaction because Convex allows one paginated query per function,
  * so a single pass cannot cover more than one table.
+ *
+ * Activity goes before tasks. Its rows are keyed by the app-facing task id and
+ * one task can carry more of them than a single page, so they are drained
+ * through their own index range. Deleting a task first and reading its history
+ * as a side effect is what orphans the tail of a long history: the task row is
+ * gone, so no later pass ever asks for that id again.
  */
-const DELETE_PHASES = ['projects', 'tasks', 'members'] as const
+const DELETE_PHASES = ['projects', 'activity', 'tasks', 'members'] as const
 type DeletePhase = (typeof DELETE_PHASES)[number]
 
 /**
@@ -570,62 +576,56 @@ const UNASSIGN_BATCH = 100
 async function deleteSpacePhase(
   ctx: MutationCtx,
   next: { spaceId: string; phase: DeletePhase },
-): Promise<DeletePhase | null> {
+): Promise<PhaseOutcome> {
   const space = await ctx.db.get(next.spaceId as Doc<'spaces'>['_id'])
-  if (!space) return null
+  if (!space) return 'gone'
 
   const drained = await deleteTablePage(ctx, next.phase, space.id)
   if (!drained) return next.phase
   const following = DELETE_PHASES[DELETE_PHASES.indexOf(next.phase) + 1]
-  return following ?? null
+  return following ?? 'drained'
 }
 
-/** Delete up to `DELETE_BATCH` rows of one table. True when that table is done. */
+/** `'gone'` and `'drained'` are sentinels, never phase names. They must be
+ *  distinct: a cascade that finds the space already deleted and a cascade that
+ *  has drained every table look the same otherwise, and the first must not fall
+ *  through to deleting the document a second time. */
+type PhaseOutcome = DeletePhase | 'gone' | 'drained'
+
+/** Delete up to `DELETE_BATCH` rows of one table. True when that table is done.
+ *
+ *  Activity has no `by_space` index of its own; its `by_space_task` index is
+ *  keyed `spaceId` first, so an equality on `spaceId` alone ranges over every
+ *  activity row in the space regardless of task. That is the whole history,
+ *  drained one page at a time, which is what keeps a task with a long history
+ *  from leaving its tail behind. */
 async function deleteTablePage(
   ctx: MutationCtx,
   phase: DeletePhase,
   appSpaceId: string,
 ): Promise<boolean> {
-  if (phase === 'tasks') return deleteTaskPage(ctx, appSpaceId)
-
-  const table = phase === 'projects' ? 'projects' : 'spaceMembers'
-  const rows = await ctx.db
-    .query(table)
-    .withIndex('by_space', (q) => q.eq('spaceId', appSpaceId))
-    .take(DELETE_BATCH)
+  const rows =
+    phase === 'activity'
+      ? await ctx.db
+          .query('taskActivity')
+          .withIndex('by_space_task', (q) => q.eq('spaceId', appSpaceId))
+          .take(DELETE_BATCH)
+      : await ctx.db
+          .query(TABLE_FOR_PHASE[phase])
+          .withIndex('by_space', (q) => q.eq('spaceId', appSpaceId))
+          .take(DELETE_BATCH)
   await Promise.all(rows.map((row) => ctx.db.delete(row._id)))
   return rows.length < DELETE_BATCH
 }
 
-/**
- * Delete one page of a space's tasks, activity rows included.
- *
- * The activity index is keyed by the app-facing task id, not the Convex `_id`,
- * so the page's tasks are read here and their `id` used. Handing `_id`s to that
- * lookup instead matches nothing and orphans every task's history forever. A
- * task can carry a run of activity rows, so they are read through the same
- * index range and taken a page at a time rather than collected unbounded.
- */
-async function deleteTaskPage(
-  ctx: MutationCtx,
-  appSpaceId: string,
-): Promise<boolean> {
-  const tasks = await ctx.db
-    .query('tasks')
-    .withIndex('by_space', (q) => q.eq('spaceId', appSpaceId))
-    .take(DELETE_BATCH)
-  for (const task of tasks) {
-    await ctx.db.delete(task._id)
-    const activity = await ctx.db
-      .query('taskActivity')
-      .withIndex('by_space_task', (q) =>
-        q.eq('spaceId', appSpaceId).eq('taskId', task.id),
-      )
-      .take(DELETE_BATCH)
-    await Promise.all(activity.map((row) => ctx.db.delete(row._id)))
-  }
-  return tasks.length < DELETE_BATCH
-}
+/** The table each non-activity phase drains. Written out rather than inferred,
+ *  so adding a phase is a compile error here instead of silently draining the
+ *  wrong table — which is exactly how the tasks phase once became members. */
+const TABLE_FOR_PHASE = {
+  projects: 'projects',
+  tasks: 'tasks',
+  members: 'spaceMembers',
+} as const satisfies Record<Exclude<DeletePhase, 'activity'>, string>
 
 /**
  * Drive the cascade from one transaction's starting phase, scheduling a
@@ -639,14 +639,18 @@ async function runDeleteCascade(
 ) {
   let next: { spaceId: string; phase: DeletePhase } = start
   for (;;) {
-    const drained = await deleteSpacePhase(ctx, next)
-    if (!drained) break
-    if (drained === next.phase) {
+    const outcome = await deleteSpacePhase(ctx, next)
+    // A second click can start a second cascade while the first is still
+    // draining, so by the time this pass runs the document may already be gone.
+    // That is success, not a phase to continue.
+    if (outcome === 'gone') return
+    if (outcome === 'drained') break
+    if (outcome === next.phase) {
       // The table is not empty, so the next transaction continues it.
       await ctx.scheduler.runAfter(0, internal.spaces.continueDeleteSpace, next)
       return
     }
-    next = { spaceId: start.spaceId, phase: drained }
+    next = { spaceId: start.spaceId, phase: outcome }
   }
   // Everything the space holds is gone, so the space itself can go. Until this
   // point the document survives, which is what lets an interrupted cascade be
@@ -659,6 +663,7 @@ export const continueDeleteSpace = internalMutation({
     spaceId: v.string(),
     phase: v.union(
       v.literal('projects'),
+      v.literal('activity'),
       v.literal('tasks'),
       v.literal('members'),
     ),

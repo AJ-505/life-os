@@ -17,7 +17,7 @@
     "format": "prettier --write . && oxlint --fix",
     "check": "prettier --check .",
     "check:contract": "node scripts/check-convex-contract.mjs",
-    "convex:deploy": "convex deploy && convex run internal.migrations.backfillSpaceId '{\"phase\":\"tasks\"}'",
+    "convex:deploy": "convex deploy && convex run --prod internal.migrations.backfillSpaceId '{\"phase\":\"tasks\"}'",
     "school:sync": "tsx scripts/school-sync.ts"
   },
   "dependencies": {

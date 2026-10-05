@@ -1,4 +1,5 @@
 import { v } from 'convex/values'
+import type { Infer } from 'convex/values'
 
 import { internalMutation, mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
@@ -504,11 +505,12 @@ function withDescendants(
  */
 const DELETE_BATCH = 200
 
-type TaskToDelete = { _id: string; id: string }
+const taskToDelete = v.object({ _id: v.string(), id: v.string() })
+type TaskToDelete = Infer<typeof taskToDelete>
 
 export const continueDeleteTasks = internalMutation({
   args: {
-    tasks: v.array(v.object({ _id: v.string(), id: v.string() })),
+    tasks: v.array(taskToDelete),
     spaceId: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {

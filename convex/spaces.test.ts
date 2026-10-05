@@ -1,18 +1,14 @@
 import { convexTest } from 'convex-test'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { api } from './_generated/api'
+import { api, internal } from './_generated/api'
 import schema from './schema'
 
 import type { TestConvex } from 'convex-test'
 
 /**
- * Spaces regressions found by the 2026-10-03 audit.
- *
- * The `known bugs` block uses `it.fails`: each case states the behaviour we
- * want and is red on purpose, so the suite stays green while the bug is open.
- * When a fix lands the case starts passing, `it.fails` turns that into a
- * failure, and the `.fails` is removed.
+ * Spaces regressions found by the 2026-10-03 audit. Each case is the proof the
+ * fix holds; every one was red before the fix and green after.
  */
 
 const modules = import.meta.glob([
@@ -138,11 +134,43 @@ describe('spaces: lifecycle and authorization', () => {
   })
 })
 
-describe('spaces: known bugs', () => {
+describe('spaces', () => {
   it('deleteSpace removes the tasks’ activity rows', async () => {
     const t = convexTest(schema, modules)
     const space = await twoMemberSpace(t)
     await sharedProjectAndTask(t, space.id)
+
+    await asUser(t, 'user_a').mutation(api.spaces.deleteSpace, {
+      spaceId: space.id,
+    })
+    await drainScheduler(t)
+
+    const activity = await t.run(async (ctx) =>
+      ctx.db.query('taskActivity').collect(),
+    )
+    expect(activity).toHaveLength(0)
+  })
+
+  it('deleteSpace removes a task’s whole history, not just its first page', async () => {
+    const t = convexTest(schema, modules)
+    const space = await twoMemberSpace(t)
+    await sharedProjectAndTask(t, space.id)
+    // One task, more activity rows than a page. The cascade deletes tasks and
+    // activity in separate phases; if it deleted the task first and read the
+    // history as a side effect, everything past the first page would outlive
+    // the task and the space with nothing left pointing at it.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 250; i++) {
+        await ctx.db.insert('taskActivity', {
+          spaceId: space.id,
+          taskId: 't1',
+          projectId: 'p1',
+          actorId: 'user_a',
+          kind: 'updated',
+          createdAt: i,
+        })
+      }
+    })
 
     await asUser(t, 'user_a').mutation(api.spaces.deleteSpace, {
       spaceId: space.id,
@@ -237,6 +265,37 @@ describe('spaces: known bugs', () => {
     expect(left.tasks).toHaveLength(0)
     expect(left.members).toHaveLength(0)
     expect(left.spaces).toHaveLength(0)
+  })
+
+  it('a continuation that fires after the space is gone is a no-op, not a crash', async () => {
+    const t = convexTest(schema, modules)
+    const space = await twoMemberSpace(t)
+    // The document id, which a scheduled continuation carries. Captured before
+    // the cascade runs, because the cascade is what removes it.
+    const docId = await t.run(async (ctx) => {
+      const doc = await ctx.db
+        .query('spaces')
+        .withIndex('by_app_id', (q) => q.eq('id', space.id))
+        .first()
+      return doc!._id
+    })
+
+    // Two clicks can overlap: the first queues a continuation, the second
+    // drains the rest and deletes the document. The queued pass then runs
+    // against a space that is already gone. A scheduled function that throws
+    // is swallowed by the scheduler and only logged, so this is asserted by
+    // running the continuation directly rather than by draining.
+    await asUser(t, 'user_a').mutation(api.spaces.deleteSpace, {
+      spaceId: space.id,
+    })
+    await drainScheduler(t)
+
+    // The call must not reject: a throw on the missing document is exactly the
+    // failure this test exists for. Awaiting it unguarded is the assertion.
+    await t.mutation(internal.spaces.continueDeleteSpace, {
+      spaceId: docId,
+      phase: 'members',
+    })
   })
 
   it('removing a member unassigns their tasks', async () => {

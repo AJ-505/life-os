@@ -210,9 +210,10 @@ async function runBounded<T>(
  *  often rather than whichever failed first. A rate-limited run used to attach
  *  "Reconnect Google above" to it, telling someone whose key was fine to go and
  *  fix something that was not broken. */
-function reportResync(results: Array<SyncOutcome>, total: number) {
+function reportResync(results: Array<SyncOutcome>) {
   const updated = results.filter((r) => r.ok && !r.silent).length
-  const failures = results.filter((r) => !r.ok)
+  const failures = results.filter((f): f is FailedSync => !f.ok)
+  const total = results.length
   const tasks = `of ${total} synced ${total === 1 ? 'task' : 'tasks'}`
   if (failures.length === 0) {
     toast.success(`Resync finished: ${updated} updated ${tasks}`)
@@ -224,18 +225,19 @@ function reportResync(results: Array<SyncOutcome>, total: number) {
   )
 }
 
+type FailedSync = Extract<SyncOutcome, { ok: false }>
+
 /** The failure most of the run shared. Falling back to the first keeps a run
  *  where every failure was different from saying nothing at all. */
-function commonReason(failures: Array<SyncOutcome>) {
-  const failed = failures.filter((f) => !f.ok)
-  const counts = new Map<string, { n: number; outcome: SyncOutcome }>()
-  for (const failure of failed) {
+function commonReason(failures: Array<FailedSync>) {
+  const counts = new Map<string, { n: number; outcome: FailedSync }>()
+  for (const failure of failures) {
     const seen = counts.get(failure.message)
     if (seen) seen.n += 1
     else counts.set(failure.message, { n: 1, outcome: failure })
   }
   const top = [...counts.values()].sort((a, b) => b.n - a.n)[0]
-  if (!top || top.outcome.ok) return ''
+  if (!top) return ''
   return top.outcome.needsReconnect
     ? `${top.outcome.message} Reconnect Google above.`
     : top.outcome.message
@@ -314,7 +316,7 @@ function CalendarSettings() {
         syncedTasks.map((t) => () => syncToCalendar(t.id)),
         RESYNC_CONCURRENCY,
       )
-      reportResync(results, syncedTasks.length)
+      reportResync(results)
     } finally {
       setResyncing(false)
     }
