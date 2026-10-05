@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react'
 
-import { cn, ComingSoon } from '#/design-system'
+import { cn, ComingSoon, Bar, LoadingVeil } from '#/design-system'
 import { CALENDAR_ENABLED } from '#/feature-flags'
 import { Button } from '#/design-system/ui/button'
 import { Calendar } from '#/design-system/ui/calendar'
@@ -52,7 +52,7 @@ import {
   useUpdateTask,
 } from '../queries'
 import { taskHistoryQueryOptions } from '../queries'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { calendarSettingsQueryOptions } from '#/settings/queries'
 import { useGoogleCalendar } from '#/settings/googleCalendar'
 import { toast } from 'sonner'
@@ -296,15 +296,72 @@ function TaskCalendarFields({
   )
 }
 
+/** The panel's frame, shared by the loading and loaded states. Rendering the
+ *  real frame while loading is what stops the dialog below it from moving: the
+ *  old code swapped a bare paragraph for a header plus a list, so the content
+ *  underneath jumped by that height on every open. */
+function HistoryFrame({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2 border-t pt-3" aria-label="Task history">
+      <div className="flex items-center gap-2">
+        <History className="size-3.5 text-muted-foreground" />
+        <span className="os-label">Task history</span>
+      </div>
+      {children}
+    </div>
+  )
+}
+
 function TaskHistoryPanel({ taskId }: { taskId: string }) {
-  const { data: history = [], isLoading } = useQuery(
+  const { data: history = [], isLoading, isError, refetch } = useQuery(
     taskHistoryQueryOptions(taskId),
   )
   if (isLoading) {
-    return <p className="text-xs text-muted-foreground">Loading history…</p>
+    // A blurred facsimile of three events, not a spinner. Same frame, same row
+    // geometry, so the panel keeps its height when the data lands.
+    return (
+      <HistoryFrame>
+        <LoadingVeil label="Loading history">
+          <ol className="flex flex-col gap-2">
+            {[0, 1, 2].map((i) => (
+              <li key={i} className="flex items-start gap-2 text-xs">
+                <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-signal" />
+                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <Bar className={i === 1 ? 'h-3 w-3/5' : 'h-3 w-4/5'} />
+                  <Bar className="h-2.5 w-24" />
+                </div>
+              </li>
+            ))}
+          </ol>
+        </LoadingVeil>
+      </HistoryFrame>
+    )
+  }
+  // A failed read is not an empty task. Without this branch the error settles
+  // with no data and falls through to "No history yet." — a confident, wrong
+  // claim about a read that never landed.
+  if (isError) {
+    return (
+      <HistoryFrame>
+        <p className="flex items-center gap-2 text-xs text-muted-foreground">
+          Could not load history.
+          <button
+            type="button"
+            className="underline underline-offset-2 hover:text-foreground"
+            onClick={() => void refetch()}
+          >
+            Try again
+          </button>
+        </p>
+      </HistoryFrame>
+    )
   }
   if (history.length === 0) {
-    return <p className="text-xs text-muted-foreground">No history yet.</p>
+    return (
+      <HistoryFrame>
+        <p className="text-xs text-muted-foreground">No history yet.</p>
+      </HistoryFrame>
+    )
   }
   const describe = (event: (typeof history)[number]) => {
     switch (event.kind) {
@@ -329,14 +386,7 @@ function TaskHistoryPanel({ taskId }: { taskId: string }) {
     }
   }
   return (
-    <div
-      className="flex flex-col gap-2 border-t pt-3"
-      aria-label="Task history"
-    >
-      <div className="flex items-center gap-2">
-        <History className="size-3.5 text-muted-foreground" />
-        <span className="os-label">Task history</span>
-      </div>
+    <HistoryFrame>
       <ol className="flex flex-col gap-2">
         {history.map((event) => (
           <li key={event.id} className="flex items-start gap-2 text-xs">
@@ -353,7 +403,7 @@ function TaskHistoryPanel({ taskId }: { taskId: string }) {
           </li>
         ))}
       </ol>
-    </div>
+    </HistoryFrame>
   )
 }
 
@@ -394,6 +444,20 @@ export function TaskDetails({
   const [dueOpen, setDueOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const members = useSpaceMembers(spaceId)
+
+  // History used to start loading on the click, so the panel was always cold.
+  // Warm it when the pointer or the keyboard focus reaches the button, so the
+  // click usually lands on data that is already there.
+  //
+  // This is not free: a hover opens one Convex subscription, and it lives until
+  // the cache entry is collected (gcTime, 5 min). It is still the cheaper
+  // option — subscribing at board render for every task would open a watch per
+  // task for a panel most people never open, where intent opens one per task
+  // the user actually considers.
+  const queryClient = useQueryClient()
+  const prefetchHistory = () => {
+    void queryClient.prefetchQuery(taskHistoryQueryOptions(task.id))
+  }
 
   const project = board.find((p) => p.id === task.projectId)
   const activeProjects = board.filter((p) => p.status === 'active')
@@ -890,6 +954,8 @@ export function TaskDetails({
                 variant="outline"
                 size="sm"
                 className="gap-1.5"
+                onPointerEnter={prefetchHistory}
+                onFocus={prefetchHistory}
                 onClick={() => setHistoryOpen((open) => !open)}
               >
                 <History className="size-3.5" />

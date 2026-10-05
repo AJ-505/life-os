@@ -1,7 +1,15 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Copy, Link2, MoreHorizontal, Plus, Users, Zap } from 'lucide-react'
+import {
+  Copy,
+  Link2,
+  MoreHorizontal,
+  Plus,
+  RotateCw,
+  Users,
+  Zap,
+} from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '#/design-system/ui/button'
@@ -38,6 +46,7 @@ import {
   useLeaveSpace,
 } from '#/spaces/queries'
 import { SpacesShareDialog } from '#/spaces/components/SpacesShareDialog'
+import { SpacesFacsimile } from '#/spaces/SpacesFacsimile'
 
 export const Route = createFileRoute('/spaces')({
   component: SpacesView,
@@ -66,7 +75,10 @@ function SpacesView() {
     kind: 'leave' | 'delete'
   } | null>(null)
 
-  const { data: spaces = [] } = useQuery({
+  // The `= []` default stays: `retry: false` means a failed request settles
+  // with no data, and the header below reads `spaces.length` on every render,
+  // so without it a network error becomes a crash instead of an empty grid.
+  const { data: spaces = [], isLoading, isError, refetch } = useQuery({
     ...mySpacesQueryOptions,
     retry: false,
     enabled: SPACES_ENABLED,
@@ -153,8 +165,13 @@ function SpacesView() {
       <div className="flex shrink-0 items-center justify-between border-b px-4 py-2.5">
         <div className="flex items-baseline gap-3">
           <h1 className="text-lg font-bold tracking-tight">Spaces</h1>
+          {/* While the list is unknown, say so. "0 spaces" is a confident,
+              specific, wrong claim about a list nobody has read yet — and on
+              error there is no list at all, so it must not claim zero either. */}
           <span className="os-label hidden sm:inline">
-            {spaces.length} spaces · collaborative boards
+            {isLoading || isError
+              ? '… · collaborative boards'
+              : `${spaces.length} spaces · collaborative boards`}
           </span>
         </div>
         <Button
@@ -168,7 +185,19 @@ function SpacesView() {
 
       <div className="board-scroll min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mx-auto flex max-w-3xl flex-col gap-6">
-          {spaces.length === 0 ? (
+          {isLoading ? (
+            <SpacesFacsimile />
+          ) : isError ? (
+            <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed p-10 text-center">
+              <RotateCw className="size-6 text-muted-foreground/50" />
+              <p className="text-sm text-muted-foreground">
+                Could not load your spaces. Check your connection and try again.
+              </p>
+              <Button size="sm" variant="outline" onClick={() => void refetch()}>
+                Try again
+              </Button>
+            </div>
+          ) : spaces.length === 0 ? (
             <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed p-10 text-center">
               <Users className="size-6 text-muted-foreground/50" />
               <p className="text-sm text-muted-foreground">

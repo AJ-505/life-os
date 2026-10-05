@@ -6,6 +6,7 @@ import { ConvexQueryClient } from '@convex-dev/react-query'
 import { ConvexProvider } from 'convex/react'
 
 import { routeTree } from './routeTree.gen'
+import { PageFacsimile } from './design-system'
 
 export function getRouter() {
   if (typeof document !== 'undefined') {
@@ -45,6 +46,17 @@ export function getRouter() {
     scrollRestoration: true,
     defaultPreload: 'intent',
     defaultPreloadStaleTime: 0,
+    // TanStack Router already draws a Suspense boundary around the routed
+    // content (`Match.js` `renderPending`); it resolved to `null` because
+    // neither pending component was set, which is why the panel blanked on
+    // navigation. This fills it with a blurred page instead of a spinner.
+    //
+    // 1000ms (the framework default) would hide the affordance in the common
+    // fast case, which is backwards; 150 shows it, and the 300ms floor stops a
+    // fast navigation from strobing it for one frame.
+    defaultPendingComponent: PageFacsimile,
+    defaultPendingMs: 150,
+    defaultPendingMinMs: 300,
     Wrap: ({ children }) => (
       <ConvexProvider client={convexQueryClient.convexClient}>
         {children}

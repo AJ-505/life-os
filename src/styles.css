@@ -267,6 +267,10 @@ body::after {
 /* custom scrollbars that match the desk */
 .board-scroll {
   scrollbar-width: thin;
+  /* Reserve the scrollbar track always. Without it, a list that fits without a
+     scrollbar and then grows one when data lands reflows every card sideways by
+     the scrollbar width. */
+  scrollbar-gutter: stable;
   scrollbar-color: color-mix(in oklab, var(--foreground) 22%, transparent)
     transparent;
 }

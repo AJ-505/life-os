@@ -49,23 +49,35 @@ export function LoginScreen() {
         ? '/sso-callback'
         : `/sso-callback?${RETURN_PATH}=${encodeURIComponent(here)}`
 
-    const { error } = await signIn.sso({
-      strategy: 'oauth_google',
-      redirectUrl: '/',
-      redirectCallbackUrl: callback,
-    })
+    try {
+      const { error } = await signIn.sso({
+        strategy: 'oauth_google',
+        redirectUrl: '/',
+        redirectCallbackUrl: callback,
+      })
 
-    if (error && isClerkAPIResponseError(error)) {
-      const hasActiveSession = error.errors.some(
-        (err) => err.code === 'session_exists',
-      )
+      if (error) {
+        const hasActiveSession =
+          isClerkAPIResponseError(error) &&
+          error.errors.some((err) => err.code === 'session_exists')
 
-      if (hasActiveSession) {
-        toast.warning('You are already signed in. Redirecting..')
-        window.location.reload()
+        if (hasActiveSession) {
+          toast.warning('You are already signed in. Refreshing your session…')
+          window.location.reload()
+          return
+        }
+
+        toast.error('Could not start Google sign-in.', {
+          description: error.message,
+        })
       }
+    } catch (error) {
+      toast.error('Could not start Google sign-in.', {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setBusy(false)
     }
-    setBusy(false)
   }
 
   return (

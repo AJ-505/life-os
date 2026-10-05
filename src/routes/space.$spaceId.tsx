@@ -1,9 +1,11 @@
+import { Suspense } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { ShieldOff } from 'lucide-react'
 
 import { Button } from '#/design-system/ui/button'
 import { BoardView } from '#/tracker/board/BoardView'
+import { BoardFacsimile } from '#/tracker/board/BoardFacsimile'
 import { BoardScopeProvider } from '#/tracker/board-scope'
 import { boardQueryOptions } from '#/tracker/queries'
 
@@ -59,9 +61,14 @@ function SpaceBoard() {
 
   if (isError) return <SpaceUnavailable />
 
+  // The boundary sits inside the shell's <main>, so the fallback replaces only
+  // the board: the sidebar and header stay put. Without it the panel blanks
+  // while the query resolves, which is the jank this fixes.
   return (
-    <BoardScopeProvider spaceId={spaceId}>
-      <BoardView spaceId={spaceId} />
-    </BoardScopeProvider>
+    <Suspense fallback={<BoardFacsimile spaceId={spaceId} />}>
+      <BoardScopeProvider spaceId={spaceId}>
+        <BoardView spaceId={spaceId} />
+      </BoardScopeProvider>
+    </Suspense>
   )
 }
