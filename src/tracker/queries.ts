@@ -205,12 +205,21 @@ export function useUpdateTask() {
     api.tracker.updateTask,
   ).withOptimisticUpdate((store, args) => {
     const { id, done, ...rest } = args
-    withBoard(store, spaceId, (board) =>
-      patchTask(board, id, {
+    withBoard(store, spaceId, (board) => {
+      const current = board
+        .flatMap((p) => p.tasks)
+        .find((t) => t.id === id)
+      return patchTask(board, id, {
         ...rest,
-        ...(done !== undefined && { done, doneAt: done ? Date.now() : null }),
-      }),
-    )
+        // Mirrors the server: re-ticking stamps now, un-ticking keeps the old
+        // stamp. The sort reads `doneAt`, so dropping it here would make the row
+        // jump the instant the server answered.
+        ...(done !== undefined && {
+          done,
+          doneAt: done ? Date.now() : (current?.doneAt ?? null),
+        }),
+      })
+    })
   })
   return useMutation({ mutationFn })
 }

@@ -133,6 +133,15 @@ export type FocusEntry = { task: Task; project: ProjectWithTasks }
  * `{ ...t, project }` allocated a new task-shaped object on every call, so
  * compiled FocusItemBody saw a new `task` prop on every board patch and
  * could never skip. `task` here is the board's own object.
+ *
+ * Finished rows sink below the open ones, and among themselves they read
+ * newest-finished first: ticking done puts a row at the top of the finished pile
+ * rather than burying it under work finished earlier. Open rows keep focusOrder,
+ * so un-ticking returns one to its own slot instead of stranding it down there.
+ *
+ * `doneAt` is server-derived, but a restored backup can carry a finished row
+ * with no stamp. Those fall back to 0, so they sit at the bottom of the finished
+ * pile instead of pretending to be the newest thing you did.
  */
 export function focusTasks(board: BoardData): Array<FocusEntry> {
   const out: Array<FocusEntry> = []
@@ -141,8 +150,18 @@ export function focusTasks(board: BoardData): Array<FocusEntry> {
       if (t.inFocus && !t.archived) out.push({ task: t, project: p })
     }
   }
-  out.sort((a, b) => a.task.focusOrder - b.task.focusOrder)
+  out.sort(
+    (a, b) =>
+      Number(a.task.done) - Number(b.task.done) || compareFocus(a.task, b.task),
+  )
   return out
+}
+
+/** Within one group of the focus list: finished rows newest first, open rows in
+ *  the order the user gave them. */
+function compareFocus(a: Task, b: Task): number {
+  if (a.done && b.done) return (b.doneAt ?? 0) - (a.doneAt ?? 0)
+  return a.focusOrder - b.focusOrder
 }
 
 /**
@@ -228,16 +247,25 @@ export function taskDrop(
 }
 
 /** focusOrder for dropping into the focus panel; inserts before or after the
- *  hovered item per `side`, or at the end when dropped on the zone itself. */
+ *  hovered item per `side`, or at the end when dropped on the zone itself.
+ *
+ *  Only open rows are positioned. A finished row's place in the list comes from
+ *  when it was finished, not from focusOrder, so moving it would either do
+ *  nothing on screen or silently rewrite when you un-tick it. Finished rows
+ *  therefore keep their stored order and stay where they land. */
 export function focusDrop(
   board: BoardData,
   activeTaskId: string,
   over: { kind: 'fitem' | 'focuszone'; key: string },
   side: 'before' | 'after' = 'before',
 ): number {
-  const items = focusTasks(board).filter((e) => e.task.id !== activeTaskId)
+  const all = focusTasks(board)
+  const dragged = all.find((e) => e.task.id === activeTaskId)
+  if (dragged?.task.done) return dragged.task.focusOrder
+
+  const items = all.filter((e) => !e.task.done && e.task.id !== activeTaskId)
+  const last = items.at(-1)
   if (over.kind === 'focuszone' || over.key === activeTaskId || items.length === 0) {
-    const last = items.at(-1)
     return last ? last.task.focusOrder + POSITION_GAP : POSITION_GAP
   }
   const base = items.findIndex((e) => e.task.id === over.key)

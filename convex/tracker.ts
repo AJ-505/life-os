@@ -571,7 +571,10 @@ export const updateTask = mutation({
     if (assigneeId !== undefined) patch.assigneeId = assigneeId
     if (done !== undefined) {
       patch.done = done
-      patch.doneAt = done ? Date.now() : null
+      // Preserve the old stamp when un-ticking, so a task that gets re-opened
+      // and finished again lands at the top of the finished pile by when it was
+      // actually finished this time, not by when it was finished months ago.
+      patch.doneAt = done ? Date.now() : task.doneAt ?? null
     }
     await ctx.db.patch(task._id, patch)
     await scheduleCalendarSync(ctx, userId, task, patch)
