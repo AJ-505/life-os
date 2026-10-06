@@ -21,7 +21,9 @@ export type SpaceMember = NonNullable<
  *  render as a dashed neutral circle. */
 function InitialsDisc({ initials }: { initials: string | null }) {
   if (initials === null || initials === 'ME') {
-    return <span className="size-5 shrink-0 rounded-full border border-dashed" />
+    return (
+      <span className="size-5 shrink-0 rounded-full border border-dashed" />
+    )
   }
   return (
     <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-signal text-[9px] font-bold text-signal-foreground">

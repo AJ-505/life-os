@@ -303,7 +303,10 @@ function TaskCalendarFields({
  *  underneath jumped by that height on every open. */
 function HistoryFrame({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-2 border-t pt-3" aria-label="Task history">
+    <div
+      className="flex flex-col gap-2 border-t pt-3"
+      aria-label="Task history"
+    >
       <div className="flex items-center gap-2">
         <History className="size-3.5 text-muted-foreground" />
         <span className="os-label">Task history</span>
