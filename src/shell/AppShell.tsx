@@ -399,7 +399,7 @@ function CalendarSettings() {
           onValueChange={handleReminderChange}
         >
           <SelectTrigger size="sm" className="w-[140px] text-xs">
-            <SelectValue />
+            <SelectValue>{`${defaultReminder} minutes before`}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="5">5 minutes before</SelectItem>

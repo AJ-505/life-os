@@ -43,6 +43,7 @@ import { Textarea } from '#/design-system/ui/textarea'
 
 import { useBoardScope } from '../board-scope'
 import { useSpaceMembers } from '#/spaces/queries'
+import { AssigneeSelect } from '#/spaces/components/AssigneeSelect'
 import { POSITION_GAP, newId, positionAfter } from '../types'
 import {
   useCreateTask,
@@ -282,7 +283,7 @@ function TaskCalendarFields({
           onValueChange={(v) => onReminder(Number(v))}
         >
           <SelectTrigger size="sm" className="w-[180px] text-xs">
-            <SelectValue />
+            <SelectValue>{`${reminder} minutes before`}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="5">5 minutes before</SelectItem>
@@ -468,6 +469,11 @@ export function TaskDetails({
 
   const project = board.find((p) => p.id === task.projectId)
   const activeProjects = board.filter((p) => p.status === 'active')
+  // The trigger reads from `activeProjects`, the same list the items come from,
+  // so a task on an archived project shows "No project" rather than a name the
+  // list cannot select.
+  const projectName =
+    activeProjects.find((p) => p.id === task.projectId)?.name ?? 'No project'
   // No calendar read here. Every calendar read lives in TaskCalendarFields,
   // which only mounts behind the flag, so a build without the feature makes no
   // calendar query at all. `enabled: false` was tried and still subscribed.
@@ -807,7 +813,10 @@ export function TaskDetails({
                 }}
               >
                 <SelectTrigger size="sm" className="text-xs">
-                  <SelectValue />
+                  {/* A bare <SelectValue /> echoes the selected item's own
+                      text, which is blank when the value has no matching item.
+                      We pass the name in so an archived project still reads. */}
+                  <SelectValue>{projectName}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {activeProjects.map((p) => (
@@ -823,27 +832,22 @@ export function TaskDetails({
           {spaceId !== null ? (
             <div className="flex flex-col gap-1.5">
               <Label className="os-label">Assignee</Label>
-              <Select
-                value={task.assigneeId ?? 'unassigned'}
-                onValueChange={(assigneeId) =>
-                  updateTask.mutate({
-                    id: task.id,
-                    assigneeId: assigneeId === 'unassigned' ? null : assigneeId,
-                  })
+              <AssigneeSelect
+                assigneeId={task.assigneeId}
+                members={members}
+                onAssign={(assigneeId) =>
+                  updateTask.mutate(
+                    { id: task.id, assigneeId },
+                    {
+                      onError: (e) =>
+                        toast.error('Could not change the assignee', {
+                          description:
+                            e instanceof Error ? e.message : String(e),
+                        }),
+                    },
+                  )
                 }
-              >
-                <SelectTrigger size="sm" className="w-full text-xs">
-                  <SelectValue placeholder="Unassigned" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unassigned">Unassigned</SelectItem>
-                  {(members ?? []).map((member) => (
-                    <SelectItem key={member.userId} value={member.userId}>
-                      {member.isSelf ? `${member.name} (you)` : member.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              />
               <p className="text-[11px] text-muted-foreground">
                 Every space member can assign or take this task.
               </p>
