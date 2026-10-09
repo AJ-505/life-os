@@ -197,6 +197,15 @@ function collisionFor(kind: DragKind): CollisionDetection {
   }
 }
 
+type CreateProjectArgs = {
+  id: string
+  name: string
+  color: string
+  spaceId: string | null
+  gridCol: number
+  gridRow: number
+}
+
 function NewProjectDialog({
   open,
   onClose,
@@ -216,39 +225,39 @@ function NewProjectDialog({
     PROJECT_COLORS[activeProjects(board).length % PROJECT_COLORS.length],
   )
 
+  const create = (args: CreateProjectArgs) => {
+    // The dialog closes before the server confirms. That is safe: Convex runs
+    // one client's mutations in order, so a task added to the new card queues
+    // behind this insert and never reaches a missing project. On failure the
+    // draft stays reachable through Retry, so nothing the person typed is lost.
+    createProject.mutate(args, {
+      onError: (e: unknown) => {
+        toast.error('Could not create the project', {
+          description: e instanceof Error ? e.message : String(e),
+          action: { label: 'Retry', onClick: () => create(args) },
+        })
+      },
+    })
+  }
+
   const submit = () => {
     const n = name.trim()
     if (!n) return
-    // The button disables while pending but Enter never touched that state, so
-    // two quick presses made two projects. The guard sits here so both paths
-    // get it rather than the one that remembered.
+    // Enter and the button share this path, so the guard sits here. Without it
+    // two quick presses made two projects.
     if (createProject.isPending) return
-    // The name and the dialog are held until the mutation resolves. Clearing
-    // them on the way out threw away what the person typed whenever the create
-    // failed, and they had nothing left to retry with.
-    createProject.mutate(
-      {
-        id: newId(),
-        name: n,
-        color,
-        spaceId,
-        gridCol,
-        gridRow: positionAfter(
-          columnProjects(board, gridCol).map((p) => ({ position: p.gridRow })),
-        ),
-      },
-      {
-        onSuccess: () => {
-          setName('')
-          onClose()
-        },
-        onError: (e: unknown) => {
-          toast.error('Could not create the project', {
-            description: e instanceof Error ? e.message : String(e),
-          })
-        },
-      },
-    )
+    create({
+      id: newId(),
+      name: n,
+      color,
+      spaceId,
+      gridCol,
+      gridRow: positionAfter(
+        columnProjects(board, gridCol).map((p) => ({ position: p.gridRow })),
+      ),
+    })
+    setName('')
+    onClose()
   }
 
   return (
@@ -297,12 +306,8 @@ function NewProjectDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button
-            size="sm"
-            onClick={submit}
-            disabled={!name.trim() || createProject.isPending}
-          >
-            {createProject.isPending ? 'Creating…' : 'Create'}
+          <Button size="sm" onClick={submit} disabled={!name.trim()}>
+            Create
           </Button>
         </DialogFooter>
       </DialogContent>
