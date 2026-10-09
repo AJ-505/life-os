@@ -46,6 +46,7 @@ import { useSpaceMembers } from '#/spaces/queries'
 import { AssigneeSelect } from '#/spaces/components/AssigneeSelect'
 import { POSITION_GAP, newId, positionAfter } from '../types'
 import {
+  type CreateTaskArgs,
   useCreateTask,
   useDeleteTask,
   useMoveTask,
@@ -101,8 +102,19 @@ function Subtasks({
     childrenRef.current = children
   })
 
+  const create = (args: CreateTaskArgs) => {
+    createTask.mutate(args, {
+      onError: (e: unknown) => {
+        toast.error('Could not create the task', {
+          description: e instanceof Error ? e.message : String(e),
+          action: { label: 'Retry', onClick: () => create(args) },
+        })
+      },
+    })
+  }
+
   const commitDraft = (title: string) => {
-    createTask.mutate({
+    create({
       id: newId(),
       projectId: parent.projectId,
       parentId: parent.id,

@@ -33,6 +33,7 @@ import { Sheet, SheetContent } from '#/design-system/ui/sheet'
 
 import { PROJECT_COLORS, newId, positionAfter } from '../types'
 import {
+  type CreateProjectArgs,
   boardQueryOptions,
   useCreateProject,
   useMoveProject,
@@ -195,15 +196,6 @@ function collisionFor(kind: DragKind): CollisionDetection {
 
     return closestCenter(args)
   }
-}
-
-type CreateProjectArgs = {
-  id: string
-  name: string
-  color: string
-  spaceId: string | null
-  gridCol: number
-  gridRow: number
 }
 
 function NewProjectDialog({

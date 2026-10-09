@@ -7,6 +7,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { format } from 'date-fns/format'
+import { toast } from 'sonner'
 import {
   Archive,
   CalendarIcon,
@@ -49,6 +50,7 @@ import {
 
 import { PROJECT_COLORS, newId, positionAfter } from '../types'
 import {
+  type CreateTaskArgs,
   useCreateTask,
   useDeleteProject,
   useSetProjectStatus,
@@ -198,10 +200,21 @@ function AddTaskInput({ project }: { project: ProjectWithTasks }) {
   const createTask = useCreateTask()
   const [title, setTitle] = useState('')
 
+  const addTask = (args: CreateTaskArgs) => {
+    createTask.mutate(args, {
+      onError: (e: unknown) => {
+        toast.error('Could not create the task', {
+          description: e instanceof Error ? e.message : String(e),
+          action: { label: 'Retry', onClick: () => addTask(args) },
+        })
+      },
+    })
+  }
+
   const submit = () => {
     const t = title.trim()
     if (!t) return
-    createTask.mutate({
+    addTask({
       id: newId(),
       projectId: project.id,
       title: t,

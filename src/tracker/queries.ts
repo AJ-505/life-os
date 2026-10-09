@@ -5,8 +5,17 @@ import { api } from '../../convex/_generated/api'
 import { descendantIds } from './board/board-logic'
 import { useBoardScope } from './board-scope'
 
+import type { FunctionArgs } from 'convex/server'
 import type { OptimisticLocalStore } from 'convex/browser'
 import type { BoardData, Project, Task } from './types'
+
+/**
+ * The argument shapes live next to the mutation references that define them, so
+ * a change to a mutation's args cannot leave a hand-kept copy stale. Components
+ * that build a payload import the type from here.
+ */
+export type CreateProjectArgs = FunctionArgs<typeof api.tracker.createProject>
+export type CreateTaskArgs = FunctionArgs<typeof api.tracker.createTask>
 
 /**
  * The board is one reactive Convex query. Convex server-renders it, then the
