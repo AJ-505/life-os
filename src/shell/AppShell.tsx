@@ -57,6 +57,7 @@ import {
 } from '#/settings/googleCalendar'
 import { boardQueryOptions } from '#/tracker/queries'
 import { useSyncUserProfile } from '#/spaces/queries'
+import { usePrefetchRoutes } from '#/prefetch/prefetch-routes'
 
 const NAV = [
   { to: '/', label: 'Board', icon: LayoutGrid },
@@ -176,6 +177,11 @@ function ProfileSync() {
  *  from the shell so it happens before any task can be pushed. */
 function EnsureTimezone() {
   useEnsureTimezone()
+  return null
+}
+
+function PrefetchRoutes() {
+  usePrefetchRoutes()
   return null
 }
 
@@ -614,6 +620,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {CALENDAR_ENABLED ? <EnsureTimezone /> : null}
         <ProfileSync />
+        <PrefetchRoutes />
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {children}
         </main>

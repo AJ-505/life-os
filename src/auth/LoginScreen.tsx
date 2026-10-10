@@ -62,7 +62,7 @@ export function LoginScreen() {
           error.errors.some((err) => err.code === 'session_exists')
 
         if (hasActiveSession) {
-          toast.warning('You are already signed in. Refreshing your session…')
+          toast.warning('You are already signed in. Redirecting…')
           window.location.reload()
           return
         }

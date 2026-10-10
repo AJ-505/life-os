@@ -1,8 +1,6 @@
-import { Suspense } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 
 import { BoardView } from '#/tracker/board/BoardView'
-import { BoardFacsimile } from '#/tracker/board/BoardFacsimile'
 import { BoardScopeProvider } from '#/tracker/board-scope'
 
 // The board query is per-user and auth-gated, so it loads client-side inside
@@ -13,13 +11,9 @@ export const Route = createFileRoute('/')({
 })
 
 function PersonalBoard() {
-  // The boundary sits inside the shell's <main>, so the fallback replaces only
-  // the board and the sidebar stays put.
   return (
-    <Suspense fallback={<BoardFacsimile spaceId={null} />}>
-      <BoardScopeProvider spaceId={null}>
-        <BoardView spaceId={null} />
-      </BoardScopeProvider>
-    </Suspense>
+    <BoardScopeProvider spaceId={null}>
+      <BoardView spaceId={null} />
+    </BoardScopeProvider>
   )
 }

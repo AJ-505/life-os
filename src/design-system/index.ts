@@ -1,5 +1,4 @@
 export { cn, copyToClipboard } from './utils'
-export { Bar, LoadingVeil, PageFacsimile } from './ui/loading'
 export { ComingSoon } from './coming-soon'
 export { useLocalFlag } from './use-local-flag'
 export { useLocalNumber } from './use-local-number'

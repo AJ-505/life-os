@@ -1,9 +1,10 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Copy,
   Link2,
+  Loader2,
   MoreHorizontal,
   Plus,
   RotateCw,
@@ -45,8 +46,8 @@ import {
   useDeleteSpace,
   useLeaveSpace,
 } from '#/spaces/queries'
+import { boardQueryOptions } from '#/tracker/queries'
 import { SpacesShareDialog } from '#/spaces/components/SpacesShareDialog'
-import { SpacesFacsimile } from '#/spaces/SpacesFacsimile'
 
 export const Route = createFileRoute('/spaces')({
   component: SpacesView,
@@ -66,6 +67,7 @@ function SpacesView() {
   const leaveSpace = useLeaveSpace()
   const deleteSpace = useDeleteSpace()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const [newOpen, setNewOpen] = useState(false)
   const [name, setName] = useState('')
@@ -74,6 +76,14 @@ function SpacesView() {
     space: SpaceRow
     kind: 'leave' | 'delete'
   } | null>(null)
+
+  // A board is only ever cold the first time it opens, and a full board is the
+  // most expensive read on the page. Hover or focus on a card's entry warms
+  // that space's board so the click lands on data, which is the same intent
+  // pattern the task history uses.
+  const warmBoard = (spaceId: string) => {
+    void queryClient.prefetchQuery(boardQueryOptions(spaceId))
+  }
 
   // The `= []` default stays: a failed request settles with no data and the
   // header reads `spaces.length` on every render, so without it an error would
@@ -195,7 +205,12 @@ function SpacesView() {
       <div className="board-scroll min-h-0 flex-1 overflow-y-auto p-4">
         <div className="mx-auto flex max-w-3xl flex-col gap-6">
           {isPending ? (
-            <SpacesFacsimile />
+            <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed p-10 text-center">
+              <Loader2 className="size-6 animate-spin text-muted-foreground/50" />
+              <p className="text-sm text-muted-foreground">
+                Loading your spaces…
+              </p>
+            </div>
           ) : isError ? (
             <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed p-10 text-center">
               <RotateCw className="size-6 text-muted-foreground/50" />
@@ -298,6 +313,8 @@ function SpacesView() {
                       to="/space/$spaceId"
                       params={{ spaceId: s.id }}
                       className="no-underline"
+                      onPointerEnter={() => warmBoard(s.id)}
+                      onFocus={() => warmBoard(s.id)}
                     >
                       <Button
                         size="sm"

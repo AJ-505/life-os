@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react'
 
-import { cn, ComingSoon, Bar, LoadingVeil } from '#/design-system'
+import { cn, ComingSoon } from '#/design-system'
 import { CALENDAR_ENABLED } from '#/feature-flags'
 import { Button } from '#/design-system/ui/button'
 import { Calendar } from '#/design-system/ui/calendar'
@@ -340,23 +340,12 @@ function TaskHistoryPanel({ taskId }: { taskId: string }) {
     refetch,
   } = useQuery(taskHistoryQueryOptions(taskId))
   if (isPending) {
-    // A blurred facsimile of three events, not a spinner. Same frame, same row
-    // geometry, so the panel keeps its height when the data lands.
+    // The same frame the loaded list renders in, so the dialog does not resize
+    // when the data lands. With the intent prefetch above this is the rare
+    // case — a cold click, or one before the pointer ever reached the button.
     return (
       <HistoryFrame>
-        <LoadingVeil label="Loading history">
-          <ol className="flex flex-col gap-2">
-            {[0, 1, 2].map((i) => (
-              <li key={i} className="flex items-start gap-2 text-xs">
-                <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-signal" />
-                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                  <Bar className={i === 1 ? 'h-3 w-3/5' : 'h-3 w-4/5'} />
-                  <Bar className="h-2.5 w-24" />
-                </div>
-              </li>
-            ))}
-          </ol>
-        </LoadingVeil>
+        <p className="text-xs text-muted-foreground">Loading history…</p>
       </HistoryFrame>
     )
   }
