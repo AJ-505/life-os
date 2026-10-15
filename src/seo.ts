@@ -76,6 +76,14 @@ const BY_ROUTE_ID: Record<string, PageSeo> = {
     description: `Overdue, today, this week and later. ${DESCRIPTION}`,
     noindex: true,
   },
+  '/privacy': {
+    title: `Privacy policy - ${SITE_NAME}`,
+    description: `What ${SITE_NAME} keeps, why, and who sees it.`,
+  },
+  '/terms': {
+    title: `Terms of service - ${SITE_NAME}`,
+    description: `The terms for using ${SITE_NAME}.`,
+  },
   '/spaces': {
     title: `Spaces — ${SITE_NAME}`,
     description: `Shared boards for the people you actually work with.`,

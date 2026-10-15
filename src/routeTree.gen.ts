@@ -11,8 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as LibraryRouteImport } from './routes/library'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as SpacesRouteImport } from './routes/spaces'
 import { Route as SsoCallbackRouteImport } from './routes/sso-callback'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as TimelineRouteImport } from './routes/timeline'
 import { Route as JoinInviteCodeRouteImport } from './routes/join.$inviteCode'
 import { Route as SpaceSpaceIdRouteImport } from './routes/space.$spaceId'
@@ -27,6 +29,11 @@ const LibraryRoute = LibraryRouteImport.update({
   path: '/library',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SpacesRoute = SpacesRouteImport.update({
   id: '/spaces',
   path: '/spaces',
@@ -35,6 +42,11 @@ const SpacesRoute = SpacesRouteImport.update({
 const SsoCallbackRoute = SsoCallbackRouteImport.update({
   id: '/sso-callback',
   path: '/sso-callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TimelineRoute = TimelineRouteImport.update({
@@ -56,8 +68,10 @@ const SpaceSpaceIdRoute = SpaceSpaceIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/library': typeof LibraryRoute
+  '/privacy': typeof PrivacyRoute
   '/spaces': typeof SpacesRoute
   '/sso-callback': typeof SsoCallbackRoute
+  '/terms': typeof TermsRoute
   '/timeline': typeof TimelineRoute
   '/join/$inviteCode': typeof JoinInviteCodeRoute
   '/space/$spaceId': typeof SpaceSpaceIdRoute
@@ -65,8 +79,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/library': typeof LibraryRoute
+  '/privacy': typeof PrivacyRoute
   '/spaces': typeof SpacesRoute
   '/sso-callback': typeof SsoCallbackRoute
+  '/terms': typeof TermsRoute
   '/timeline': typeof TimelineRoute
   '/join/$inviteCode': typeof JoinInviteCodeRoute
   '/space/$spaceId': typeof SpaceSpaceIdRoute
@@ -75,8 +91,10 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/library': typeof LibraryRoute
+  '/privacy': typeof PrivacyRoute
   '/spaces': typeof SpacesRoute
   '/sso-callback': typeof SsoCallbackRoute
+  '/terms': typeof TermsRoute
   '/timeline': typeof TimelineRoute
   '/join/$inviteCode': typeof JoinInviteCodeRoute
   '/space/$spaceId': typeof SpaceSpaceIdRoute
@@ -86,8 +104,10 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/library'
+    | '/privacy'
     | '/spaces'
     | '/sso-callback'
+    | '/terms'
     | '/timeline'
     | '/join/$inviteCode'
     | '/space/$spaceId'
@@ -95,8 +115,10 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/library'
+    | '/privacy'
     | '/spaces'
     | '/sso-callback'
+    | '/terms'
     | '/timeline'
     | '/join/$inviteCode'
     | '/space/$spaceId'
@@ -104,8 +126,10 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/library'
+    | '/privacy'
     | '/spaces'
     | '/sso-callback'
+    | '/terms'
     | '/timeline'
     | '/join/$inviteCode'
     | '/space/$spaceId'
@@ -114,8 +138,10 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LibraryRoute: typeof LibraryRoute
+  PrivacyRoute: typeof PrivacyRoute
   SpacesRoute: typeof SpacesRoute
   SsoCallbackRoute: typeof SsoCallbackRoute
+  TermsRoute: typeof TermsRoute
   TimelineRoute: typeof TimelineRoute
   JoinInviteCodeRoute: typeof JoinInviteCodeRoute
   SpaceSpaceIdRoute: typeof SpaceSpaceIdRoute
@@ -137,6 +163,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LibraryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/spaces': {
       id: '/spaces'
       path: '/spaces'
@@ -149,6 +182,13 @@ declare module '@tanstack/react-router' {
       path: '/sso-callback'
       fullPath: '/sso-callback'
       preLoaderRoute: typeof SsoCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/timeline': {
@@ -178,8 +218,10 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LibraryRoute: LibraryRoute,
+  PrivacyRoute: PrivacyRoute,
   SpacesRoute: SpacesRoute,
   SsoCallbackRoute: SsoCallbackRoute,
+  TermsRoute: TermsRoute,
   TimelineRoute: TimelineRoute,
   JoinInviteCodeRoute: JoinInviteCodeRoute,
   SpaceSpaceIdRoute: SpaceSpaceIdRoute,

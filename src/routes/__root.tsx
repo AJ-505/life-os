@@ -91,18 +91,20 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 /** The entire app lives behind a signed-in identity. ClerkProvider →
  *  ConvexProviderWithClerk keep a Convex-validated Clerk token flowing; AuthGate
  *  then renders the board only when authenticated — no per-route guards. */
+const PUBLIC_PATHS = new Set(['/sso-callback', '/privacy', '/terms'])
+
 function RootComponent() {
   const { convexClient } = Route.useRouteContext()
   // The OAuth callback must render OUTSIDE AuthGate: during the handshake the
   // user isn't authenticated yet, so the gate would show the login screen and
   // the callback component would never mount (sign-in would deadlock).
-  const isSsoCallback = useRouterState({
-    select: (s) => s.location.pathname === '/sso-callback',
+  const isPublic = useRouterState({
+    select: (s) => PUBLIC_PATHS.has(s.location.pathname),
   })
   return (
     <ClerkProvider>
       <ConvexProviderWithClerk client={convexClient} useAuth={useAuth}>
-        {isSsoCallback ? (
+        {isPublic ? (
           <Outlet />
         ) : (
           <AuthGate>
