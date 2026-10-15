@@ -194,4 +194,9 @@ export default defineSchema({
     count: v.number(),
     windowStartAt: v.number(),
   }).index('by_user', ['userId']),
+
+  releases: defineTable({
+    buildId: v.string(),
+    publishedAt: v.number(),
+  }),
 })
