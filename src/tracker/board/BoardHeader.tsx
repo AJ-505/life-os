@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import {
+  CalendarDays,
   Check,
   ChevronDown,
   Crosshair,
+  LayoutGrid,
   Link as LinkIcon,
   Plus,
   Users,
@@ -21,11 +23,14 @@ import {
   DropdownMenuTrigger,
 } from '#/design-system/ui/dropdown-menu'
 import { Switch } from '#/design-system/ui/switch'
+import { Tabs, TabsList, TabsTrigger } from '#/design-system/ui/tabs'
 
 import { mySpacesQueryOptions, useSpaceMembers } from '#/spaces/queries'
 import { SpacesShareDialog } from '#/spaces/components/SpacesShareDialog'
 import { SPACES_ENABLED } from '#/feature-flags'
 import { useBoardScope } from '../board-scope'
+
+import type { BoardViewMode } from './BoardView'
 
 /** Clerk ids are long; two characters is what fits in a 24px circle. */
 function MemberStack({ spaceId }: { spaceId: string }) {
@@ -166,6 +171,34 @@ function SpaceChrome({ spaceId }: { spaceId: string }) {
   )
 }
 
+function ViewSwitch({ view }: { view: BoardViewMode }) {
+  const navigate = useNavigate()
+  return (
+    <Tabs
+      value={view}
+      onValueChange={(next) =>
+        void navigate({
+          to: '.',
+          search: (prev) => ({
+            ...prev,
+            view: next === 'calendar' ? 'calendar' : undefined,
+          }),
+          replace: true,
+        })
+      }
+    >
+      <TabsList className="h-8">
+        <TabsTrigger value="board" className="gap-1.5 px-2.5 text-xs">
+          <LayoutGrid className="size-3.5" /> Board
+        </TabsTrigger>
+        <TabsTrigger value="calendar" className="gap-1.5 px-2.5 text-xs">
+          <CalendarDays className="size-3.5" /> Calendar
+        </TabsTrigger>
+      </TabsList>
+    </Tabs>
+  )
+}
+
 /**
  * Board header. The active board is read from the route (see `useBoardScope`),
  * never from localStorage: a space that only exists in this browser would be a
@@ -184,6 +217,7 @@ export function BoardHeader({
   onNewProject,
   focusOpen,
   onToggleFocus,
+  view,
 }: {
   activeCount: number
   openCount: number
@@ -193,6 +227,7 @@ export function BoardHeader({
   onNewProject: (col: number) => void
   focusOpen: boolean
   onToggleFocus: () => void
+  view: BoardViewMode
 }) {
   const spaceId = useBoardScope()
   const inSpace = SPACES_ENABLED && spaceId !== null
@@ -200,14 +235,17 @@ export function BoardHeader({
   return (
     <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2.5 sm:px-4">
       <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-        <div className="hidden items-center gap-2.5 sm:flex">
-          <h1 className="text-lg font-bold leading-none tracking-tight">
-            {inSpace ? <SpaceTitle spaceId={spaceId} /> : 'Board'}
+        {inSpace ? (
+          <h1 className="hidden text-lg font-bold leading-none tracking-tight sm:block">
+            <SpaceTitle spaceId={spaceId} />
           </h1>
-          <span className="hidden text-sm leading-none text-muted-foreground lg:inline">
-            {activeCount} projects · {openCount} open tasks
-          </span>
-        </div>
+        ) : (
+          <h1 className="sr-only">Board</h1>
+        )}
+        <ViewSwitch view={view} />
+        <span className="hidden text-sm leading-none text-muted-foreground lg:inline">
+          {activeCount} projects · {openCount} open tasks
+        </span>
       </div>
       <div className="flex items-center gap-1.5 sm:gap-2">
         {inSpace ? <SpaceChrome spaceId={spaceId} /> : null}

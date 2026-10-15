@@ -1,4 +1,5 @@
 import { useMutation } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { convexQuery, useConvexMutation } from '@convex-dev/react-query'
 
 import { api } from '../../convex/_generated/api'
@@ -212,6 +213,21 @@ export function useCreateTask() {
   return useMutation({ mutationFn })
 }
 
+export function useAddTask() {
+  const createTask = useCreateTask()
+  const add = (args: CreateTaskArgs) => {
+    createTask.mutate(args, {
+      onError: (e: unknown) => {
+        toast.error('Could not create the task', {
+          description: e instanceof Error ? e.message : String(e),
+          action: { label: 'Retry', onClick: () => add(args) },
+        })
+      },
+    })
+  }
+  return add
+}
+
 export function useUpdateTask() {
   const spaceId = useBoardScope()
   const mutationFn = useConvexMutation(
@@ -219,9 +235,7 @@ export function useUpdateTask() {
   ).withOptimisticUpdate((store, args) => {
     const { id, done, ...rest } = args
     withBoard(store, spaceId, (board) => {
-      const current = board
-        .flatMap((p) => p.tasks)
-        .find((t) => t.id === id)
+      const current = board.flatMap((p) => p.tasks).find((t) => t.id === id)
       return patchTask(board, id, {
         ...rest,
         // Mirrors the server: re-ticking stamps now, un-ticking keeps the old

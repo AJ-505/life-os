@@ -2,8 +2,8 @@ import { POSITION_GAP, positionAt } from '../types'
 
 import type { BoardData, ProjectWithTasks, Task } from '../types'
 
-/* Drag ids: `proj@<id>` `task@<id>` `fitem@<id>` — droppables: `col@<n>`,
- * `list@<projectId>`, `focuszone`. */
+/* Drag ids: `proj@<id>` `task@<id>` `fitem@<id>` `cal@<id>` — droppables:
+ * `col@<n>`, `list@<projectId>`, `focuszone`, `day@<ms>`, `allday@<ms>`. */
 
 export const projId = (id: string) => `proj@${id}`
 export const taskId = (id: string) => `task@${id}`
@@ -11,8 +11,24 @@ export const focusItemId = (id: string) => `fitem@${id}`
 export const colId = (n: number) => `col@${n}`
 export const listId = (projectId: string) => `list@${projectId}`
 
+const DRAG_KINDS = [
+  'proj',
+  'task',
+  'fitem',
+  'cal',
+  'col',
+  'list',
+  'day',
+  'allday',
+] as const
+
+type DragIdKind = (typeof DRAG_KINDS)[number]
+
+const isDragKind = (kind: string): kind is DragIdKind =>
+  DRAG_KINDS.some((k) => k === kind)
+
 export function parseDragId(raw: string | number): {
-  kind: 'proj' | 'task' | 'fitem' | 'col' | 'list' | 'focuszone'
+  kind: DragIdKind | 'focuszone'
   key: string
 } | null {
   const s = String(raw)
@@ -20,11 +36,8 @@ export function parseDragId(raw: string | number): {
   const at = s.indexOf('@')
   if (at === -1) return null
   const kind = s.slice(0, at)
-  if (!['proj', 'task', 'fitem', 'col', 'list'].includes(kind)) return null
-  return {
-    kind: kind as 'proj' | 'task' | 'fitem' | 'col' | 'list',
-    key: s.slice(at + 1),
-  }
+  if (!isDragKind(kind)) return null
+  return { kind, key: s.slice(at + 1) }
 }
 
 export function activeProjects(board: BoardData): Array<ProjectWithTasks> {

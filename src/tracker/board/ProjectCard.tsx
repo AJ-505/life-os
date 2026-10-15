@@ -7,7 +7,6 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { format } from 'date-fns/format'
-import { toast } from 'sonner'
 import {
   Archive,
   CalendarIcon,
@@ -50,8 +49,7 @@ import {
 
 import { PROJECT_COLORS, newId, positionAfter } from '../types'
 import {
-  type CreateTaskArgs,
-  useCreateTask,
+  useAddTask,
   useDeleteProject,
   useSetProjectStatus,
   useUpdateProject,
@@ -158,7 +156,9 @@ export function ProjectEditDialog({
                 <Calendar
                   mode="single"
                   selected={
-                    project.targetDate ? new Date(project.targetDate) : undefined
+                    project.targetDate
+                      ? new Date(project.targetDate)
+                      : undefined
                   }
                   onSelect={(d) => {
                     setTargetOpen(false)
@@ -197,19 +197,8 @@ export function ProjectEditDialog({
 }
 
 function AddTaskInput({ project }: { project: ProjectWithTasks }) {
-  const createTask = useCreateTask()
+  const addTask = useAddTask()
   const [title, setTitle] = useState('')
-
-  const addTask = (args: CreateTaskArgs) => {
-    createTask.mutate(args, {
-      onError: (e: unknown) => {
-        toast.error('Could not create the task', {
-          description: e instanceof Error ? e.message : String(e),
-          action: { label: 'Retry', onClick: () => addTask(args) },
-        })
-      },
-    })
-  }
 
   const submit = () => {
     const t = title.trim()
@@ -304,7 +293,10 @@ export function ProjectCardBody({
           type="button"
           aria-label={project.collapsed ? 'Expand' : 'Collapse'}
           onClick={() =>
-            updateProject.mutate({ id: project.id, collapsed: !project.collapsed })
+            updateProject.mutate({
+              id: project.id,
+              collapsed: !project.collapsed,
+            })
           }
           onPointerDown={(e) => e.stopPropagation()}
           className="cursor-pointer rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -345,7 +337,10 @@ export function ProjectCardBody({
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() =>
-                updateProject.mutate({ id: project.id, showDone: !project.showDone })
+                updateProject.mutate({
+                  id: project.id,
+                  showDone: !project.showDone,
+                })
               }
             >
               {project.showDone ? (
@@ -360,12 +355,16 @@ export function ProjectCardBody({
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => setStatus.mutate({ id: project.id, status: 'shelved' })}
+              onClick={() =>
+                setStatus.mutate({ id: project.id, status: 'shelved' })
+              }
             >
               <Archive /> Shelve
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => setStatus.mutate({ id: project.id, status: 'done' })}
+              onClick={() =>
+                setStatus.mutate({ id: project.id, status: 'done' })
+              }
             >
               <CircleCheckBig /> Finish
             </DropdownMenuItem>

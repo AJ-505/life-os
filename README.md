@@ -20,6 +20,17 @@ Inside a task you get notes, subtasks, a due date with a 24-hour time, and the o
 
 Keyboard: hover any task and hit `f` to focus it, `e` to open it. `]` toggles the Focus panel, `[` toggles the sidebar.
 
+## Calendar
+
+The board has two views, switched from its header: **Board** and **Calendar** (`?view=calendar`). Calendar is a week grid, Monday first, with an all-day row on top. A dated task sits at its time as a one-hour block. A task due at midnight counts as all-day. Project target dates show as flags in the all-day row.
+
+- Click a task to open it, the same dialog as on the board.
+- Click an empty slot to add a task there. Pick its project in the popover.
+- Drag a task to another day or time. It snaps to 15 minutes, and the top edge of the block is the new start. Drop it on the all-day row to clear the time.
+- Drag a task from the Focus panel onto the grid to schedule it, or drag a block onto Focus to focus it.
+
+Spaces get the same view. A task that syncs to Google Calendar moves there too when you reschedule it.
+
 ## Focus
 
 Focus is a second view of your tasks that doesn't move them out of their projects. Hit the crosshair on any task or drag it to the panel on the right. It stays where it was — Focus just holds a reference. Reorder, check off, or clear done items when you're finished. On mobile it slides in as a sheet.

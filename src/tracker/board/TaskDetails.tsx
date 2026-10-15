@@ -46,8 +46,7 @@ import { useSpaceMembers } from '#/spaces/queries'
 import { AssigneeSelect } from '#/spaces/components/AssigneeSelect'
 import { POSITION_GAP, newId, positionAfter } from '../types'
 import {
-  type CreateTaskArgs,
-  useCreateTask,
+  useAddTask,
   useDeleteTask,
   useMoveTask,
   useSetTaskFocus,
@@ -86,7 +85,6 @@ function Subtasks({
   closingRef: MutableRefObject<boolean>
   draftCaptureRef: MutableRefObject<CaptureWrite | null>
 }) {
-  const createTask = useCreateTask()
   const updateTask = useUpdateTask()
   const deleteTask = useDeleteTask()
   const draftRef = useRef<HTMLInputElement>(null)
@@ -102,16 +100,7 @@ function Subtasks({
     childrenRef.current = children
   })
 
-  const create = (args: CreateTaskArgs) => {
-    createTask.mutate(args, {
-      onError: (e: unknown) => {
-        toast.error('Could not create the task', {
-          description: e instanceof Error ? e.message : String(e),
-          action: { label: 'Retry', onClick: () => create(args) },
-        })
-      },
-    })
-  }
+  const create = useAddTask()
 
   const commitDraft = (title: string) => {
     create({

@@ -6,6 +6,7 @@ import { Button } from '#/design-system/ui/button'
 import { BoardView } from '#/tracker/board/BoardView'
 import { BoardScopeProvider } from '#/tracker/board-scope'
 import { boardQueryOptions } from '#/tracker/queries'
+import { boardSearch } from '#/tracker/board/board-search'
 
 /**
  * A shared board. The scope comes from the URL, which is the point: a space
@@ -14,6 +15,7 @@ import { boardQueryOptions } from '#/tracker/queries'
  */
 export const Route = createFileRoute('/space/$spaceId')({
   component: SpaceBoard,
+  validateSearch: boardSearch,
   // Two triggers for one panel, because the two cases fail differently. A cold
   // load with no membership throws out of the board's suspense query and lands
   // here. A membership revoked while the board is open fails a background
@@ -52,6 +54,7 @@ function SpaceUnavailable() {
 
 function SpaceBoard() {
   const { spaceId } = Route.useParams()
+  const { view } = Route.useSearch()
   // `useSuspenseQuery` forces its own `throwOnError`, and a reactive query keeps
   // its last data on a failed refetch, so a rejected board subscription never
   // reaches a route error boundary. This plain query exposes the error state.
@@ -61,7 +64,7 @@ function SpaceBoard() {
 
   return (
     <BoardScopeProvider spaceId={spaceId}>
-      <BoardView spaceId={spaceId} />
+      <BoardView spaceId={spaceId} view={view ?? 'board'} />
     </BoardScopeProvider>
   )
 }
