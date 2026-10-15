@@ -8,6 +8,7 @@ import {
   isAllDay,
   minuteOfDay,
   placeInLanes,
+  visibleDays,
   weekDays,
 } from './calendar-logic'
 
@@ -249,5 +250,21 @@ describe('calendarWeek', () => {
     const week = calendarWeek([launch], days, true)
     expect(week[thursday].milestones.map((p) => p.id)).toEqual(['launch'])
     expect(week[wednesday].milestones).toEqual([])
+  })
+})
+
+describe('visibleDays', () => {
+  it('returns the Monday week for a span of seven', () => {
+    const days = visibleDays(new Date(2026, 9, 15, 9), 7)
+    expect(days.map((d) => d.getDate())).toEqual([12, 13, 14, 15, 16, 17, 18])
+  })
+
+  it('starts a short span on the anchor day', () => {
+    const days = visibleDays(new Date(2026, 9, 31, 22), 3)
+    expect(days.map((d) => [d.getMonth(), d.getDate(), d.getHours()])).toEqual([
+      [9, 31, 0],
+      [10, 1, 0],
+      [10, 2, 0],
+    ])
   })
 })

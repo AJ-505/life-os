@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { useDraggable, useDroppable } from '@dnd-kit/core'
-import { addWeeks } from 'date-fns/addWeeks'
+import { useDndMonitor, useDraggable, useDroppable } from '@dnd-kit/core'
+import { addDays } from 'date-fns/addDays'
 import { format } from 'date-fns/format'
 import { isSameMonth } from 'date-fns/isSameMonth'
 import { isToday } from 'date-fns/isToday'
-import { startOfDay } from 'date-fns/startOfDay'
 import { ChevronLeft, ChevronRight, Flag } from 'lucide-react'
 
-import { cn } from '#/design-system'
+import { cn, useMediaQuery } from '#/design-system'
 import { Button } from '#/design-system/ui/button'
 import { Input } from '#/design-system/ui/input'
 import {
@@ -36,7 +35,7 @@ import {
   calendarWeek,
   dayId,
   minuteOfDay,
-  weekDays,
+  visibleDays,
 } from './calendar-logic'
 
 import type { CalendarDay, CalendarTask, PlacedTask } from './calendar-logic'
@@ -48,8 +47,6 @@ export function calendarSlotAt(point: { x: number; y: number }) {
   const hit = document.elementFromPoint(point.x, point.y)
   return hit?.closest<HTMLElement>('[data-cal-drop]')?.dataset.calDrop ?? null
 }
-
-const GUTTER_PX = 64
 
 const HOURS = Array.from({ length: 24 }, (_, h) => h)
 
@@ -89,7 +86,7 @@ export function CalendarEventCard({
     <div
       data-proj={project.color}
       className={cn(
-        'flex h-full min-w-0 flex-col overflow-hidden rounded-md border-l-2 border-proj bg-proj/15 px-1.5 text-left text-proj transition-colors hover:bg-proj/25',
+        '@container flex h-full min-w-0 flex-col overflow-hidden rounded-md border-l-2 border-proj bg-proj/15 px-1.5 text-left text-proj transition-colors hover:bg-proj/25',
         compact ? 'py-0.5' : 'py-1',
         task.done && 'opacity-55',
         dragging && 'bg-proj/30 shadow-lg ring-2 ring-signal/40',
@@ -97,14 +94,14 @@ export function CalendarEventCard({
     >
       <span
         className={cn(
-          'truncate text-xs font-medium leading-tight text-foreground',
+          'truncate text-xs font-medium leading-tight text-foreground @max-[5.5rem]:line-clamp-2 @max-[5.5rem]:whitespace-normal @max-[5.5rem]:[overflow-wrap:anywhere]',
           task.done && 'line-through decoration-border',
         )}
       >
         {task.title}
       </span>
       {!compact && task.dueAt !== null ? (
-        <span className="truncate font-mono text-[10px] leading-tight">
+        <span className="truncate font-mono text-[10px] leading-tight @max-[5.5rem]:hidden">
           {timeLabel(minuteOfDay(task.dueAt))}
         </span>
       ) : null}
@@ -392,40 +389,70 @@ function QuickCreate({
   )
 }
 
+function useSwipe(onSwipe: (direction: 1 | -1) => void) {
+  const start = useRef<{ x: number; y: number; dragged: boolean } | null>(null)
+  useDndMonitor({
+    onDragStart: () => {
+      if (start.current) start.current.dragged = true
+    },
+  })
+  return {
+    onTouchStart: (e: React.TouchEvent) => {
+      const touch = e.touches[0]
+      start.current = { x: touch.clientX, y: touch.clientY, dragged: false }
+    },
+    onTouchEnd: (e: React.TouchEvent) => {
+      const from = start.current
+      start.current = null
+      const touch = e.changedTouches[0]
+      if (!from || from.dragged || !touch) return
+      const dx = touch.clientX - from.x
+      const dy = touch.clientY - from.y
+      if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return
+      onSwipe(dx < 0 ? 1 : -1)
+    },
+  }
+}
+
 export function CalendarView({
   board,
   showDone,
+  active,
 }: {
   board: BoardData
   showDone: boolean
+  active: boolean
 }) {
+  const wide = useMediaQuery('(min-width: 768px)')
+  const span = wide ? 7 : 3
   const [anchor, setAnchor] = useState(() => new Date())
   const [draft, setDraft] = useState<Draft | null>(null)
   const [projectId, setProjectId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const scrolledRef = useRef(false)
   const now = useNow()
 
-  const days = weekDays(anchor)
+  const days = visibleDays(anchor, span)
   const week = calendarWeek(board, days, showDone)
+  const columns = {
+    gridTemplateColumns: `${wide ? '4rem' : '3rem'} repeat(${span}, minmax(0, 1fr))`,
+  }
 
   useEffect(() => {
     const el = scrollRef.current
-    if (!el) return
+    if (!active || !el || scrolledRef.current) return
+    scrolledRef.current = true
     el.scrollTop = Math.max(0, new Date().getHours() - 2) * HOUR_PX
-    const today = el.querySelector<HTMLElement>(
-      `[data-cal-day="${startOfDay(new Date()).getTime()}"]`,
-    )
-    if (today && today.offsetLeft + today.offsetWidth > el.clientWidth)
-      el.scrollLeft = today.offsetLeft - GUTTER_PX
-  }, [])
+  }, [active])
 
-  const shift = (weeks: number) => {
+  const shift = (direction: 1 | -1) => {
     setDraft(null)
-    setAnchor(addWeeks(anchor, weeks))
+    setAnchor(addDays(anchor, direction * span))
   }
+  const swipe = useSwipe(shift)
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className={cn('min-h-0 flex-1 flex-col', active ? 'flex' : 'hidden')}>
       <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2 sm:px-4">
         <Button
           variant="outline"
@@ -442,7 +469,7 @@ export function CalendarView({
           variant="ghost"
           size="icon-sm"
           className="size-7"
-          aria-label="Previous week"
+          aria-label={wide ? 'Previous week' : 'Previous days'}
           onClick={() => shift(-1)}
         >
           <ChevronLeft className="size-4" />
@@ -451,7 +478,7 @@ export function CalendarView({
           variant="ghost"
           size="icon-sm"
           className="size-7"
-          aria-label="Next week"
+          aria-label={wide ? 'Next week' : 'Next days'}
           onClick={() => shift(1)}
         >
           <ChevronRight className="size-4" />
@@ -462,12 +489,13 @@ export function CalendarView({
       <Popover open={draft !== null} onOpenChange={(o) => !o && setDraft(null)}>
         <div
           ref={scrollRef}
-          className="board-scroll min-h-0 flex-1 overflow-auto select-none"
+          className="board-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden select-none"
+          {...swipe}
         >
-          <div className="min-w-[720px] pb-24 lg:pb-0">
+          <div className="pb-24 lg:pb-0">
             <div className="sticky top-0 z-40 bg-background">
-              <div className="grid grid-cols-[4rem_repeat(7,minmax(0,1fr))] border-b">
-                <span className="sticky left-0 z-10 bg-background" />
+              <div className="grid border-b" style={columns}>
+                <span />
                 {week.map((day) => (
                   <div
                     key={day.start}
@@ -486,8 +514,8 @@ export function CalendarView({
                   </div>
                 ))}
               </div>
-              <div className="grid grid-cols-[4rem_repeat(7,minmax(0,1fr))] border-b">
-                <span className="os-label sticky left-0 z-10 self-stretch whitespace-nowrap bg-background pr-2 pt-2.5 text-right">
+              <div className="grid border-b" style={columns}>
+                <span className="os-label self-center pr-1.5 text-right leading-tight">
                   all day
                 </span>
                 {week.map((day) => (
@@ -501,15 +529,12 @@ export function CalendarView({
               </div>
             </div>
 
-            <div className="grid grid-cols-[4rem_repeat(7,minmax(0,1fr))]">
-              <div
-                className="sticky left-0 z-[35] bg-background"
-                style={{ height: 24 * HOUR_PX }}
-              >
+            <div className="grid" style={columns}>
+              <div className="relative" style={{ height: 24 * HOUR_PX }}>
                 {HOURS.slice(1).map((h) => (
                   <span
                     key={h}
-                    className="absolute right-2 -translate-y-1/2 font-mono text-[10px] text-muted-foreground"
+                    className="absolute right-1.5 -translate-y-1/2 font-mono text-[10px] text-muted-foreground"
                     style={{ top: h * HOUR_PX }}
                   >
                     {timeLabel(h * 60)}
@@ -529,9 +554,10 @@ export function CalendarView({
           </div>
         </div>
         <PopoverContent
-          side="right"
-          align="start"
-          className="w-72"
+          side={wide ? 'right' : 'bottom'}
+          align={wide ? 'start' : 'center'}
+          collisionPadding={12}
+          className="w-[min(18rem,calc(100vw-1.5rem))]"
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           {draft ? (

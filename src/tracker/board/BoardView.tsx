@@ -528,6 +528,22 @@ function calendarDropAt(
   return atMinute(dayStart, dropMinute(ghostTop - top))
 }
 
+function useMountWhenIdle(needed: boolean) {
+  const [mounted, setMounted] = useState(needed)
+  if (needed && !mounted) setMounted(true)
+  useEffect(() => {
+    if (mounted) return
+    const mount = () => setMounted(true)
+    if (typeof window.requestIdleCallback !== 'function') {
+      const id = window.setTimeout(mount, 1000)
+      return () => window.clearTimeout(id)
+    }
+    const id = window.requestIdleCallback(mount, { timeout: 2000 })
+    return () => window.cancelIdleCallback(id)
+  }, [mounted])
+  return mounted
+}
+
 export function BoardView({
   spaceId,
   view,
@@ -543,6 +559,7 @@ export function BoardView({
   const moveTask = useMoveTask()
   const setFocus = useSetTaskFocus()
   const updateTask = useUpdateTask()
+  const calendarMounted = useMountWhenIdle(view === 'calendar')
 
   const [showDone, setShowDone] = useLocalFlag('lifeos-show-done', false)
   const [focusOpen, setFocusOpen] = useLocalFlag('lifeos-focus-open', true)
@@ -811,33 +828,39 @@ export function BoardView({
               view={view}
             />
 
-            {view === 'calendar' ? (
-              <CalendarView board={board} showDone={showDone} />
-            ) : (
-              <div
-                data-dragging={activeDrag ? '' : undefined}
-                className="board-canvas board-scroll min-h-0 flex-1 snap-x snap-mandatory overflow-auto sm:snap-none"
-              >
-                <div className="flex min-h-full items-start gap-2 p-3 pb-24 lg:pb-3">
-                  {columns.map((col) => (
-                    <BoardColumn
-                      key={col}
-                      col={col}
-                      board={board}
-                      showDone={showDone}
-                      onAddProject={setNewProjectCol}
-                    />
-                  ))}
+            {calendarMounted ? (
+              <CalendarView
+                board={board}
+                showDone={showDone}
+                active={view === 'calendar'}
+              />
+            ) : null}
+            <div
+              data-dragging={activeDrag ? '' : undefined}
+              className={cn(
+                'board-canvas board-scroll min-h-0 flex-1 snap-x snap-mandatory overflow-auto sm:snap-none',
+                view === 'calendar' && 'hidden',
+              )}
+            >
+              <div className="flex min-h-full items-start gap-2 p-3 pb-24 lg:pb-3">
+                {columns.map((col) => (
                   <BoardColumn
-                    col={ghostCol}
+                    key={col}
+                    col={col}
                     board={board}
                     showDone={showDone}
-                    isGhost
                     onAddProject={setNewProjectCol}
                   />
-                </div>
+                ))}
+                <BoardColumn
+                  col={ghostCol}
+                  board={board}
+                  showDone={showDone}
+                  isGhost
+                  onAddProject={setNewProjectCol}
+                />
               </div>
-            )}
+            </div>
           </div>
 
           {/* Focus is a personal working set, and `inFocus` is one shared

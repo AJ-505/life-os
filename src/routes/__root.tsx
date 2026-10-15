@@ -36,10 +36,9 @@ interface MyRouterContext {
 /** Reads the caller's Clerk session token on the server. Returns null when
  *  signed out. `getToken()` (no template) yields a token with `aud: "convex"`
  *  thanks to Clerk's native Convex integration. */
-const fetchClerkAuth = createServerFn({ method: 'GET' }).handler(async () => {
-  const { userId, getToken } = await auth()
-  const token = await getToken()
-  return { userId, token }
+const fetchClerkToken = createServerFn({ method: 'GET' }).handler(async () => {
+  const { getToken } = await auth()
+  return getToken()
 })
 
 /** The only two fields the head builder needs from a match. Naming them keeps
@@ -77,13 +76,12 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
   // `og:title` elements on one page, and a crawler picks either.
   head: ({ matches }: { matches: HeadMatch[] }) => buildHead(matches),
   beforeLoad: async (ctx) => {
-    const { userId, token } = await fetchClerkAuth()
     // serverHttpClient only exists during SSR — give it the Clerk token so
     // loader-driven Convex queries run authenticated on the first render.
-    if (token) {
-      ctx.context.convexQueryClient.serverHttpClient?.setAuth(token)
-    }
-    return { userId, token }
+    const server = ctx.context.convexQueryClient.serverHttpClient
+    if (!server) return
+    const token = await fetchClerkToken()
+    if (token) server.setAuth(token)
   },
   shellComponent: RootDocument,
   component: RootComponent,
