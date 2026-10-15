@@ -109,7 +109,7 @@ function NavLinks({
         to={to}
         onClick={onNavigate}
         className="no-underline"
-        activeOptions={{ exact: to === '/' }}
+        activeOptions={{ exact: to === '/', includeSearch: false }}
       >
         {({ isActive }) => {
           const active = isActive || alsoActive

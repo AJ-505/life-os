@@ -39,6 +39,7 @@ import {
   useMoveProject,
   useMoveTask,
   useSetTaskFocus,
+  useUpdateTask,
 } from '../queries'
 import { FocusPanel } from '../focus/FocusPanel'
 import {
@@ -60,6 +61,12 @@ import { ProjectCard } from './ProjectCard'
 import { BoardHeader } from './BoardHeader'
 import { ResizableFocusPanel } from './ResizableFocusPanel'
 import { TaskDetailsHost } from './TaskDetailsHost'
+import {
+  CalendarEventCard,
+  CalendarView,
+  calendarSlotAt,
+} from '../calendar/CalendarView'
+import { atMinute, dropMinute } from '../calendar/calendar-logic'
 
 import type {
   CollisionDetection,
@@ -69,7 +76,9 @@ import type {
 } from '@dnd-kit/core'
 import type { BoardData, ProjectWithTasks, Task } from '../types'
 
-type DragKind = 'proj' | 'task' | 'fitem' | null
+type DragKind = 'proj' | 'task' | 'fitem' | 'cal' | null
+
+export type BoardViewMode = 'board' | 'calendar'
 
 /**
  * Module scope, not in BoardView: dnd-kit memoizes its context values on
@@ -128,6 +137,12 @@ function collisionFor(kind: DragKind): CollisionDetection {
       return p.length > 0 ? p : rectIntersection(scoped)
     }
 
+    const point = args.pointerCoordinates
+    if (point && (kind === 'task' || kind === 'fitem' || kind === 'cal')) {
+      const slot = calendarSlotAt(point)
+      if (slot) return [{ id: slot }]
+    }
+
     if (kind === 'proj') {
       const colHit = hit(get('col')).at(0)
       const colC = colHit ? byId.get(colHit.id) : undefined
@@ -166,7 +181,7 @@ function collisionFor(kind: DragKind): CollisionDetection {
       return within.length > 0 ? within : hit(get('focuszone'))
     }
 
-    if (kind === 'task') {
+    if (kind === 'task' || kind === 'cal') {
       // Pass 1 — which project list (or the focus zone) is the pointer inside?
       // Resolving the *container* first is what makes in-project reordering and
       // cross-project moves land where you actually release, instead of
@@ -213,9 +228,11 @@ function NewProjectDialog({
 }) {
   const createProject = useCreateProject()
   const [name, setName] = useState('')
-  const [color, setColor] = useState<string>(
-    PROJECT_COLORS[activeProjects(board).length % PROJECT_COLORS.length],
-  )
+  const nextColor = (offset: number) =>
+    PROJECT_COLORS[
+      (activeProjects(board).length + offset) % PROJECT_COLORS.length
+    ]
+  const [color, setColor] = useState<string>(nextColor(0))
 
   const create = (args: CreateProjectArgs) => {
     // The dialog closes before the server confirms. That is safe: Convex runs
@@ -249,6 +266,7 @@ function NewProjectDialog({
       ),
     })
     setName('')
+    setColor(nextColor(1))
     onClose()
   }
 
@@ -415,6 +433,7 @@ type ActiveDrag =
   | { type: 'proj'; project: ProjectWithTasks }
   | { type: 'task'; task: Task }
   | { type: 'fitem'; task: Task; project: ProjectWithTasks }
+  | { type: 'cal'; task: Task; project: ProjectWithTasks; width: number }
 
 /**
  * Pixel-for-pixel drag overlay. Positions via direct DOM manipulation
@@ -426,15 +445,17 @@ function FastDragOverlay({
   active,
   offsetRef,
   initialRef,
+  pointerRef,
   children,
 }: {
   active: ActiveDrag | null
   offsetRef: React.RefObject<{ x: number; y: number }>
   initialRef: React.RefObject<{ x: number; y: number }>
+  pointerRef: React.RefObject<{ x: number; y: number }>
   children: React.ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const pos = useRef({ x: 0, y: 0 })
+  const pos = pointerRef
   const raf = useRef(0)
 
   useEffect(() => {
@@ -474,7 +495,7 @@ function FastDragOverlay({
         raf.current = 0
       }
     }
-  }, [active, offsetRef, initialRef])
+  }, [active, offsetRef, initialRef, pos])
 
   if (!active) return null
 
@@ -496,7 +517,24 @@ function FastDragOverlay({
   )
 }
 
-export function BoardView({ spaceId }: { spaceId: string | null }) {
+function calendarDropAt(
+  dst: { kind: 'day' | 'allday'; key: string },
+  ghostTop: number,
+): number {
+  const dayStart = Number(dst.key)
+  if (dst.kind === 'allday') return dayStart
+  const column = document.querySelector(`[data-cal-day="${dst.key}"]`)
+  const top = column?.getBoundingClientRect().top ?? ghostTop
+  return atMinute(dayStart, dropMinute(ghostTop - top))
+}
+
+export function BoardView({
+  spaceId,
+  view,
+}: {
+  spaceId: string | null
+  view: BoardViewMode
+}) {
   // A revoked membership is handled by the space route's own guard, which
   // watches this same query and renders an explanation. `useSuspenseQuery`
   // forces its own `throwOnError`, so an override here would be inert.
@@ -504,6 +542,7 @@ export function BoardView({ spaceId }: { spaceId: string | null }) {
   const moveProject = useMoveProject()
   const moveTask = useMoveTask()
   const setFocus = useSetTaskFocus()
+  const updateTask = useUpdateTask()
 
   const [showDone, setShowDone] = useLocalFlag('lifeos-show-done', false)
   const [focusOpen, setFocusOpen] = useLocalFlag('lifeos-focus-open', true)
@@ -517,6 +556,7 @@ export function BoardView({ spaceId }: { spaceId: string | null }) {
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null)
   const grabOffset = useRef({ x: 10, y: 10 })
   const initialPos = useRef({ x: 0, y: 0 })
+  const pointerPos = useRef({ x: 0, y: 0 })
   const [dragKind, setDragKind] = useState<DragKind>(null)
   const collisionDetection = collisionFor(dragKind)
 
@@ -571,6 +611,10 @@ export function BoardView({ spaceId }: { spaceId: string | null }) {
     // The item's starting top-left, so the overlay can be seeded there before
     // the first pointermove (prevents a top-left flash on a fresh portal node).
     initialPos.current = rect ? { x: rect.left, y: rect.top } : { x: 0, y: 0 }
+    pointerPos.current =
+      activator && 'clientX' in activator
+        ? { x: activator.clientX, y: activator.clientY }
+        : { x: initialPos.current.x, y: initialPos.current.y }
     if (parsed.kind === 'proj') {
       const project = board.find((p) => p.id === parsed.key)
       if (project) setActiveDrag({ type: 'proj', project })
@@ -579,6 +623,16 @@ export function BoardView({ spaceId }: { spaceId: string | null }) {
       const found = findTask(parsed.key)
       if (found) setActiveDrag({ type: 'task', task: found.task })
       setDragKind('task')
+    } else if (parsed.kind === 'cal') {
+      const found = findTask(parsed.key)
+      if (found)
+        setActiveDrag({
+          type: 'cal',
+          task: found.task,
+          project: found.project,
+          width: rect?.width ?? 140,
+        })
+      setDragKind('cal')
     } else if (parsed.kind === 'fitem') {
       const found = findTask(parsed.key)
       if (found)
@@ -599,6 +653,18 @@ export function BoardView({ spaceId }: { spaceId: string | null }) {
     const src = parseDragId(a.id)
     let dst = parseDragId(over.id)
     if (!src || !dst) return
+
+    if (dst.kind === 'day' || dst.kind === 'allday') {
+      if (src.kind !== 'task' && src.kind !== 'fitem' && src.kind !== 'cal')
+        return
+      const dueAt = calendarDropAt(
+        { kind: dst.kind, key: dst.key },
+        pointerPos.current.y - grabOffset.current.y,
+      )
+      if (findTask(src.key)?.task.dueAt !== dueAt)
+        updateTask.mutate({ id: src.key, dueAt })
+      return
+    }
 
     // Before or after the hovered item? `verticalListSortingStrategy` decides
     // the live gap purely by *direction* within the sortable list (drag down
@@ -661,7 +727,7 @@ export function BoardView({ spaceId }: { spaceId: string | null }) {
       return
     }
 
-    if (src.kind === 'task') {
+    if (src.kind === 'task' || src.kind === 'cal') {
       if (dst.kind === 'focuszone' || dst.kind === 'fitem') {
         // task → focus is always a cross-list move (the task isn't in the focus
         // list yet), so there's no direction — the rect half is the right cue.
@@ -742,32 +808,36 @@ export function BoardView({ spaceId }: { spaceId: string | null }) {
               onNewProject={setNewProjectCol}
               focusOpen={focusOpen}
               onToggleFocus={toggleFocus}
+              view={view}
             />
 
-            {/* Canvas */}
-            <div
-              data-dragging={activeDrag ? '' : undefined}
-              className="board-canvas board-scroll min-h-0 flex-1 snap-x snap-mandatory overflow-auto sm:snap-none"
-            >
-              <div className="flex min-h-full items-start gap-2 p-3 pb-24 lg:pb-3">
-                {columns.map((col) => (
+            {view === 'calendar' ? (
+              <CalendarView board={board} showDone={showDone} />
+            ) : (
+              <div
+                data-dragging={activeDrag ? '' : undefined}
+                className="board-canvas board-scroll min-h-0 flex-1 snap-x snap-mandatory overflow-auto sm:snap-none"
+              >
+                <div className="flex min-h-full items-start gap-2 p-3 pb-24 lg:pb-3">
+                  {columns.map((col) => (
+                    <BoardColumn
+                      key={col}
+                      col={col}
+                      board={board}
+                      showDone={showDone}
+                      onAddProject={setNewProjectCol}
+                    />
+                  ))}
                   <BoardColumn
-                    key={col}
-                    col={col}
+                    col={ghostCol}
                     board={board}
                     showDone={showDone}
+                    isGhost
                     onAddProject={setNewProjectCol}
                   />
-                ))}
-                <BoardColumn
-                  col={ghostCol}
-                  board={board}
-                  showDone={showDone}
-                  isGhost
-                  onAddProject={setNewProjectCol}
-                />
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Focus is a personal working set, and `inFocus` is one shared
@@ -812,6 +882,7 @@ export function BoardView({ spaceId }: { spaceId: string | null }) {
           active={activeDrag}
           offsetRef={grabOffset}
           initialRef={initialPos}
+          pointerRef={pointerPos}
         >
           {activeDrag?.type === 'proj' ? (
             <div className="w-[280px]">
@@ -820,6 +891,15 @@ export function BoardView({ spaceId }: { spaceId: string | null }) {
           ) : activeDrag?.type === 'task' ? (
             <div className="w-[260px]">
               <GhostTaskRow task={activeDrag.task} />
+            </div>
+          ) : activeDrag?.type === 'cal' ? (
+            <div className="h-12" style={{ width: activeDrag.width }}>
+              <CalendarEventCard
+                task={activeDrag.task}
+                project={activeDrag.project}
+                compact
+                dragging
+              />
             </div>
           ) : activeDrag?.type === 'fitem' ? (
             <div className="w-[280px]">

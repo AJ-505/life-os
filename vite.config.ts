@@ -22,7 +22,9 @@ const config = defineConfig(({ command }) => ({
   plugins: [
     // Dev tools ship no bytes to production; `command === 'serve'` keeps the
     // plugin out of the build graph entirely.
-    command === 'serve' ? devtools() : undefined,
+    command === 'serve'
+      ? devtools({ consolePiping: { enabled: false } })
+      : undefined,
     tailwindcss(),
     tanstackStart(),
     command === 'build' ? nitro() : undefined,

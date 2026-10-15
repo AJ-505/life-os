@@ -424,16 +424,34 @@ function clampReminder(minutes: number): number {
   return Math.max(0, Math.min(40320, Math.round(minutes)))
 }
 
-function eventBody(snapshot: Snapshot, timeZone: string) {
-  const dueAt = snapshot.dueAt!
+function nextDay(date: string): string {
+  const [year, month, day] = date.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10)
+}
+
+export function eventTimes(dueAt: number, timeZone: string) {
+  const start = wallClock(dueAt, timeZone)
+  const date = start.slice(0, 10)
+  if (start.endsWith('T00:00:00'))
+    return {
+      start: { date, dateTime: null, timeZone },
+      end: { date: nextDay(date), dateTime: null, timeZone },
+    }
   return {
-    summary: snapshot.title,
-    description: snapshot.notes ?? '',
-    start: { dateTime: wallClock(dueAt, timeZone), timeZone },
+    start: { date: null, dateTime: start, timeZone },
     end: {
+      date: null,
       dateTime: wallClock(dueAt + EVENT_MINUTES * 60 * 1000, timeZone),
       timeZone,
     },
+  }
+}
+
+function eventBody(snapshot: Snapshot, timeZone: string) {
+  return {
+    summary: snapshot.title,
+    description: snapshot.notes ?? '',
+    ...eventTimes(snapshot.dueAt!, timeZone),
     reminders: {
       useDefault: false,
       overrides: [
