@@ -20,6 +20,12 @@ export function weekDays(anchor: Date): Array<Date> {
   return Array.from({ length: 7 }, (_, i) => addDays(first, i))
 }
 
+export function visibleDays(anchor: Date, span: number): Array<Date> {
+  if (span === 7) return weekDays(anchor)
+  const first = startOfDay(anchor)
+  return Array.from({ length: span }, (_, i) => addDays(first, i))
+}
+
 export function minuteOfDay(at: number): number {
   const date = new Date(at)
   return date.getHours() * 60 + date.getMinutes()

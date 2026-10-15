@@ -13,7 +13,7 @@ import {
 const TOAST_ID = 'app-update'
 
 export function UpdateNotifier() {
-  const published = useQuery(api.release.current)
+  const published = useQuery(api.release.current, BUILD_ID ? {} : 'skip')
 
   useEffect(() => {
     if (!published) return
