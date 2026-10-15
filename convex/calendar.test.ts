@@ -2,6 +2,7 @@ import { convexTest } from 'convex-test'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api, internal } from './_generated/api'
+import { eventTimes } from './calendar'
 import schema from './schema'
 
 import type { TestConvex } from 'convex-test'
@@ -320,5 +321,36 @@ describe('calendar', () => {
     expect(calls.filter((u) => u.includes('api.clerk.com'))).toHaveLength(2)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.reason).toBe('not_connected')
+  })
+})
+
+describe('eventTimes', () => {
+  it('sends a task due at local midnight as an all-day event', () => {
+    const midnight = Date.UTC(2026, 9, 14, 23, 0)
+    expect(eventTimes(midnight, 'Africa/Lagos')).toEqual({
+      start: { date: '2026-10-15', dateTime: null, timeZone: 'Africa/Lagos' },
+      end: { date: '2026-10-16', dateTime: null, timeZone: 'Africa/Lagos' },
+    })
+  })
+
+  it('rolls the all-day end over a month boundary', () => {
+    const midnight = Date.UTC(2026, 9, 30, 23, 0)
+    expect(eventTimes(midnight, 'Africa/Lagos').end.date).toBe('2026-11-01')
+  })
+
+  it('sends a timed task as a one hour block in the user zone', () => {
+    const nineThirty = Date.UTC(2026, 9, 15, 8, 30)
+    expect(eventTimes(nineThirty, 'Africa/Lagos')).toEqual({
+      start: {
+        date: null,
+        dateTime: '2026-10-15T09:30:00',
+        timeZone: 'Africa/Lagos',
+      },
+      end: {
+        date: null,
+        dateTime: '2026-10-15T10:30:00',
+        timeZone: 'Africa/Lagos',
+      },
+    })
   })
 })

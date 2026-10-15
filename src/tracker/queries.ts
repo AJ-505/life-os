@@ -210,22 +210,20 @@ export function useCreateTask() {
       ),
     )
   })
-  return useMutation({ mutationFn })
+  const create = useMutation({
+    mutationFn,
+    onError: (e: unknown, args: CreateTaskArgs) => {
+      toast.error('Could not create the task', {
+        description: e instanceof Error ? e.message : String(e),
+        action: { label: 'Retry', onClick: () => create.mutate(args) },
+      })
+    },
+  })
+  return create
 }
 
 export function useAddTask() {
-  const createTask = useCreateTask()
-  const add = (args: CreateTaskArgs) => {
-    createTask.mutate(args, {
-      onError: (e: unknown) => {
-        toast.error('Could not create the task', {
-          description: e instanceof Error ? e.message : String(e),
-          action: { label: 'Retry', onClick: () => add(args) },
-        })
-      },
-    })
-  }
-  return add
+  return useCreateTask().mutate
 }
 
 export function useUpdateTask() {
