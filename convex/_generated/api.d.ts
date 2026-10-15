@@ -12,6 +12,7 @@ import type * as backup from "../backup.js";
 import type * as calendar from "../calendar.js";
 import type * as lib from "../lib.js";
 import type * as migrations from "../migrations.js";
+import type * as release from "../release.js";
 import type * as settings from "../settings.js";
 import type * as spaces from "../spaces.js";
 import type * as tracker from "../tracker.js";
@@ -27,6 +28,7 @@ declare const fullApi: ApiFromModules<{
   calendar: typeof calendar;
   lib: typeof lib;
   migrations: typeof migrations;
+  release: typeof release;
   settings: typeof settings;
   spaces: typeof spaces;
   tracker: typeof tracker;

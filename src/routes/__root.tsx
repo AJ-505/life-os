@@ -18,6 +18,7 @@ import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
 import { THEME_INIT_SCRIPT, ThemeProvider } from '#/design-system'
 import { AppShell } from '#/shell'
 import { AuthGate } from '#/auth'
+import { UpdateNotifier } from '#/release'
 import { linksFor, metaFor, seoForRouteId } from '#/seo'
 
 import appCss from '../styles.css?url'
@@ -88,11 +89,11 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
   component: RootComponent,
 })
 
+const PUBLIC_PATHS = new Set(['/sso-callback', '/privacy', '/terms'])
+
 /** The entire app lives behind a signed-in identity. ClerkProvider →
  *  ConvexProviderWithClerk keep a Convex-validated Clerk token flowing; AuthGate
  *  then renders the board only when authenticated — no per-route guards. */
-const PUBLIC_PATHS = new Set(['/sso-callback', '/privacy', '/terms'])
-
 function RootComponent() {
   const { convexClient } = Route.useRouteContext()
   // The OAuth callback must render OUTSIDE AuthGate: during the handshake the
@@ -104,6 +105,7 @@ function RootComponent() {
   return (
     <ClerkProvider>
       <ConvexProviderWithClerk client={convexClient} useAuth={useAuth}>
+        <UpdateNotifier />
         {isPublic ? (
           <Outlet />
         ) : (
