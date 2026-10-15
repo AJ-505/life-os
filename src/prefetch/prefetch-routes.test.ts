@@ -18,7 +18,10 @@ interface Preloaded {
   params?: Record<string, string>
 }
 
-function fakeClients(spaces: Array<{ id: string }>, opts?: { spacesFail?: boolean }) {
+function fakeClients(
+  spaces: Array<{ id: string }>,
+  opts?: { spacesFail?: boolean },
+) {
   const preloaded: Preloaded[] = []
   const ensured: unknown[] = []
   const prefetched: Array<{ queryKey: unknown[] }> = []
@@ -61,7 +64,11 @@ describe('warmRoutes', () => {
   it('preloads the shell navigation routes and the spaces list', async () => {
     const c = fakeClients(spacesList(1))
 
-    warmRoutes({ router: c.router, queryClient: c.queryClient })
+    warmRoutes({
+      router: c.router,
+      queryClient: c.queryClient,
+      spacesEnabled: true,
+    })
     await flush()
 
     expect(c.preloaded.map((p) => p.to)).toEqual([
@@ -79,7 +86,11 @@ describe('warmRoutes', () => {
   it('warms the board data of only the first few spaces', async () => {
     const c = fakeClients(spacesList(9))
 
-    warmRoutes({ router: c.router, queryClient: c.queryClient })
+    warmRoutes({
+      router: c.router,
+      queryClient: c.queryClient,
+      spacesEnabled: true,
+    })
     await flush()
 
     const boardKeys = c.prefetched.map((q) => JSON.stringify(q.queryKey))
@@ -93,7 +104,11 @@ describe('warmRoutes', () => {
   it('does not touch spaces when the flag is off', async () => {
     const c = fakeClients(spacesList(3))
 
-    warmRoutes({ router: c.router, queryClient: c.queryClient, spacesEnabled: false })
+    warmRoutes({
+      router: c.router,
+      queryClient: c.queryClient,
+      spacesEnabled: false,
+    })
     await flush()
 
     expect(c.preloaded.map((p) => p.to)).toEqual([
@@ -108,7 +123,11 @@ describe('warmRoutes', () => {
   it('stays silent when the network is not there', async () => {
     const c = fakeClients([], { spacesFail: true })
 
-    warmRoutes({ router: c.router, queryClient: c.queryClient })
+    warmRoutes({
+      router: c.router,
+      queryClient: c.queryClient,
+      spacesEnabled: true,
+    })
 
     // A rejection here would surface as an unhandled rejection and fail the run.
     await flush()
@@ -118,7 +137,11 @@ describe('warmRoutes', () => {
   it('skips the space chain when the user has no spaces', async () => {
     const c = fakeClients([])
 
-    warmRoutes({ router: c.router, queryClient: c.queryClient })
+    warmRoutes({
+      router: c.router,
+      queryClient: c.queryClient,
+      spacesEnabled: true,
+    })
     await flush()
 
     expect(c.preloaded.map((p) => p.to)).toEqual([

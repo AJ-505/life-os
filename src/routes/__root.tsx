@@ -18,6 +18,7 @@ import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
 import { THEME_INIT_SCRIPT, ThemeProvider } from '#/design-system'
 import { AppShell } from '#/shell'
 import { AuthGate } from '#/auth'
+import { UpdateNotifier } from '#/release'
 import { linksFor, metaFor, seoForRouteId } from '#/seo'
 
 import appCss from '../styles.css?url'
@@ -102,6 +103,7 @@ function RootComponent() {
   return (
     <ClerkProvider>
       <ConvexProviderWithClerk client={convexClient} useAuth={useAuth}>
+        <UpdateNotifier />
         {isSsoCallback ? (
           <Outlet />
         ) : (
