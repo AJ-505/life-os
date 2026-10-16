@@ -262,6 +262,7 @@ function CalendarSettings() {
   const { connection, connect } = useGoogleCalendar()
   const syncToCalendar = useSyncTaskToCalendar()
   const [resyncing, setResyncing] = useState(false)
+  const [repairHint, setRepairHint] = useState(false)
   const [confirmOff, setConfirmOff] = useState(false)
 
   const enabled = settings?.syncEnabled ?? false
@@ -441,22 +442,34 @@ function CalendarSettings() {
       </div>
 
       <div className="flex items-center justify-between">
-        <div className="flex flex-col gap-0.5">
-          <Label className="os-label">Repair calendar</Label>
-          <span className="font-mono text-[11px] text-muted-foreground">
+        <Label className="os-label">Repair calendar</Label>
+        <Tooltip open={repairHint} onOpenChange={setRepairHint}>
+          <TooltipTrigger asChild>
+            <span
+              tabIndex={0}
+              className="rounded-md"
+              onPointerDown={(e) => {
+                if (e.pointerType === 'touch') setRepairHint(!repairHint)
+              }}
+            >
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!enabled || !googleConnected || resyncing}
+                onClick={handleResync}
+              >
+                {resyncing ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : null}
+                Repair now
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="top" align="end" className="max-w-56">
             Missing or out-of-date events? This sends every synced task to
             Google again and brings back events you deleted there.
-          </span>
-        </div>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!enabled || !googleConnected || resyncing}
-          onClick={handleResync}
-        >
-          {resyncing ? <Loader2 className="size-3.5 animate-spin" /> : null}
-          Repair now
-        </Button>
+          </TooltipContent>
+        </Tooltip>
       </div>
     </div>
   )
