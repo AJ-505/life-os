@@ -12,12 +12,13 @@ Convex agent skills for common tasks can be installed by running
 
 <!-- convex-ai-end -->
 
-## Artefacts
+## How to build UIs
+Always prioritise optimistic updates, and then immediate feedback. In that order. If you can make an action feel instant while the query runs in the background, do it. If you cannot, ensure that the user notices something when they click or take an action.
 
-Never write reports, debriefs, plans, inquiries, or proofs into this repo.
-They go in `~/code/aisandbox/life-os/` (`reports/`, `debriefs/`, `plans/`,
-`inquiries/`, `proofs/`). Artefacts are grouped by project at the aisandbox
-root, never inside the project's own repository.
+Before you change popovers, selects, dialogs, drag and drop, view switches,
+or any mobile layout, read [docs/ui-guidelines.md](docs/ui-guidelines.md). It
+lists the flicker and layout bugs this app has already had, and how to prove
+a fix frame by frame.
 
 ## Spacing
 
@@ -44,31 +45,5 @@ Never check objects by hand. No `as` casts on parsed JSON, no
 One `import 'zod/compile'` at the app entry auto-compiles every schema on
 first parse, so no per-schema compile calls.
 
-Bad pattern:
+This is not the Zod you know. Check the documentation at https://zod.dev/blog/zod-4-5
 
-```ts
-const raw = localStorage.getItem('lifeos-local-spaces')
-return raw ? (JSON.parse(raw) as Array<LocalSpace>) : []
-```
-
-Good pattern:
-
-```ts
-// entry point, once
-import 'zod/compile'
-
-// next to the code that reads the data
-import * as z from 'zod'
-
-const localSpaces = z.array(
-  z.object({
-    id: z.string(),
-    name: z.string(),
-    inviteCode: z.string(),
-    createdAt: z.number(),
-  }),
-)
-
-const parsed = localSpaces.safeParse(JSON.parse(raw ?? '[]'))
-return parsed.success ? parsed.data : []
-```
