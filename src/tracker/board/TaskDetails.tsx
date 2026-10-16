@@ -724,10 +724,23 @@ export function TaskDetails({
             Edit this task's title, notes, due date, project, subtasks, and
             focus state.
           </DialogDescription>
-          <span className="os-label flex items-center gap-1.5">
-            <span className="size-2 rounded-full bg-proj" />
-            {project?.name}
-          </span>
+          <div className="flex items-center justify-between gap-3 pr-7">
+            <span className="os-label flex min-w-0 items-center gap-1.5">
+              <span className="size-2 shrink-0 rounded-full bg-proj" />
+              <span className="truncate">{project?.name}</span>
+            </span>
+            <label className="flex min-h-9 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-border px-2.5 text-xs">
+              <Checkbox
+                checked={task.done}
+                onCheckedChange={(checked) =>
+                  updateTask.mutate({ id: task.id, done: checked === true })
+                }
+                aria-label={task.done ? 'Mark not complete' : 'Mark complete'}
+                className="rounded-full"
+              />
+              {task.done ? 'Completed' : 'Mark complete'}
+            </label>
+          </div>
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
