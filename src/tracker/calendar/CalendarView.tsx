@@ -557,7 +557,7 @@ export function CalendarView({
           side={wide ? 'right' : 'bottom'}
           align={wide ? 'start' : 'center'}
           collisionPadding={12}
-          className="w-[min(18rem,calc(100vw-1.5rem))]"
+          className="w-[min(18rem,calc(100vw-1.5rem))] data-[state=closed]:animate-none"
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           {draft ? (
