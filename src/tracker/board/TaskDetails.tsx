@@ -717,6 +717,11 @@ export function TaskDetails({
         showCloseButton={false}
         className="max-w-md"
         data-proj={project?.color}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          titleRef.current?.focus()
+          titleRef.current?.select()
+        }}
       >
         <DialogHeader>
           <DialogTitle className="sr-only">Task details</DialogTitle>
@@ -750,7 +755,7 @@ export function TaskDetails({
             defaultValue={task.title}
             onBlur={commitText}
             onKeyDown={(e) => e.key === 'Enter' && close()}
-            className="h-auto border-0 border-b border-border bg-transparent px-2 py-2 text-base font-medium shadow-none focus-visible:ring-0"
+            className="h-auto border-0 border-b border-border bg-input/30 px-2 py-2 text-base font-medium shadow-none focus-visible:ring-0"
             aria-label="Task title"
           />
 
