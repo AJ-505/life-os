@@ -20,6 +20,8 @@ or any mobile layout, read [docs/ui-guidelines.md](docs/ui-guidelines.md). It
 lists the flicker and layout bugs this app has already had, and how to prove
 a fix frame by frame.
 
+When you verify any change, always test the mobile view (390 x 844) and its touch UX as well as desktop.
+
 ## Spacing
 
 Bottom margins only, never top margins. Space between a block and what
