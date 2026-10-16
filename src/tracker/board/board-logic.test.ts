@@ -28,6 +28,7 @@ function task(id: string, parentId: string | null): Task {
     reminderMinutes: null,
     addToCalendar: false,
     calendarEventId: null,
+    calendarSyncIssue: null,
     inFocus: false,
     focusOrder: 0,
     createdAt: 1,

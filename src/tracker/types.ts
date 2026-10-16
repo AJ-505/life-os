@@ -1,3 +1,5 @@
+import type { Doc } from '../../convex/_generated/dataModel'
+
 /**
  * The tracker domain types. These intentionally mirror the shape returned by
  * the Convex `getBoard` query (see `convex/tracker.ts`): string `id`s as the
@@ -38,6 +40,8 @@ export interface Task {
    *  `calendarEventId`, which only ever holds a real Google event id. */
   addToCalendar: boolean
   calendarEventId: string | null
+  /** Why the last background push to Google failed, or null when it worked. */
+  calendarSyncIssue: CalendarSyncIssue | null
   inFocus: boolean
   focusOrder: number
   createdAt: number
@@ -47,6 +51,8 @@ export interface Task {
    *  the server normalises it. */
   spaceId: string | null
 }
+
+export type CalendarSyncIssue = NonNullable<Doc<'tasks'>['calendarSyncIssue']>
 
 export type ProjectStatus = 'active' | 'shelved' | 'done'
 

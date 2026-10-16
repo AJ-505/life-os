@@ -86,6 +86,19 @@ export default defineSchema({
     // pending Google call — the id is only ever a real Google event id.
     addToCalendar: v.optional(v.boolean()),
     calendarEventId: v.optional(v.union(v.string(), v.null())),
+    calendarSyncIssue: v.optional(
+      v.union(
+        v.literal('not_configured'),
+        v.literal('not_connected'),
+        v.literal('reauth_required'),
+        v.literal('missing_scope'),
+        v.literal('no_timezone'),
+        v.literal('not_personal'),
+        v.literal('event_removed'),
+        v.literal('rate_limited'),
+        v.literal('google_error'),
+      ),
+    ),
     inFocus: v.boolean(),
     focusOrder: v.number(),
     createdAt: v.number(),

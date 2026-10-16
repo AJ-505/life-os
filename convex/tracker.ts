@@ -598,6 +598,7 @@ export const updateTask = mutation({
       await requireMember(ctx, assigneeId, task.spaceId)
     }
     const patch: Partial<Doc<'tasks'>> = { ...rest }
+    if (args.addToCalendar === true) patch.calendarSyncIssue = undefined
     // Trim like `createTask` does, so the stored title and the activity-log
     // comparison below never disagree on whitespace.
     if (args.title !== undefined) patch.title = args.title.trim()
