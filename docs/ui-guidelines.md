@@ -15,8 +15,10 @@ quick-add popover, whose anchor is the dashed draft block.
 
 Pick one:
 
-- Close without an exit animation: `data-[state=closed]:animate-none` on the
-  content.
+- Close without an exit animation: `data-[state=closed]:animate-none!` on the
+  content. The `!` matters: `cn` keeps both this class and tw-animate-css's
+  `animate-out`, and `animate-out` comes later in the CSS, so without it the
+  exit animation still runs.
 - Keep the anchor mounted (invisible is fine) until the content is gone.
 
 **Item-aligned selects re-align when the value changes.** Radix moves the list
@@ -56,8 +58,8 @@ window.__probe = true
 requestAnimationFrame(tick)
 ```
 
-A visible frame (opacity above 0) at a position the user did not ask for is a
-flicker. Fix it, then run the probe again and show both logs in the PR.
+Set `window.__probe = false` to stop, then read `window.__samples`. A visible
+frame (opacity above 0) at a position the user did not ask for is a flicker. Fix it, then run the probe again and show both logs in the PR.
 
 ## Instant interactions
 
