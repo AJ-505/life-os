@@ -687,10 +687,10 @@ export function TaskDetails({
                 onCheckedChange={(checked) =>
                   updateTask.mutate({ id: task.id, done: checked === true })
                 }
-                aria-label={task.done ? 'Mark not done' : 'Mark done'}
+                aria-label={task.done ? 'Mark not complete' : 'Mark complete'}
                 className="rounded-full"
               />
-              {task.done ? 'Done' : 'Mark done'}
+              {task.done ? 'Completed' : 'Mark complete'}
             </label>
           </div>
         </DialogHeader>
