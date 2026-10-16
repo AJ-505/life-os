@@ -55,10 +55,10 @@ import {
 import { taskHistoryQueryOptions } from '../queries'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { calendarSettingsQueryOptions } from '#/settings/queries'
-import { useGoogleCalendar } from '#/settings/googleCalendar'
+import { syncIssueMessage, useGoogleCalendar } from '#/settings/googleCalendar'
 import { toast } from 'sonner'
 
-import type { BoardData, Task } from '../types'
+import type { BoardData, CalendarSyncIssue, Task } from '../types'
 
 /**
  * Capture-now / write-later. Optimistic board patches must not run in the same
@@ -239,7 +239,9 @@ function TaskCalendarFields({
   onAddToCal,
   localReminder,
   onReminder,
+  issue,
 }: {
+  issue: CalendarSyncIssue | null
   localDueAt: number | null
   localAddToCal: boolean
   onAddToCal: (v: boolean) => void
@@ -266,6 +268,11 @@ function TaskCalendarFields({
 
   return (
     <div className="flex flex-col gap-2 rounded-md border px-3 py-2.5">
+      {issue && localAddToCal ? (
+        <p role="status" className="text-xs leading-snug text-destructive">
+          {syncIssueMessage(issue)}
+        </p>
+      ) : null}
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-2">
           <Switch
@@ -867,6 +874,7 @@ export function TaskDetails({
               onAddToCal={setLocalAddToCal}
               localReminder={localReminder}
               onReminder={setLocalReminder}
+              issue={task.calendarSyncIssue}
             />
           ) : (
             <ComingSoon

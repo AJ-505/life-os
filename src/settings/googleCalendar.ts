@@ -138,6 +138,12 @@ const MESSAGES: SyncMessage = {
   google_error: 'Google rejected the change',
 }
 
+export function syncIssueMessage(issue: SyncReason): string {
+  return issue === 'event_removed'
+    ? 'This event was deleted in Google Calendar. Resync in Settings to put it back.'
+    : `Last push to Google failed: ${MESSAGES[issue]}`
+}
+
 /** The reasons whose fix is a reconnect, so a caller can offer the action
  *  rather than only show a message. `not_configured` is deliberately absent:
  *  the secret is ours and the user cannot see it, so a reconnect button would

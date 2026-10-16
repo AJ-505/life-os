@@ -132,6 +132,20 @@ export type SyncResult =
 
 /* -------------------------------------------------------------- internals */
 
+type SyncIssue = Extract<SyncResult, { ok: false }>['reason']
+
+const syncIssue = v.union(
+  v.literal('not_configured'),
+  v.literal('not_connected'),
+  v.literal('reauth_required'),
+  v.literal('missing_scope'),
+  v.literal('no_timezone'),
+  v.literal('not_personal'),
+  v.literal('event_removed'),
+  v.literal('rate_limited'),
+  v.literal('google_error'),
+)
+
 type Snapshot = {
   id: string
   title: string
@@ -140,6 +154,7 @@ type Snapshot = {
   reminderMinutes: number
   addToCalendar: boolean
   calendarEventId: string | null
+  syncIssue: SyncIssue | null
   done: boolean
   archived: boolean
   spaceId: string | null
@@ -181,6 +196,7 @@ export const taskForSync = internalQuery({
       archived: task.archived,
       spaceId: task.spaceId ?? null,
       syncEnabled: settings?.calendarSyncEnabled ?? false,
+      syncIssue: task.calendarSyncIssue ?? null,
       timeZone: settings?.timeZone ?? null,
     }
   },
@@ -437,14 +453,27 @@ export function eventTimes(dueAt: number, timeZone: string) {
       start: { date, dateTime: null, timeZone },
       end: { date: nextDay(date), dateTime: null, timeZone },
     }
+  const endAt = dueAt + EVENT_MINUTES * 60 * 1000
   return {
-    start: { date: null, dateTime: start, timeZone },
+    start: {
+      date: null,
+      dateTime: `${start}${utcOffset(dueAt, timeZone)}`,
+      timeZone,
+    },
     end: {
       date: null,
-      dateTime: wallClock(dueAt + EVENT_MINUTES * 60 * 1000, timeZone),
+      dateTime: `${wallClock(endAt, timeZone)}${utcOffset(endAt, timeZone)}`,
       timeZone,
     },
   }
+}
+
+function utcOffset(epochMs: number, timeZone: string): string {
+  const name =
+    new Intl.DateTimeFormat('en-US', { timeZone, timeZoneName: 'longOffset' })
+      .formatToParts(new Date(epochMs))
+      .find((part) => part.type === 'timeZoneName')?.value ?? 'GMT'
+  return name === 'GMT' ? '+00:00' : name.slice(3)
 }
 
 function eventBody(snapshot: Snapshot, timeZone: string) {
@@ -525,6 +554,26 @@ function statusOutcome(status: number, doing: string): SyncResult {
   }
 }
 
+const removedResult: SyncResult = {
+  ok: false,
+  reason: 'event_removed',
+  detail:
+    'The calendar event was removed in Google. Use Resync calendar to put it back.',
+}
+
+export const setSyncIssue = internalMutation({
+  args: {
+    userId: v.string(),
+    taskId: v.string(),
+    issue: v.union(syncIssue, v.null()),
+  },
+  handler: async (ctx, args) => {
+    const task = await taskByAppId(ctx, args.userId, args.taskId)
+    if (!task || (task.calendarSyncIssue ?? null) === args.issue) return
+    await ctx.db.patch(task._id, { calendarSyncIssue: args.issue ?? undefined })
+  },
+})
+
 /** One convergent pass. Google is made to match the task, or told why it could
  *  not be. `pushed` is the snapshot the pass acted on, so the caller can detect
  *  a mid-flight edit. */
@@ -553,6 +602,8 @@ async function pushOnce(
   const has = snapshot.calendarEventId !== null
   if (!wants && !has)
     return { result: { ok: true, action: 'noop', link: null }, pushed: null }
+  if (wants && !has && snapshot.syncIssue === 'event_removed')
+    return { result: removedResult, pushed: null }
 
   const auth = await googleAccessToken(userId)
   if (!auth.ok)
@@ -636,15 +687,7 @@ async function pushOnce(
       calendarEventId: null,
       expect,
     })
-    return {
-      result: {
-        ok: false,
-        reason: 'event_removed',
-        detail:
-          'The calendar event was removed in Google. Use Resync calendar to put it back.',
-      },
-      pushed: null,
-    }
+    return { result: removedResult, pushed: null }
   }
 
   const patchEvent = async (
@@ -745,6 +788,20 @@ async function runSync(
   userId: string,
   taskId: string,
 ): Promise<SyncResult> {
+  const result = await converge(ctx, userId, taskId)
+  await ctx.runMutation(internal.calendar.setSyncIssue, {
+    userId,
+    taskId,
+    issue: result.ok ? null : result.reason,
+  })
+  return result
+}
+
+async function converge(
+  ctx: ActionCtx,
+  userId: string,
+  taskId: string,
+): Promise<SyncResult> {
   const first = await pushOnce(ctx, userId, taskId)
   if (!first.pushed) return first.result
 
@@ -805,6 +862,13 @@ export const syncTask = action({
         taskId: args.taskId,
         calendarEventId: null,
         expect: stale,
+      })
+    }
+    if (snapshot?.syncIssue === 'event_removed') {
+      await ctx.runMutation(internal.calendar.setSyncIssue, {
+        userId,
+        taskId: args.taskId,
+        issue: null,
       })
     }
     return await runSync(ctx, userId, args.taskId)

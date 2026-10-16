@@ -32,6 +32,7 @@ function task(id: string, overrides: Partial<Task> = {}): Task {
     reminderMinutes: null,
     addToCalendar: false,
     calendarEventId: null,
+    calendarSyncIssue: null,
     inFocus: false,
     focusOrder: 0,
     createdAt: 1,

@@ -198,6 +198,7 @@ export function useCreateTask() {
                   reminderMinutes: null,
                   addToCalendar: false,
                   calendarEventId: null,
+                  calendarSyncIssue: null,
                   inFocus: false,
                   focusOrder: 0,
                   createdAt: Date.now(),

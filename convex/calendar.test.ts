@@ -343,14 +343,88 @@ describe('eventTimes', () => {
     expect(eventTimes(nineThirty, 'Africa/Lagos')).toEqual({
       start: {
         date: null,
-        dateTime: '2026-10-15T09:30:00',
+        dateTime: '2026-10-15T09:30:00+01:00',
         timeZone: 'Africa/Lagos',
       },
       end: {
         date: null,
-        dateTime: '2026-10-15T10:30:00',
+        dateTime: '2026-10-15T10:30:00+01:00',
         timeZone: 'Africa/Lagos',
       },
     })
+  })
+})
+
+describe('eventTimes across a DST change', () => {
+  it('pins the repeated hour to the instant the task names', () => {
+    const firstOneThirty = Date.UTC(2026, 10, 1, 5, 30)
+    const secondOneThirty = Date.UTC(2026, 10, 1, 6, 30)
+    expect(eventTimes(firstOneThirty, 'America/New_York').start.dateTime).toBe(
+      '2026-11-01T01:30:00-04:00',
+    )
+    expect(eventTimes(secondOneThirty, 'America/New_York').start.dateTime).toBe(
+      '2026-11-01T01:30:00-05:00',
+    )
+  })
+})
+
+describe('sync issues', () => {
+  it('a later edit does not bring back an event deleted in Google', async () => {
+    const t = convexTest(schema, modules)
+    await seedSyncedTask(t)
+    vi.stubGlobal('fetch', stubGoogle({ patchStatus: 404 }))
+    await t.action(internal.calendar.syncTaskForUser, {
+      userId: 'user_a',
+      taskId: TASK_ID,
+    })
+    expect((await readTask(t))?.calendarSyncIssue).toBe('event_removed')
+
+    const google = stubGoogle({ createStatus: 409 })
+    vi.stubGlobal('fetch', google)
+    const result = await t.action(internal.calendar.syncTaskForUser, {
+      userId: 'user_a',
+      taskId: TASK_ID,
+    })
+
+    expect(result).toMatchObject({ ok: false, reason: 'event_removed' })
+    expect(creates(google)).toHaveLength(0)
+  })
+
+  it('Resync clears the removed mark and puts the event back', async () => {
+    const t = convexTest(schema, modules)
+    await seedSyncedTask(t)
+    vi.stubGlobal('fetch', stubGoogle({ patchStatus: 404 }))
+    await t.action(internal.calendar.syncTaskForUser, {
+      userId: 'user_a',
+      taskId: TASK_ID,
+    })
+
+    vi.stubGlobal('fetch', stubGoogle({}))
+    const result = await asUser(t).action(api.calendar.syncTask, {
+      taskId: TASK_ID,
+    })
+
+    expect(result).toMatchObject({ ok: true, action: 'created' })
+    const task = await readTask(t)
+    expect(task?.calendarEventId).toBe(DERIVED)
+    expect(task?.calendarSyncIssue).toBeUndefined()
+  })
+
+  it('records a background failure on the task and clears it on success', async () => {
+    const t = convexTest(schema, modules)
+    await seedSyncedTask(t)
+    vi.stubGlobal('fetch', stubGoogle({ patchStatus: 500 }))
+    await t.action(internal.calendar.syncTaskForUser, {
+      userId: 'user_a',
+      taskId: TASK_ID,
+    })
+    expect((await readTask(t))?.calendarSyncIssue).toBe('google_error')
+
+    vi.stubGlobal('fetch', stubGoogle({}))
+    await t.action(internal.calendar.syncTaskForUser, {
+      userId: 'user_a',
+      taskId: TASK_ID,
+    })
+    expect((await readTask(t))?.calendarSyncIssue).toBeUndefined()
   })
 })
