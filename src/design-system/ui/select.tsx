@@ -72,7 +72,7 @@ function SelectContent({
           // content gets no `data-side` from Radix, and the class names are
           // gated on it. The zoom was a scale-from-95% wobble on a five-row
           // list, so it goes too.
-          'relative z-50 max-h-[min(20rem,var(--radix-select-content-available-height,20rem))] min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-md border bg-popover text-popover-foreground shadow-md duration-100 ease-out data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0',
+          'relative z-50 max-h-[min(20rem,var(--radix-select-content-available-height,20rem))] min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-md border bg-popover text-popover-foreground shadow-md duration-100 ease-out data-[state=open]:animate-in data-[state=open]:fade-in-0',
           position === 'popper' &&
             'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
           className,
