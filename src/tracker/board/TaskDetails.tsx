@@ -676,7 +676,7 @@ export function TaskDetails({
             Edit this task's title, notes, due date, project, subtasks, and
             focus state.
           </DialogDescription>
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 pr-7">
             <span className="os-label flex min-w-0 items-center gap-1.5">
               <span className="size-2 shrink-0 rounded-full bg-proj" />
               <span className="truncate">{project?.name}</span>
