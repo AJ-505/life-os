@@ -69,7 +69,21 @@ function CalendarSyncControl() {
               <span className="size-2 rounded-full bg-emerald-500" />
               Connected
             </span>
-          ) : (
+          ) : null}
+          {connected && !done ? (
+            <Button
+              size="sm"
+              onClick={() =>
+                updateSettings.mutate({
+                  syncEnabled: true,
+                  autoAddToCalendar: true,
+                })
+              }
+            >
+              Sync every dated task
+            </Button>
+          ) : null}
+          {connected ? null : (
             <>
               <span className="text-xs leading-snug text-muted-foreground">
                 {connection.status === 'needs_scope'
@@ -89,8 +103,11 @@ function CalendarSyncControl() {
           )}
         </div>
         <div className="flex items-center justify-between gap-3">
-          <Label className="text-sm font-medium">Sync tasks</Label>
+          <Label htmlFor="calendar-sync-tasks" className="text-sm font-medium">
+            Sync tasks
+          </Label>
           <Switch
+            id="calendar-sync-tasks"
             checked={syncing}
             disabled={!connected}
             onCheckedChange={(checked) =>
@@ -100,12 +117,18 @@ function CalendarSyncControl() {
         </div>
         <div className="flex items-center justify-between gap-3">
           <div className="flex flex-col gap-0.5">
-            <Label className="text-sm font-medium">Add every dated task</Label>
+            <Label
+              htmlFor="calendar-sync-every-task"
+              className="text-sm font-medium"
+            >
+              Add every dated task
+            </Label>
             <span className="text-xs text-muted-foreground">
               No need to switch on each task
             </span>
           </div>
           <Switch
+            id="calendar-sync-every-task"
             checked={autoAdd}
             disabled={!connected || !syncing}
             onCheckedChange={(checked) =>
