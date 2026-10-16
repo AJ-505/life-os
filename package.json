@@ -10,6 +10,7 @@
     "convex": "convex dev",
     "generate-routes": "tsr generate",
     "build": "vite build",
+    "build:vercel": "convex deploy --cmd 'pnpm run build' && node scripts/publish-release.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p convex/tsconfig.json",
     "test": "vitest run",

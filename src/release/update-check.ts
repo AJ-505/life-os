@@ -2,6 +2,12 @@ export const BUILD_ID: string = import.meta.env.VITE_BUILD_ID ?? ''
 
 const SEEN_KEY = 'lifeos:seen-release'
 
+export const GO_LIVE_MS = 60_000
+
+export function msUntilLive(publishedAt: number, now: number) {
+  return Math.max(0, publishedAt + GO_LIVE_MS - now)
+}
+
 export function isUpdateAvailable(
   running: string,
   published: string | null | undefined,

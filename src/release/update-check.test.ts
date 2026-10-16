@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { isUpdateAvailable } from './update-check'
+import { GO_LIVE_MS, isUpdateAvailable, msUntilLive } from './update-check'
 
 describe('isUpdateAvailable', () => {
   it('stays quiet when the running build is the published one', () => {
@@ -23,5 +23,15 @@ describe('isUpdateAvailable', () => {
   it('does not nag again for a release the user already saw', () => {
     expect(isUpdateAvailable('abc', 'def', 'def')).toBe(false)
     expect(isUpdateAvailable('abc', 'ghi', 'def')).toBe(true)
+  })
+})
+
+describe('msUntilLive', () => {
+  it('waits the go-live window after a fresh publish', () => {
+    expect(msUntilLive(1_000, 1_000)).toBe(GO_LIVE_MS)
+  })
+
+  it('is zero once the window has passed', () => {
+    expect(msUntilLive(1_000, 1_000 + GO_LIVE_MS + 5)).toBe(0)
   })
 })

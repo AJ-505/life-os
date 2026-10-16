@@ -36,3 +36,14 @@ describe('release', () => {
     expect(rows).toHaveLength(1)
   })
 })
+
+describe('release.latest', () => {
+  it('returns the build id with its publish time', async () => {
+    const t = convexTest(schema, modules)
+    expect(await t.query(api.release.latest)).toBeNull()
+    await t.mutation(internal.release.publish, { buildId: 'ccc' })
+    const latest = await t.query(api.release.latest)
+    expect(latest?.buildId).toBe('ccc')
+    expect(typeof latest?.publishedAt).toBe('number')
+  })
+})

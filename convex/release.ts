@@ -10,6 +10,14 @@ export const current = query({
   },
 })
 
+export const latest = query({
+  args: {},
+  handler: async (ctx) => {
+    const row = await ctx.db.query('releases').order('desc').first()
+    return row ? { buildId: row.buildId, publishedAt: row.publishedAt } : null
+  },
+})
+
 export const publish = internalMutation({
   args: { buildId: v.string() },
   handler: async (ctx, { buildId }) => {
