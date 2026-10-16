@@ -5,6 +5,7 @@ import { internalMutation, mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
 import {
   getMemberSpace,
+  getUserSettings,
   requireMember,
   getWritableProject,
   getWritableTask,
@@ -14,8 +15,9 @@ import {
   scopeTasks,
   shapeProject,
   shapeTask,
+  taskByAppId,
 } from './lib'
-import { eventsToDelete } from './calendar'
+import { eventsToDelete, taskWantsEvent } from './calendar'
 
 import type { Doc } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
@@ -390,6 +392,9 @@ export const createTask = mutation({
       assigneeId,
       spaceId: project.spaceId ?? null,
     })
+    if (args.dueAt != null && !project.spaceId) {
+      await scheduleNewTaskSync(ctx, userId, args.id)
+    }
     const activityTask = {
       id: args.id,
       projectId: project.id,
@@ -430,16 +435,35 @@ async function scheduleCalendarSync(
   )
   if (!touches) return
   const merged = { ...before, ...patch }
-  const wants =
-    merged.addToCalendar === true &&
-    merged.dueAt !== null &&
-    !merged.done &&
-    !merged.archived
+  const settings = await getUserSettings(ctx, userId)
+  const wants = taskWantsEvent(merged, {
+    syncEnabled: settings?.calendarSyncEnabled ?? false,
+    autoAdd: settings?.autoAddToCalendar ?? false,
+  })
   const has = (merged.calendarEventId ?? null) !== null
   if (!wants && !has) return
   await ctx.scheduler.runAfter(0, internal.calendar.syncTaskForUser, {
     userId,
     taskId: merged.id,
+  })
+}
+
+async function scheduleNewTaskSync(
+  ctx: MutationCtx,
+  userId: string,
+  taskId: string,
+) {
+  const settings = await getUserSettings(ctx, userId)
+  const task = await taskByAppId(ctx, userId, taskId)
+  if (!task) return
+  const wants = taskWantsEvent(task, {
+    syncEnabled: settings?.calendarSyncEnabled ?? false,
+    autoAdd: settings?.autoAddToCalendar ?? false,
+  })
+  if (!wants) return
+  await ctx.scheduler.runAfter(0, internal.calendar.syncTaskForUser, {
+    userId,
+    taskId,
   })
 }
 

@@ -23,6 +23,7 @@ import {
 } from '#/design-system/ui/select'
 
 import { newId, positionAfter } from '../types'
+import { CalendarSyncButton } from './CalendarSyncButton'
 import { useAddTask } from '../queries'
 import { activeProjects } from '../board/board-logic'
 import { useBoardUI } from '../board/board-ui'
@@ -483,7 +484,10 @@ export function CalendarView({
         >
           <ChevronRight className="size-4" />
         </Button>
-        <h2 className="text-sm font-semibold">{weekLabel(days)}</h2>
+        <h2 className="min-w-0 truncate text-sm font-semibold">
+          {weekLabel(days)}
+        </h2>
+        <CalendarSyncButton />
       </div>
 
       <Popover open={draft !== null} onOpenChange={(o) => !o && setDraft(null)}>

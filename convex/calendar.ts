@@ -153,6 +153,7 @@ type Snapshot = {
   dueAt: number | null
   reminderMinutes: number
   addToCalendar: boolean
+  autoAdd: boolean
   calendarEventId: string | null
   syncIssue: SyncIssue | null
   done: boolean
@@ -189,6 +190,7 @@ export const taskForSync = internalQuery({
       notes: task.notes,
       dueAt: task.dueAt,
       addToCalendar: task.addToCalendar ?? false,
+      autoAdd: settings?.autoAddToCalendar ?? false,
       calendarEventId: task.calendarEventId ?? null,
       reminderMinutes:
         task.reminderMinutes ?? settings?.defaultReminderMinutes ?? 15,
@@ -505,19 +507,34 @@ function contentKey(snapshot: Snapshot): string {
     snapshot.dueAt,
     snapshot.reminderMinutes,
     snapshot.addToCalendar,
+    snapshot.autoAdd,
     snapshot.done,
     snapshot.archived,
   ])
 }
 
-function wantsEvent(snapshot: Snapshot): boolean {
+export function taskWantsEvent(
+  task: {
+    addToCalendar?: boolean
+    dueAt: number | null
+    done: boolean
+    archived: boolean
+    spaceId?: string | null
+  },
+  settings: { syncEnabled: boolean; autoAdd: boolean },
+): boolean {
   return (
-    snapshot.syncEnabled &&
-    snapshot.addToCalendar &&
-    snapshot.dueAt !== null &&
-    !snapshot.done &&
-    !snapshot.archived
+    settings.syncEnabled &&
+    !task.spaceId &&
+    (task.addToCalendar === true || settings.autoAdd) &&
+    task.dueAt !== null &&
+    !task.done &&
+    !task.archived
   )
+}
+
+function wantsEvent(snapshot: Snapshot): boolean {
+  return taskWantsEvent(snapshot, snapshot)
 }
 
 function transportOutcome(detail: string): SyncResult {

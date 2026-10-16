@@ -112,8 +112,9 @@ function stubGoogle(options: {
       )
     }
     if (url === GCAL && method === 'POST') {
+      const sent = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
       return new Response(
-        JSON.stringify({ id: DERIVED, htmlLink: 'https://cal/x' }),
+        JSON.stringify({ id: sent.id ?? DERIVED, htmlLink: 'https://cal/x' }),
         {
           status: options.createStatus ?? 200,
           headers: { 'content-type': 'application/json' },
@@ -426,5 +427,253 @@ describe('sync issues', () => {
       taskId: TASK_ID,
     })
     expect((await readTask(t))?.calendarSyncIssue).toBeUndefined()
+  })
+})
+
+const DUE = Date.UTC(2026, 0, 2, 9, 0, 0)
+
+const taskIdFor = (n: number) => `abcdef12-3456-7890-abcd-ef12345678${n}0`
+
+const seedAutoSettings = (
+  t: T,
+  options: { autoAddToCalendar: boolean; syncEnabled?: boolean },
+) =>
+  t.run(async (ctx) => {
+    await ctx.db.insert('userSettings', {
+      userId: 'user_a',
+      calendarEnabled: options.syncEnabled ?? true,
+      calendarSyncEnabled: options.syncEnabled ?? true,
+      autoAddToCalendar: options.autoAddToCalendar,
+      defaultReminderMinutes: 15,
+      timeZone: 'UTC',
+      createdAt: 1,
+      updatedAt: 1,
+    })
+  })
+
+const seedTask = (
+  t: T,
+  id: string,
+  overrides: Partial<{
+    addToCalendar: boolean
+    calendarEventId: string
+    calendarSyncIssue: 'event_removed'
+    dueAt: number | null
+    spaceId: string | null
+  }> = {},
+) =>
+  t.run(async (ctx) => {
+    await ctx.db.insert('tasks', {
+      userId: 'user_a',
+      id,
+      projectId: 'p1',
+      parentId: null,
+      title: 'Task',
+      notes: null,
+      position: 1,
+      done: false,
+      doneAt: null,
+      archived: false,
+      dueAt: DUE,
+      inFocus: false,
+      focusOrder: 0,
+      createdAt: 1,
+      spaceId: null,
+      ...overrides,
+    })
+  })
+
+const readById = (t: T, id: string) =>
+  t.run(async (ctx) =>
+    ctx.db
+      .query('tasks')
+      .withIndex('by_user_id', (q) => q.eq('userId', 'user_a').eq('id', id))
+      .first(),
+  )
+
+const deletes = (google: ReturnType<typeof stubGoogle>) =>
+  google.mock.calls.filter(
+    ([, init]) => (init?.method ?? 'GET').toUpperCase() === 'DELETE',
+  )
+
+describe('auto add to calendar', () => {
+  it('turning it on creates events for dated personal tasks without addToCalendar', async () => {
+    const t = convexTest(schema, modules)
+    await seedAutoSettings(t, { autoAddToCalendar: false })
+    await seedTask(t, taskIdFor(1))
+    await seedTask(t, taskIdFor(2), { dueAt: null })
+    await seedTask(t, taskIdFor(3), { spaceId: 'space_1' })
+    const google = stubGoogle({})
+    vi.stubGlobal('fetch', google)
+
+    await asUser(t).mutation(api.settings.updateCalendarSettings, {
+      autoAddToCalendar: true,
+    })
+    await drainScheduler(t)
+
+    expect(creates(google)).toHaveLength(1)
+    expect((await readById(t, taskIdFor(1)))?.calendarEventId).toBe(
+      'abcdef1234567890abcdef12345678' + '10',
+    )
+    expect((await readById(t, taskIdFor(2)))?.calendarEventId).toBeUndefined()
+    expect((await readById(t, taskIdFor(3)))?.calendarEventId).toBeUndefined()
+  })
+
+  it('creates an event for a new dated task from quick add', async () => {
+    const t = convexTest(schema, modules)
+    await seedAutoSettings(t, { autoAddToCalendar: true })
+    await t.run(async (ctx) => {
+      await ctx.db.insert('projects', {
+        userId: 'user_a',
+        id: 'p1',
+        name: 'P',
+        color: 'red',
+        status: 'active',
+        collapsed: false,
+        gridCol: 0,
+        gridRow: 0,
+        targetDate: null,
+        createdAt: 1,
+        finishedAt: null,
+        shelvedAt: null,
+      })
+    })
+    const google = stubGoogle({})
+    vi.stubGlobal('fetch', google)
+
+    await asUser(t).mutation(api.tracker.createTask, {
+      id: taskIdFor(1),
+      projectId: 'p1',
+      title: 'Quick',
+      position: 1,
+      dueAt: DUE,
+    })
+    await drainScheduler(t)
+
+    expect(creates(google)).toHaveLength(1)
+    expect((await readById(t, taskIdFor(1)))?.calendarEventId).toBeTruthy()
+  })
+
+  it('does not create an event for an undated quick add', async () => {
+    const t = convexTest(schema, modules)
+    await seedAutoSettings(t, { autoAddToCalendar: true })
+    await t.run(async (ctx) => {
+      await ctx.db.insert('projects', {
+        userId: 'user_a',
+        id: 'p1',
+        name: 'P',
+        color: 'red',
+        status: 'active',
+        collapsed: false,
+        gridCol: 0,
+        gridRow: 0,
+        targetDate: null,
+        createdAt: 1,
+        finishedAt: null,
+        shelvedAt: null,
+      })
+    })
+    const google = stubGoogle({})
+    vi.stubGlobal('fetch', google)
+
+    await asUser(t).mutation(api.tracker.createTask, {
+      id: taskIdFor(1),
+      projectId: 'p1',
+      title: 'Quick',
+      position: 1,
+    })
+    await drainScheduler(t)
+
+    expect(creates(google)).toHaveLength(0)
+  })
+
+  it('creates an event when a task gains a date', async () => {
+    const t = convexTest(schema, modules)
+    await seedAutoSettings(t, { autoAddToCalendar: true })
+    await seedTask(t, taskIdFor(1), { dueAt: null })
+    const google = stubGoogle({})
+    vi.stubGlobal('fetch', google)
+
+    await asUser(t).mutation(api.tracker.updateTask, {
+      id: taskIdFor(1),
+      dueAt: DUE,
+    })
+    await drainScheduler(t)
+
+    expect(creates(google)).toHaveLength(1)
+  })
+
+  it('turning it off deletes only the events auto added', async () => {
+    const t = convexTest(schema, modules)
+    await seedAutoSettings(t, { autoAddToCalendar: true })
+    const autoOnly = 'autoonlyevent1'
+    const explicit = 'explicitevent1'
+    await seedTask(t, taskIdFor(1), { calendarEventId: autoOnly })
+    await seedTask(t, taskIdFor(2), {
+      addToCalendar: true,
+      calendarEventId: explicit,
+    })
+    const google = stubGoogle({})
+    vi.stubGlobal('fetch', google)
+
+    await asUser(t).mutation(api.settings.updateCalendarSettings, {
+      autoAddToCalendar: false,
+    })
+    await drainScheduler(t)
+
+    expect(deletes(google).map(([url]) => String(url))).toEqual([
+      `${GCAL}/${autoOnly}`,
+    ])
+    expect((await readById(t, taskIdFor(1)))?.calendarEventId).toBeNull()
+    expect((await readById(t, taskIdFor(2)))?.calendarEventId).toBe(explicit)
+  })
+
+  it('never syncs a space task', async () => {
+    const t = convexTest(schema, modules)
+    await seedAutoSettings(t, { autoAddToCalendar: true })
+    await seedTask(t, taskIdFor(1), { spaceId: 'space_1' })
+    const google = stubGoogle({})
+    vi.stubGlobal('fetch', google)
+
+    await t.action(internal.calendar.syncTaskForUser, {
+      userId: 'user_a',
+      taskId: taskIdFor(1),
+    })
+
+    expect(creates(google)).toHaveLength(0)
+    expect((await readById(t, taskIdFor(1)))?.calendarEventId).toBeUndefined()
+  })
+
+  it('respects an event the user removed in Google', async () => {
+    const t = convexTest(schema, modules)
+    await seedAutoSettings(t, { autoAddToCalendar: false })
+    await seedTask(t, taskIdFor(1), { calendarSyncIssue: 'event_removed' })
+    const google = stubGoogle({})
+    vi.stubGlobal('fetch', google)
+
+    await asUser(t).mutation(api.settings.updateCalendarSettings, {
+      autoAddToCalendar: true,
+    })
+    await drainScheduler(t)
+
+    expect(creates(google)).toHaveLength(0)
+    expect((await readById(t, taskIdFor(1)))?.calendarSyncIssue).toBe(
+      'event_removed',
+    )
+  })
+
+  it('does nothing while sync itself is off', async () => {
+    const t = convexTest(schema, modules)
+    await seedAutoSettings(t, { autoAddToCalendar: false, syncEnabled: false })
+    await seedTask(t, taskIdFor(1))
+    const google = stubGoogle({})
+    vi.stubGlobal('fetch', google)
+
+    await asUser(t).mutation(api.settings.updateCalendarSettings, {
+      autoAddToCalendar: true,
+    })
+    await drainScheduler(t)
+
+    expect(creates(google)).toHaveLength(0)
   })
 })

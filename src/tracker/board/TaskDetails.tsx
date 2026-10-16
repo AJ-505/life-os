@@ -256,6 +256,8 @@ function TaskCalendarFields({
   const calendarReady =
     connection.status === 'connected' &&
     (calendarSettings?.syncEnabled ?? false)
+  const autoAdd =
+    calendarReady && (calendarSettings?.autoAddToCalendar ?? false)
   const calendarHint = !calendarSettings?.syncEnabled
     ? 'Turn on calendar sync in Settings'
     : connection.status === 'needs_scope'
@@ -264,11 +266,13 @@ function TaskCalendarFields({
         ? 'Connect Google in Settings'
         : !localDueAt
           ? 'Set a date first'
-          : ''
+          : autoAdd
+            ? 'Every dated task syncs (Settings)'
+            : ''
 
   return (
     <div className="flex flex-col gap-2 rounded-md border px-3 py-2.5">
-      {issue && localAddToCal ? (
+      {issue && (localAddToCal || autoAdd) ? (
         <p role="status" className="text-xs leading-snug text-destructive">
           {syncIssueMessage(issue)}
         </p>
@@ -276,8 +280,8 @@ function TaskCalendarFields({
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-2">
           <Switch
-            checked={localDueAt ? localAddToCal : false}
-            disabled={!localDueAt || !calendarReady}
+            checked={localDueAt ? localAddToCal || autoAdd : false}
+            disabled={!localDueAt || !calendarReady || autoAdd}
             onCheckedChange={onAddToCal}
           />
           <Label className="text-sm font-medium">Add to calendar</Label>

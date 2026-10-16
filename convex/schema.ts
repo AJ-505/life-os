@@ -188,6 +188,7 @@ export default defineSchema({
     calendarEnabled: v.boolean(),
     calendarSyncEnabled: v.boolean(),
     defaultReminderMinutes: v.number(),
+    autoAddToCalendar: v.optional(v.boolean()),
     // Legacy. Whether Google is connected is now read from Clerk (the only
     // place that actually knows), never from a flag we set ourselves.
     googleConnected: v.optional(v.boolean()),
