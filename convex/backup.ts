@@ -62,6 +62,7 @@ const backupTask = v.object({
   createdAt: v.union(v.string(), v.null()),
   // Optional so backups written before the calendar work still import.
   reminderMinutes: v.optional(v.union(v.number(), v.null())),
+  durationMinutes: v.optional(v.union(v.number(), v.null())),
   addToCalendar: v.optional(v.union(v.boolean(), v.null())),
   calendarEventId: v.optional(v.union(v.string(), v.null())),
 })
@@ -120,6 +121,7 @@ export const exportBackup = query({
         focusOrder: t.focusOrder,
         createdAt: toIso(t.createdAt),
         reminderMinutes: t.reminderMinutes ?? null,
+        durationMinutes: t.durationMinutes ?? null,
         addToCalendar: t.addToCalendar ?? false,
         calendarEventId: t.calendarEventId ?? null,
       })),
@@ -273,6 +275,7 @@ async function importBackupSide(
       archived: Boolean(t.archived),
       dueAt: fromIso(t.dueAt),
       reminderMinutes: t.reminderMinutes ?? null,
+      durationMinutes: t.durationMinutes ?? null,
       addToCalendar: Boolean(t.addToCalendar),
       calendarEventId: t.calendarEventId ?? null,
       inFocus: Boolean(t.inFocus),

@@ -46,6 +46,12 @@ import { useSpaceMembers } from '#/spaces/queries'
 import { AssigneeSelect } from '#/spaces/components/AssigneeSelect'
 import { POSITION_GAP, newId, positionAfter } from '../types'
 import {
+  EVENT_MINUTES,
+  durationUntil,
+  isAllDay,
+  minuteOfDay,
+} from '../calendar/calendar-logic'
+import {
   useAddTask,
   useDeleteTask,
   useMoveTask,
@@ -502,15 +508,26 @@ export function TaskDetails({
   const [localAddToCal, setLocalAddToCal] = useState<boolean>(
     task.addToCalendar,
   )
+  const [localDuration, setLocalDuration] = useState<number | null>(
+    task.durationMinutes,
+  )
+  const [endDraft, setEndDraft] = useState<string | null>(null)
   const [timeInput, setTimeInput] = useState<string>(() =>
     task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00',
   )
   useEffect(() => {
     setLocalDueAt(task.dueAt ?? null)
     setLocalReminder(task.reminderMinutes)
+    setLocalDuration(task.durationMinutes)
     setLocalAddToCal(task.addToCalendar)
     setTimeInput(task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00')
-  }, [task.id, task.dueAt, task.reminderMinutes, task.addToCalendar])
+  }, [
+    task.id,
+    task.dueAt,
+    task.reminderMinutes,
+    task.durationMinutes,
+    task.addToCalendar,
+  ])
 
   const parseTime24 = (s: string): { h: number; m: number } | null => {
     const m = s.trim().match(/^(\d{1,2}):(\d{2})$/)
@@ -527,6 +544,26 @@ export function TaskDetails({
     const base = new Date(localDueAt)
     base.setHours(parsed.h, parsed.m, 0, 0)
     setLocalDueAt(base.getTime())
+  }
+
+  const timedStart =
+    localDueAt !== null && !isAllDay(localDueAt) ? localDueAt : null
+  const endText =
+    timedStart === null
+      ? ''
+      : format(
+          new Date(timedStart + (localDuration ?? EVENT_MINUTES) * 60_000),
+          'HH:mm',
+        )
+  const commitEnd = () => {
+    const parsed = endDraft === null ? null : parseTime24(endDraft)
+    setEndDraft(null)
+    if (!parsed || timedStart === null) return
+    const minutes = durationUntil(
+      minuteOfDay(timedStart),
+      parsed.h * 60 + parsed.m,
+    )
+    if (minutes !== null) setLocalDuration(minutes)
   }
 
   const readFields = () => ({
@@ -602,6 +639,7 @@ export function TaskDetails({
     const dueAtToCommit = localDueAt
     const reminderToCommit = localReminder
     const addToCalToCommit = localAddToCal
+    const durationToCommit = localDuration
     onClose()
     setTimeout(() => {
       p.subtask?.()
@@ -610,11 +648,14 @@ export function TaskDetails({
       const patch: {
         dueAt?: number | null
         reminderMinutes?: number | null
+        durationMinutes?: number | null
         addToCalendar?: boolean
       } = {}
       if (dueAtToCommit !== task.dueAt) patch.dueAt = dueAtToCommit
       if (reminderToCommit !== task.reminderMinutes)
         patch.reminderMinutes = reminderToCommit ?? null
+      if (durationToCommit !== task.durationMinutes)
+        patch.durationMinutes = durationToCommit
       if (addToCalToCommit !== task.addToCalendar)
         patch.addToCalendar = addToCalToCommit
 
@@ -650,6 +691,8 @@ export function TaskDetails({
     // Revert deferred due state so a quick reopen shows persisted values
     setLocalDueAt(task.dueAt ?? null)
     setLocalReminder(task.reminderMinutes)
+    setLocalDuration(task.durationMinutes)
+    setEndDraft(null)
     setLocalAddToCal(task.addToCalendar)
     setTimeInput(task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00')
     // Same capture the close path uses: it reads and clears the new-subtask
@@ -807,6 +850,33 @@ export function TaskDetails({
                   aria-label="Due time 24h"
                 />
               </div>
+              {timedStart !== null ? (
+                <div className="flex items-center gap-1.5">
+                  <Label
+                    htmlFor="task-end-time"
+                    className="os-label w-[9.5rem]"
+                  >
+                    Ends
+                  </Label>
+                  <Input
+                    id="task-end-time"
+                    value={endDraft ?? endText}
+                    inputMode="numeric"
+                    onChange={(e) =>
+                      setEndDraft(
+                        e.target.value.replace(/[^0-9:]/g, '').slice(0, 5),
+                      )
+                    }
+                    onBlur={commitEnd}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur()
+                    }}
+                    placeholder="HH:MM"
+                    className="h-8 w-[5.5rem] border-input bg-transparent px-2 font-mono text-xs shadow-xs"
+                    aria-label="End time 24h"
+                  />
+                </div>
+              ) : null}
             </div>
 
             <div className="flex flex-col gap-1.5">

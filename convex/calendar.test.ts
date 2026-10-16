@@ -356,6 +356,73 @@ describe('eventTimes', () => {
   })
 })
 
+describe('eventTimes with a duration', () => {
+  const nineThirty = Date.UTC(2026, 9, 15, 8, 30)
+
+  it('ends a 30 minute task half an hour after the start', () => {
+    expect(eventTimes(nineThirty, 'Africa/Lagos', 30).end.dateTime).toBe(
+      '2026-10-15T10:00:00+01:00',
+    )
+  })
+
+  it('ends a 2.5 hour task at the right wall clock', () => {
+    expect(eventTimes(nineThirty, 'Africa/Lagos', 150).end.dateTime).toBe(
+      '2026-10-15T12:00:00+01:00',
+    )
+  })
+
+  it('falls back to an hour when the duration is null', () => {
+    expect(eventTimes(nineThirty, 'Africa/Lagos', null).end.dateTime).toBe(
+      '2026-10-15T10:30:00+01:00',
+    )
+  })
+
+  it('ignores the duration for an all-day task', () => {
+    const midnight = Date.UTC(2026, 9, 14, 23, 0)
+    expect(eventTimes(midnight, 'Africa/Lagos', 30).end.date).toBe('2026-10-16')
+  })
+})
+
+describe('task duration sync', () => {
+  const patchBodies = (google: ReturnType<typeof stubGoogle>) =>
+    google.mock.calls
+      .filter(([, init]) => (init?.method ?? 'GET').toUpperCase() === 'PATCH')
+      .map(([, init]) => JSON.parse(String(init?.body)))
+
+  it('pushes the new end when only the duration changes', async () => {
+    const t = convexTest(schema, modules)
+    await seedSyncedTask(t)
+    const google = stubGoogle({})
+    vi.stubGlobal('fetch', google)
+
+    await asUser(t).mutation(api.tracker.updateTask, {
+      id: TASK_ID,
+      durationMinutes: 90,
+    })
+    await drainScheduler(t)
+
+    const bodies = patchBodies(google)
+    expect(bodies).toHaveLength(1)
+    expect(bodies[0].end.dateTime).toBe('2026-01-02T10:30:00+00:00')
+    expect((await readTask(t))?.durationMinutes).toBe(90)
+  })
+
+  it('clamps an absurd duration before it reaches Google', async () => {
+    const t = convexTest(schema, modules)
+    await seedSyncedTask(t)
+    const google = stubGoogle({})
+    vi.stubGlobal('fetch', google)
+
+    await asUser(t).mutation(api.tracker.updateTask, {
+      id: TASK_ID,
+      durationMinutes: 1,
+    })
+    await drainScheduler(t)
+
+    expect((await readTask(t))?.durationMinutes).toBe(5)
+  })
+})
+
 describe('eventTimes across a DST change', () => {
   it('pins the repeated hour to the instant the task names', () => {
     const firstOneThirty = Date.UTC(2026, 10, 1, 5, 30)

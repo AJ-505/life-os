@@ -329,6 +329,10 @@ export const deleteProject = mutation({
 
 /* ---------------------------------------------------------------- tasks */
 
+function clampDuration(minutes: number): number {
+  return Math.max(5, Math.min(24 * 60, Math.round(minutes)))
+}
+
 export const createTask = mutation({
   args: {
     id: v.string(),
@@ -337,6 +341,7 @@ export const createTask = mutation({
     title: v.string(),
     position: v.number(),
     dueAt: v.optional(v.union(v.number(), v.null())),
+    durationMinutes: v.optional(v.union(v.number(), v.null())),
     assigneeId: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
@@ -386,6 +391,10 @@ export const createTask = mutation({
       doneAt: null,
       archived: false,
       dueAt: args.dueAt ?? null,
+      durationMinutes:
+        args.durationMinutes == null
+          ? null
+          : clampDuration(args.durationMinutes),
       inFocus: false,
       focusOrder: 0,
       createdAt: Date.now(),
@@ -413,6 +422,7 @@ export const createTask = mutation({
  *  are here because a finished or shelved task should not keep an event. */
 const CALENDAR_FIELDS = [
   'dueAt',
+  'durationMinutes',
   'reminderMinutes',
   'addToCalendar',
   'done',
@@ -609,6 +619,7 @@ export const updateTask = mutation({
     archived: v.optional(v.boolean()),
     assigneeId: v.optional(v.union(v.string(), v.null())),
     dueAt: v.optional(v.union(v.number(), v.null())),
+    durationMinutes: v.optional(v.union(v.number(), v.null())),
     reminderMinutes: v.optional(v.union(v.number(), v.null())),
     addToCalendar: v.optional(v.boolean()),
   },
@@ -623,6 +634,8 @@ export const updateTask = mutation({
     }
     const patch: Partial<Doc<'tasks'>> = { ...rest }
     if (args.addToCalendar === true) patch.calendarSyncIssue = undefined
+    if (args.durationMinutes != null)
+      patch.durationMinutes = clampDuration(args.durationMinutes)
     // Trim like `createTask` does, so the stored title and the activity-log
     // comparison below never disagree on whitespace.
     if (args.title !== undefined) patch.title = args.title.trim()

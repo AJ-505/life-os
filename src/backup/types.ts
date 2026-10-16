@@ -33,6 +33,7 @@ export interface BackupTask {
    *  restore keeps the event id of a task the snapshot carries, and deletes the
    *  live event of a task the snapshot drops. */
   reminderMinutes?: number | null
+  durationMinutes?: number | null
   addToCalendar?: boolean | null
   calendarEventId?: string | null
 }
