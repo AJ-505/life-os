@@ -41,6 +41,9 @@ const GCAL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events'
  *  duration, so we give the event a nominal hour. */
 const EVENT_MINUTES = 60
 
+const RATE_LIMIT_RETRIES = 3
+const RATE_LIMIT_BACKOFF_MS = 30_000
+
 /** Google's event-id alphabet: lowercase `a` to `v` plus digits, 5 to 1024
  *  characters. Our ids are uuids, whose hyphens fall outside it. */
 const EVENT_ID = /^[a-v0-9]{5,1024}$/
@@ -153,6 +156,7 @@ type Snapshot = {
   dueAt: number | null
   reminderMinutes: number
   addToCalendar: boolean
+  autoAdd: boolean
   calendarEventId: string | null
   syncIssue: SyncIssue | null
   done: boolean
@@ -189,6 +193,7 @@ export const taskForSync = internalQuery({
       notes: task.notes,
       dueAt: task.dueAt,
       addToCalendar: task.addToCalendar ?? false,
+      autoAdd: settings?.autoAddToCalendar ?? false,
       calendarEventId: task.calendarEventId ?? null,
       reminderMinutes:
         task.reminderMinutes ?? settings?.defaultReminderMinutes ?? 15,
@@ -505,19 +510,34 @@ function contentKey(snapshot: Snapshot): string {
     snapshot.dueAt,
     snapshot.reminderMinutes,
     snapshot.addToCalendar,
+    snapshot.autoAdd,
     snapshot.done,
     snapshot.archived,
   ])
 }
 
-function wantsEvent(snapshot: Snapshot): boolean {
+export function taskWantsEvent(
+  task: {
+    addToCalendar?: boolean
+    dueAt: number | null
+    done: boolean
+    archived: boolean
+    spaceId?: string | null
+  },
+  settings: { syncEnabled: boolean; autoAdd: boolean },
+): boolean {
   return (
-    snapshot.syncEnabled &&
-    snapshot.addToCalendar &&
-    snapshot.dueAt !== null &&
-    !snapshot.done &&
-    !snapshot.archived
+    settings.syncEnabled &&
+    !task.spaceId &&
+    (task.addToCalendar === true || settings.autoAdd) &&
+    task.dueAt !== null &&
+    !task.done &&
+    !task.archived
   )
+}
+
+function wantsEvent(snapshot: Snapshot): boolean {
+  return taskWantsEvent(snapshot, snapshot)
 }
 
 function transportOutcome(detail: string): SyncResult {
@@ -878,9 +898,27 @@ export const syncTask = action({
 /** The scheduler's entry point. Scheduled functions carry no identity, which is
  *  why the owning user is passed explicitly by the mutation that scheduled it. */
 export const syncTaskForUser = internalAction({
-  args: { userId: v.string(), taskId: v.string() },
+  args: {
+    userId: v.string(),
+    taskId: v.string(),
+    attempt: v.optional(v.number()),
+  },
   handler: async (ctx, args): Promise<SyncResult> => {
-    return await runSync(ctx, args.userId, args.taskId)
+    const result = await runSync(ctx, args.userId, args.taskId)
+    const attempt = args.attempt
+    if (
+      attempt !== undefined &&
+      attempt < RATE_LIMIT_RETRIES &&
+      !result.ok &&
+      result.reason === 'rate_limited'
+    ) {
+      await ctx.scheduler.runAfter(
+        RATE_LIMIT_BACKOFF_MS * 2 ** attempt,
+        internal.calendar.syncTaskForUser,
+        { userId: args.userId, taskId: args.taskId, attempt: attempt + 1 },
+      )
+    }
+    return result
   },
 })
 
@@ -933,6 +971,11 @@ export const deleteEventsForUser = internalAction({
 export const clearEventIds = internalMutation({
   args: { userId: v.string(), events: v.array(eventToDelete) },
   handler: async (ctx, args) => {
+    const settings = await getUserSettings(ctx, args.userId)
+    const rule = {
+      syncEnabled: settings?.calendarSyncEnabled ?? false,
+      autoAdd: settings?.autoAddToCalendar ?? false,
+    }
     for (const event of args.events) {
       await applyEventId(ctx, {
         userId: args.userId,
@@ -940,6 +983,23 @@ export const clearEventIds = internalMutation({
         calendarEventId: null,
         expect: event.eventId,
       })
+      const task = await taskByAppId(ctx, args.userId, event.taskId)
+      if (!task) continue
+      if (!taskWantsEvent(task, rule)) {
+        if (task.calendarSyncIssue === 'event_removed') {
+          await ctx.db.patch(task._id, { calendarSyncIssue: undefined })
+        }
+        continue
+      }
+      if (
+        (task.calendarEventId ?? null) === null &&
+        task.calendarSyncIssue !== 'event_removed'
+      ) {
+        await ctx.scheduler.runAfter(0, internal.calendar.syncTaskForUser, {
+          userId: args.userId,
+          taskId: task.id,
+        })
+      }
     }
   },
 })

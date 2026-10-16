@@ -269,12 +269,19 @@ function CalendarSettings() {
   const defaultReminder = settings?.defaultReminderMinutes ?? 15
   const needsScope = connection.status === 'needs_scope'
 
-  const syncedTasks = (board ?? [])
-    .flatMap((p) => p.tasks)
-    .filter(
-      (t) =>
-        t.calendarEventId !== null || (t.addToCalendar && t.dueAt !== null),
-    )
+  const autoAdd = settings?.autoAddToCalendar ?? false
+  const boardTasks = (board ?? []).flatMap((p) => p.tasks)
+  const syncedTasks = boardTasks.filter(
+    (t) => t.calendarEventId !== null || (t.addToCalendar && t.dueAt !== null),
+  )
+  const resyncTasks = boardTasks.filter(
+    (t) =>
+      t.calendarEventId !== null ||
+      (t.dueAt !== null &&
+        !t.done &&
+        !t.archived &&
+        (t.addToCalendar || autoAdd)),
+  )
 
   const handleToggle = (checked: boolean) => {
     if (!checked) {
@@ -319,7 +326,7 @@ function CalendarSettings() {
       // in the same tick, which is the shape that earns a 429 and then makes
       // every task report the same rate-limit message.
       const results = await runBounded(
-        syncedTasks.map((t) => () => syncToCalendar(t.id)),
+        resyncTasks.map((t) => () => syncToCalendar(t.id)),
         RESYNC_CONCURRENCY,
       )
       reportResync(results)
@@ -395,6 +402,23 @@ function CalendarSettings() {
           >
             Turn off sync
           </Button>
+        </div>
+      ) : null}
+
+      {enabled ? (
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-0.5">
+            <Label className="text-sm font-medium">Add every dated task</Label>
+            <span className="font-mono text-[11px] text-muted-foreground">
+              Every personal task with a date goes to your calendar
+            </span>
+          </div>
+          <Switch
+            checked={autoAdd}
+            onCheckedChange={(checked) =>
+              updateSettings.mutate({ autoAddToCalendar: checked })
+            }
+          />
         </div>
       ) : null}
 
