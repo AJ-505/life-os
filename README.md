@@ -70,7 +70,7 @@ Leaving a space is a real action. A member leaves and loses access; an owner han
 
 Connect Google Calendar in Settings, then a dated personal task can push to your calendar. Set a date and time, pick a reminder (5, 15, 30, or 60 minutes), enable "Add to calendar."
 
-The event follows the task for its whole life: it is created once, renamed and re-timed in place, and removed when the due date is cleared, the task is completed or archived, the task or its project is deleted, or you turn sync off. Events you delete in Google Calendar are respected rather than recreated; **Resync calendar** in Settings is the explicit way to put them back.
+The event follows the task for its whole life: it is created once, renamed and re-timed in place, and removed when the due date is cleared, the task is completed or archived, the task or its project is deleted, or you turn sync off. Events you delete in Google Calendar are respected rather than recreated; **Repair calendar** in Settings is the explicit way to put them back.
 
 Two details worth knowing:
 

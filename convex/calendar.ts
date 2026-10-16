@@ -585,7 +585,7 @@ const removedResult: SyncResult = {
   ok: false,
   reason: 'event_removed',
   detail:
-    'The calendar event was removed in Google. Use Resync calendar to put it back.',
+    'The calendar event was removed in Google. Use Repair calendar in Settings to bring it back.',
 }
 
 export const setSyncIssue = internalMutation({
