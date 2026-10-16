@@ -26,6 +26,7 @@ function task(id: string, parentId: string | null): Task {
     archived: false,
     dueAt: null,
     reminderMinutes: null,
+    durationMinutes: null,
     addToCalendar: false,
     calendarEventId: null,
     calendarSyncIssue: null,

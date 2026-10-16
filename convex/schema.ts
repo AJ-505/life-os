@@ -81,6 +81,7 @@ export default defineSchema({
     archived: v.boolean(),
     dueAt: v.union(v.number(), v.null()),
     reminderMinutes: v.optional(v.union(v.number(), v.null())),
+    durationMinutes: v.optional(v.union(v.number(), v.null())),
     // The user's *intent* to mirror this task onto Google Calendar. Kept
     // separate from `calendarEventId` so the intent survives a failed or
     // pending Google call — the id is only ever a real Google event id.

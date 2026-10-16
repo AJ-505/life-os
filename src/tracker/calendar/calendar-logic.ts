@@ -51,6 +51,7 @@ export type CalendarTask = { task: Task; project: ProjectWithTasks }
 
 export type PlacedTask = CalendarTask & {
   start: number
+  minutes: number
   lane: number
   lanes: number
 }
@@ -60,6 +61,30 @@ export type CalendarDay = {
   allDay: Array<CalendarTask>
   milestones: Array<ProjectWithTasks>
   timed: Array<PlacedTask>
+}
+
+export function taskMinutes(task: Task): number {
+  return task.durationMinutes ?? EVENT_MINUTES
+}
+
+export function durationUntil(
+  startMinute: number,
+  endMinute: number,
+): number | null {
+  return endMinute > startMinute ? endMinute - startMinute : null
+}
+
+export function resizedMinutes(
+  startMinute: number,
+  startMinutes: number,
+  deltaPx: number,
+): number {
+  const raw = startMinutes + (deltaPx / HOUR_PX) * 60
+  const snapped = Math.round(raw / SNAP_MINUTES) * SNAP_MINUTES
+  return Math.min(
+    Math.max(snapped, SNAP_MINUTES),
+    Math.max(DAY_MINUTES - startMinute, SNAP_MINUTES),
+  )
 }
 
 export function placeInLanes(
@@ -83,9 +108,10 @@ export function placeInLanes(
     if (item.start >= clusterEnd) closeCluster()
     const free = laneEnds.findIndex((end) => end <= item.start)
     const lane = free === -1 ? laneEnds.length : free
-    laneEnds[lane] = item.start + EVENT_MINUTES
-    clusterEnd = Math.max(clusterEnd, item.start + EVENT_MINUTES)
-    const entry = { ...item, lane, lanes: 1 }
+    const minutes = taskMinutes(item.task)
+    laneEnds[lane] = item.start + minutes
+    clusterEnd = Math.max(clusterEnd, item.start + minutes)
+    const entry = { ...item, minutes, lane, lanes: 1 }
     cluster.push(entry)
     placed.push(entry)
   }
