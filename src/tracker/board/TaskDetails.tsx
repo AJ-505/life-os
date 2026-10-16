@@ -240,8 +240,12 @@ function TaskCalendarFields({
   localReminder,
   onReminder,
   issue,
+  done,
+  archived,
 }: {
   issue: CalendarSyncIssue | null
+  done: boolean
+  archived: boolean
   localDueAt: number | null
   localAddToCal: boolean
   onAddToCal: (v: boolean) => void
@@ -257,7 +261,10 @@ function TaskCalendarFields({
     connection.status === 'connected' &&
     (calendarSettings?.syncEnabled ?? false)
   const autoAdd =
-    calendarReady && (calendarSettings?.autoAddToCalendar ?? false)
+    calendarReady &&
+    !done &&
+    !archived &&
+    (calendarSettings?.autoAddToCalendar ?? false)
   const calendarHint = !calendarSettings?.syncEnabled
     ? 'Turn on calendar sync in Settings'
     : connection.status === 'needs_scope'
@@ -879,6 +886,8 @@ export function TaskDetails({
               localReminder={localReminder}
               onReminder={setLocalReminder}
               issue={task.calendarSyncIssue}
+              done={task.done}
+              archived={task.archived}
             />
           ) : (
             <ComingSoon

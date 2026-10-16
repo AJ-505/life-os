@@ -130,7 +130,7 @@ export const continueAutoSyncOn = internalMutation({
       await ctx.scheduler.runAfter(
         index * AUTO_SYNC_STAGGER_MS,
         internal.calendar.syncTaskForUser,
-        { userId: args.userId, taskId: task.id },
+        { userId: args.userId, taskId: task.id, attempt: 0 },
       )
     }
     if (!page.isDone) {
@@ -152,9 +152,13 @@ export const continueAutoSyncOff = internalMutation({
       .query('tasks')
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
       .paginate({ numItems: 500, cursor: args.cursor })
-    const events = eventsToDelete(
-      page.page.filter((task) => task.addToCalendar !== true),
-    )
+    const autoOnly = page.page.filter((task) => task.addToCalendar !== true)
+    for (const task of autoOnly) {
+      if (task.calendarSyncIssue === 'event_removed') {
+        await ctx.db.patch(task._id, { calendarSyncIssue: undefined })
+      }
+    }
+    const events = eventsToDelete(autoOnly)
     if (events.length > 0) {
       await ctx.scheduler.runAfter(0, internal.calendar.deleteEventsForUser, {
         userId: args.userId,

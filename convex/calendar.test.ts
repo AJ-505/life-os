@@ -676,4 +676,108 @@ describe('auto add to calendar', () => {
 
     expect(creates(google)).toHaveLength(0)
   })
+
+  it('off then quickly on still ends with an event', async () => {
+    const t = convexTest(schema, modules)
+    await seedAutoSettings(t, { autoAddToCalendar: true })
+    await seedTask(t, taskIdFor(1), { calendarEventId: 'autoonlyevent1' })
+    const google = stubGoogle({})
+    vi.stubGlobal('fetch', google)
+
+    await asUser(t).mutation(api.settings.updateCalendarSettings, {
+      autoAddToCalendar: false,
+    })
+    await t.mutation(internal.settings.continueAutoSyncOff, {
+      userId: 'user_a',
+      cursor: null,
+    })
+    await asUser(t).mutation(api.settings.updateCalendarSettings, {
+      autoAddToCalendar: true,
+    })
+    await drainScheduler(t)
+
+    expect((await readById(t, taskIdFor(1)))?.calendarEventId).toBeTruthy()
+  })
+
+  it('retries a rate limited fan-out sync with backoff', async () => {
+    const t = convexTest(schema, modules)
+    await seedAutoSettings(t, { autoAddToCalendar: false })
+    await seedTask(t, taskIdFor(1))
+    const base = stubGoogle({})
+    let limited = 2
+    const google = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const isCreate =
+          String(input) === GCAL && (init?.method ?? 'GET') === 'POST'
+        if (isCreate && limited-- > 0)
+          return new Response('{}', { status: 429 })
+        return base(input, init)
+      },
+    )
+    vi.stubGlobal('fetch', google)
+
+    await asUser(t).mutation(api.settings.updateCalendarSettings, {
+      autoAddToCalendar: true,
+    })
+    await drainScheduler(t)
+
+    const task = await readById(t, taskIdFor(1))
+    expect(task?.calendarEventId).toBeTruthy()
+    expect(task?.calendarSyncIssue).toBeUndefined()
+  })
+
+  it('gives up after three rate limited retries', async () => {
+    const t = convexTest(schema, modules)
+    await seedAutoSettings(t, { autoAddToCalendar: false })
+    await seedTask(t, taskIdFor(1))
+    const base = stubGoogle({ createStatus: 429 })
+    vi.stubGlobal('fetch', base)
+
+    await asUser(t).mutation(api.settings.updateCalendarSettings, {
+      autoAddToCalendar: true,
+    })
+    await drainScheduler(t)
+
+    expect(creates(base)).toHaveLength(4)
+    expect((await readById(t, taskIdFor(1)))?.calendarSyncIssue).toBe(
+      'rate_limited',
+    )
+  })
+
+  it('clears a stale event_removed mark when auto is turned off', async () => {
+    const t = convexTest(schema, modules)
+    await seedAutoSettings(t, { autoAddToCalendar: true })
+    await seedTask(t, taskIdFor(1), {
+      calendarEventId: 'autoonlyevent1',
+      calendarSyncIssue: 'event_removed',
+    })
+    vi.stubGlobal('fetch', stubGoogle({}))
+
+    await asUser(t).mutation(api.settings.updateCalendarSettings, {
+      autoAddToCalendar: false,
+    })
+    await drainScheduler(t)
+
+    const task = await readById(t, taskIdFor(1))
+    expect(task?.calendarEventId).toBeNull()
+    expect(task?.calendarSyncIssue).toBeUndefined()
+  })
+
+  it('turning Add to calendar on clears event_removed and syncs', async () => {
+    const t = convexTest(schema, modules)
+    await seedAutoSettings(t, { autoAddToCalendar: false })
+    await seedTask(t, taskIdFor(1), { calendarSyncIssue: 'event_removed' })
+    const google = stubGoogle({})
+    vi.stubGlobal('fetch', google)
+
+    await asUser(t).mutation(api.tracker.updateTask, {
+      id: taskIdFor(1),
+      addToCalendar: true,
+    })
+    await drainScheduler(t)
+
+    const task = await readById(t, taskIdFor(1))
+    expect(creates(google)).toHaveLength(1)
+    expect(task?.calendarSyncIssue).toBeUndefined()
+  })
 })
