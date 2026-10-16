@@ -53,11 +53,15 @@ function CalendarSyncControl() {
           variant={done ? 'ghost' : 'outline'}
           size="sm"
           className="ml-auto h-7 shrink-0 gap-1.5 px-2"
-          aria-label={done ? 'Synced to Google Calendar' : 'Sync to Google'}
+          aria-label={
+            done
+              ? 'Tasks sync to Google Calendar'
+              : 'Sync tasks to Google Calendar'
+          }
         >
           <Icon className="size-4" />
           <span className="hidden sm:inline">
-            {done ? 'Synced' : 'Sync to Google'}
+            {done ? 'Synced with Google' : 'Sync tasks to Google Calendar'}
           </span>
         </Button>
       </PopoverTrigger>

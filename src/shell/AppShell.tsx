@@ -222,11 +222,11 @@ function reportResync(results: Array<SyncOutcome>) {
   const total = results.length
   const tasks = `of ${total} synced ${total === 1 ? 'task' : 'tasks'}`
   if (failures.length === 0) {
-    toast.success(`Resync finished: ${updated} updated ${tasks}`)
+    toast.success(`Calendar repaired: ${updated} updated ${tasks}`)
     return
   }
   toast.error(
-    `Resync finished: ${updated} updated, ${failures.length} failed ${tasks}`,
+    `Calendar repair finished: ${updated} updated, ${failures.length} failed ${tasks}`,
     { description: commonReason(failures) },
   )
 }
@@ -442,9 +442,10 @@ function CalendarSettings() {
 
       <div className="flex items-center justify-between">
         <div className="flex flex-col gap-0.5">
-          <Label className="os-label">Resync calendar</Label>
+          <Label className="os-label">Repair calendar</Label>
           <span className="font-mono text-[11px] text-muted-foreground">
-            Re-push every synced task, including any event deleted in Google
+            Missing or out-of-date events? This sends every synced task to
+            Google again and brings back events you deleted there.
           </span>
         </div>
         <Button
@@ -454,7 +455,7 @@ function CalendarSettings() {
           onClick={handleResync}
         >
           {resyncing ? <Loader2 className="size-3.5 animate-spin" /> : null}
-          Resync
+          Repair now
         </Button>
       </div>
     </div>

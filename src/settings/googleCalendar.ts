@@ -140,7 +140,7 @@ const MESSAGES: SyncMessage = {
 
 export function syncIssueMessage(issue: SyncReason): string {
   return issue === 'event_removed'
-    ? 'This event was deleted in Google Calendar. Resync in Settings to put it back.'
+    ? 'This event was deleted in Google Calendar. Use Repair calendar in Settings to bring it back.'
     : `Last push to Google failed: ${MESSAGES[issue]}`
 }
 
