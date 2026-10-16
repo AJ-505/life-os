@@ -24,7 +24,7 @@ import {
 
 import { newId, positionAfter } from '../types'
 import { CalendarSyncButton } from './CalendarSyncButton'
-import { useAddTask } from '../queries'
+import { useAddTask, useUpdateTask } from '../queries'
 import { activeProjects } from '../board/board-logic'
 import { useBoardUI } from '../board/board-ui'
 import {
@@ -36,6 +36,7 @@ import {
   calendarWeek,
   dayId,
   minuteOfDay,
+  resizedMinutes,
   visibleDays,
 } from './calendar-logic'
 
@@ -152,18 +153,86 @@ function DraggableTask({
   )
 }
 
-function TimedTask({ placed }: { placed: PlacedTask }) {
+function ResizeHandle({
+  placed,
+  onLive,
+}: {
+  placed: PlacedTask
+  onLive: (minutes: number | null) => void
+}) {
+  const updateTask = useUpdateTask()
+  const drag = useRef<{ y: number; minutes: number } | null>(null)
+
+  const minutesAt = (clientY: number) =>
+    resizedMinutes(
+      placed.start,
+      placed.minutes,
+      clientY - (drag.current?.y ?? clientY),
+    )
+
   return (
-    <DraggableTask
-      entry={placed}
+    <div
+      role="separator"
+      aria-label="Resize event"
+      className={cn(
+        'absolute inset-x-1 bottom-0 z-10 hidden cursor-ns-resize touch-none items-end justify-center [@media(pointer:fine)]:flex',
+        placed.minutes < 30 ? 'h-1' : 'h-2',
+      )}
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => {
+        e.stopPropagation()
+        e.currentTarget.setPointerCapture(e.pointerId)
+        drag.current = { y: e.clientY, minutes: placed.minutes }
+      }}
+      onPointerMove={(e) => {
+        if (drag.current) onLive(minutesAt(e.clientY))
+      }}
+      onPointerUp={(e) => {
+        if (!drag.current) return
+        const minutes = minutesAt(e.clientY)
+        drag.current = null
+        if (minutes === placed.minutes) {
+          onLive(null)
+          return
+        }
+        onLive(minutes)
+        updateTask.mutate(
+          { id: placed.task.id, durationMinutes: minutes },
+          { onSettled: () => onLive(null) },
+        )
+      }}
+      onPointerCancel={() => {
+        drag.current = null
+        onLive(null)
+      }}
+    >
+      <span
+        className={cn(
+          'w-6 rounded-full bg-foreground/30',
+          placed.minutes < 30 ? 'h-px' : 'mb-0.5 h-0.5',
+        )}
+      />
+    </div>
+  )
+}
+
+function TimedTask({ placed }: { placed: PlacedTask }) {
+  const [live, setLive] = useState<number | null>(null)
+  const minutes = live ?? placed.minutes
+
+  return (
+    <div
       className="absolute z-10 p-px"
       style={{
         top: (placed.start / 60) * HOUR_PX,
-        height: (EVENT_MINUTES / 60) * HOUR_PX,
+        height: (minutes / 60) * HOUR_PX,
         left: `${(placed.lane / placed.lanes) * 100}%`,
         width: `${100 / placed.lanes}%`,
       }}
-    />
+    >
+      <DraggableTask entry={placed} className="block size-full" />
+      <ResizeHandle placed={placed} onLive={setLive} />
+    </div>
   )
 }
 

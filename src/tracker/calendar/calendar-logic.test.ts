@@ -5,9 +5,11 @@ import {
   atMinute,
   calendarWeek,
   dropMinute,
+  durationUntil,
   isAllDay,
   minuteOfDay,
   placeInLanes,
+  resizedMinutes,
   visibleDays,
   weekDays,
 } from './calendar-logic'
@@ -30,6 +32,7 @@ function task(id: string, overrides: Partial<Task> = {}): Task {
     archived: false,
     dueAt: null,
     reminderMinutes: null,
+    durationMinutes: null,
     addToCalendar: false,
     calendarEventId: null,
     calendarSyncIssue: null,
@@ -124,8 +127,12 @@ describe('dropMinute', () => {
 })
 
 describe('placeInLanes', () => {
-  const item = (id: string, start: number) => ({
-    task: task(id),
+  const item = (
+    id: string,
+    start: number,
+    durationMinutes: number | null = null,
+  ) => ({
+    task: task(id, { durationMinutes }),
     project: project('p1', []),
     start,
   })
@@ -173,6 +180,74 @@ describe('placeInLanes', () => {
       item('eleven', 675),
     ])
     expect(summary(placed).at(-1)).toEqual({ id: 'eleven', lane: 0, lanes: 1 })
+  })
+})
+
+describe('placeInLanes with mixed durations', () => {
+  const item = (id: string, start: number, durationMinutes: number | null) => ({
+    task: task(id, { durationMinutes }),
+    project: project('p1', []),
+    start,
+  })
+
+  it('lets a short task free its lane for the next one', () => {
+    const placed = placeInLanes([
+      item('long', 540, 180),
+      item('short', 550, 15),
+      item('after', 570, 30),
+    ])
+    expect(placed.map((p) => [p.task.id, p.lane, p.lanes])).toEqual([
+      ['long', 0, 2],
+      ['short', 1, 2],
+      ['after', 1, 2],
+    ])
+  })
+
+  it('keeps a task clear of an earlier long one that spans it', () => {
+    const placed = placeInLanes([item('long', 540, 240), item('late', 660, 30)])
+    expect(placed.map((p) => [p.lane, p.lanes])).toEqual([
+      [0, 2],
+      [1, 2],
+    ])
+  })
+
+  it('separates back to back tasks when the first is shorter than an hour', () => {
+    const placed = placeInLanes([item('a', 540, 30), item('b', 570, 30)])
+    expect(placed.map((p) => [p.lane, p.lanes])).toEqual([
+      [0, 1],
+      [0, 1],
+    ])
+  })
+
+  it('reports minutes per placed task, defaulting to an hour', () => {
+    const placed = placeInLanes([item('a', 540, null), item('b', 700, 45)])
+    expect(placed.map((p) => p.minutes)).toEqual([60, 45])
+  })
+})
+
+describe('resizedMinutes', () => {
+  it('adds dragged pixels in 15 minute steps', () => {
+    expect(resizedMinutes(540, 60, HOUR_PX / 2)).toBe(90)
+    expect(resizedMinutes(540, 60, HOUR_PX / 4 - 1)).toBe(75)
+  })
+
+  it('never goes below 15 minutes', () => {
+    expect(resizedMinutes(540, 60, -HOUR_PX * 5)).toBe(15)
+  })
+
+  it('stops at midnight', () => {
+    expect(resizedMinutes(1380, 60, HOUR_PX * 5)).toBe(60)
+  })
+})
+
+describe('durationUntil', () => {
+  it('measures a later end on the same day', () => {
+    expect(durationUntil(540, 615)).toBe(75)
+  })
+
+  it('rejects an end that is not after the start', () => {
+    expect(durationUntil(540, 540)).toBeNull()
+    expect(durationUntil(540, 480)).toBeNull()
   })
 })
 

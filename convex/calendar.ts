@@ -39,7 +39,7 @@ const GCAL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events'
 
 /** How long a task's calendar block runs. Tasks have a due *moment*, not a
  *  duration, so we give the event a nominal hour. */
-const EVENT_MINUTES = 60
+const DEFAULT_EVENT_MINUTES = 60
 
 const RATE_LIMIT_RETRIES = 3
 const RATE_LIMIT_BACKOFF_MS = 30_000
@@ -154,6 +154,7 @@ type Snapshot = {
   title: string
   notes: string | null
   dueAt: number | null
+  durationMinutes: number | null
   reminderMinutes: number
   addToCalendar: boolean
   autoAdd: boolean
@@ -192,6 +193,7 @@ export const taskForSync = internalQuery({
       title: task.title,
       notes: task.notes,
       dueAt: task.dueAt,
+      durationMinutes: task.durationMinutes ?? null,
       addToCalendar: task.addToCalendar ?? false,
       autoAdd: settings?.autoAddToCalendar ?? false,
       calendarEventId: task.calendarEventId ?? null,
@@ -450,7 +452,11 @@ function nextDay(date: string): string {
   return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10)
 }
 
-export function eventTimes(dueAt: number, timeZone: string) {
+export function eventTimes(
+  dueAt: number,
+  timeZone: string,
+  durationMinutes: number | null = null,
+) {
   const start = wallClock(dueAt, timeZone)
   const date = start.slice(0, 10)
   if (start.endsWith('T00:00:00'))
@@ -458,7 +464,7 @@ export function eventTimes(dueAt: number, timeZone: string) {
       start: { date, dateTime: null, timeZone },
       end: { date: nextDay(date), dateTime: null, timeZone },
     }
-  const endAt = dueAt + EVENT_MINUTES * 60 * 1000
+  const endAt = dueAt + (durationMinutes ?? DEFAULT_EVENT_MINUTES) * 60 * 1000
   return {
     start: {
       date: null,
@@ -485,7 +491,7 @@ function eventBody(snapshot: Snapshot, timeZone: string) {
   return {
     summary: snapshot.title,
     description: snapshot.notes ?? '',
-    ...eventTimes(snapshot.dueAt!, timeZone),
+    ...eventTimes(snapshot.dueAt!, timeZone, snapshot.durationMinutes),
     reminders: {
       useDefault: false,
       overrides: [
@@ -508,6 +514,7 @@ function contentKey(snapshot: Snapshot): string {
     snapshot.title,
     snapshot.notes,
     snapshot.dueAt,
+    snapshot.durationMinutes,
     snapshot.reminderMinutes,
     snapshot.addToCalendar,
     snapshot.autoAdd,

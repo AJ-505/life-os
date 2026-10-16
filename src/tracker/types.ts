@@ -36,6 +36,7 @@ export interface Task {
   archived: boolean
   dueAt: number | null
   reminderMinutes: number | null
+  durationMinutes: number | null
   /** The user's intent to mirror this task onto Google Calendar. Separate from
    *  `calendarEventId`, which only ever holds a real Google event id. */
   addToCalendar: boolean

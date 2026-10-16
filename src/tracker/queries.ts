@@ -196,6 +196,7 @@ export function useCreateTask() {
                   archived: false,
                   dueAt: args.dueAt ?? null,
                   reminderMinutes: null,
+                  durationMinutes: args.durationMinutes ?? null,
                   addToCalendar: false,
                   calendarEventId: null,
                   calendarSyncIssue: null,
