@@ -116,13 +116,11 @@ function DraggableTask({
   compact,
   className,
   style,
-  children,
 }: {
   entry: CalendarTask
   compact?: boolean
   className?: string
   style?: React.CSSProperties
-  children?: React.ReactNode
 }) {
   const { openTask, setHovered } = useBoardUI()
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -151,7 +149,6 @@ function DraggableTask({
         project={entry.project}
         compact={compact}
       />
-      {children}
     </button>
   )
 }
@@ -177,7 +174,10 @@ function ResizeHandle({
     <div
       role="separator"
       aria-label="Resize event"
-      className="absolute inset-x-1 bottom-0 z-10 hidden h-2 cursor-ns-resize touch-none items-end justify-center [@media(pointer:fine)]:flex"
+      className={cn(
+        'absolute inset-x-1 bottom-0 z-10 hidden cursor-ns-resize touch-none items-end justify-center [@media(pointer:fine)]:flex',
+        placed.minutes < 30 ? 'h-1' : 'h-2',
+      )}
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => {
         e.stopPropagation()
@@ -191,16 +191,27 @@ function ResizeHandle({
         if (!drag.current) return
         const minutes = minutesAt(e.clientY)
         drag.current = null
-        onLive(null)
-        if (minutes !== placed.minutes)
-          updateTask.mutate({ id: placed.task.id, durationMinutes: minutes })
+        if (minutes === placed.minutes) {
+          onLive(null)
+          return
+        }
+        onLive(minutes)
+        updateTask.mutate(
+          { id: placed.task.id, durationMinutes: minutes },
+          { onSettled: () => onLive(null) },
+        )
       }}
       onPointerCancel={() => {
         drag.current = null
         onLive(null)
       }}
     >
-      <span className="mb-0.5 h-0.5 w-6 rounded-full bg-foreground/30" />
+      <span
+        className={cn(
+          'w-6 rounded-full bg-foreground/30',
+          placed.minutes < 30 ? 'h-px' : 'mb-0.5 h-0.5',
+        )}
+      />
     </div>
   )
 }
@@ -210,8 +221,7 @@ function TimedTask({ placed }: { placed: PlacedTask }) {
   const minutes = live ?? placed.minutes
 
   return (
-    <DraggableTask
-      entry={placed}
+    <div
       className="absolute z-10 p-px"
       style={{
         top: (placed.start / 60) * HOUR_PX,
@@ -220,8 +230,9 @@ function TimedTask({ placed }: { placed: PlacedTask }) {
         width: `${100 / placed.lanes}%`,
       }}
     >
+      <DraggableTask entry={placed} className="block size-full" />
       <ResizeHandle placed={placed} onLive={setLive} />
-    </DraggableTask>
+    </div>
   )
 }
 

@@ -58,7 +58,7 @@ const backupTaskSchema = z.object({
   createdAt: z.string().nullable(),
   // Optional so a backup written before the calendar work still validates.
   reminderMinutes: z.number().nullable().optional(),
-  durationMinutes: z.number().nullable().optional(),
+  durationMinutes: z.number().int().min(5).max(1440).nullable().optional(),
   addToCalendar: z.boolean().nullable().optional(),
   calendarEventId: z.string().nullable().optional(),
 })

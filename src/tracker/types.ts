@@ -36,7 +36,6 @@ export interface Task {
   archived: boolean
   dueAt: number | null
   reminderMinutes: number | null
-  /** Length of the calendar block. Null means the default hour. */
   durationMinutes: number | null
   /** The user's intent to mirror this task onto Google Calendar. Separate from
    *  `calendarEventId`, which only ever holds a real Google event id. */

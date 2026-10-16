@@ -512,6 +512,7 @@ export function TaskDetails({
     task.durationMinutes,
   )
   const [endDraft, setEndDraft] = useState<string | null>(null)
+  const [endRejected, setEndRejected] = useState(false)
   const [timeInput, setTimeInput] = useState<string>(() =>
     task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00',
   )
@@ -558,11 +559,15 @@ export function TaskDetails({
   const commitEnd = () => {
     const parsed = endDraft === null ? null : parseTime24(endDraft)
     setEndDraft(null)
-    if (!parsed || timedStart === null) return
+    if (!parsed || timedStart === null) {
+      setEndRejected(endDraft !== null && endDraft !== endText)
+      return
+    }
     const minutes = durationUntil(
       minuteOfDay(timedStart),
       parsed.h * 60 + parsed.m,
     )
+    setEndRejected(minutes === null)
     if (minutes !== null) setLocalDuration(minutes)
   }
 
@@ -851,7 +856,7 @@ export function TaskDetails({
                 />
               </div>
               {timedStart !== null ? (
-                <div className="flex items-center gap-1.5">
+                <div className="flex flex-wrap items-center gap-1.5">
                   <Label
                     htmlFor="task-end-time"
                     className="os-label w-[9.5rem]"
@@ -862,11 +867,13 @@ export function TaskDetails({
                     id="task-end-time"
                     value={endDraft ?? endText}
                     inputMode="numeric"
-                    onChange={(e) =>
+                    aria-invalid={endRejected}
+                    onChange={(e) => {
+                      setEndRejected(false)
                       setEndDraft(
                         e.target.value.replace(/[^0-9:]/g, '').slice(0, 5),
                       )
-                    }
+                    }}
                     onBlur={commitEnd}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') e.currentTarget.blur()
@@ -875,6 +882,11 @@ export function TaskDetails({
                     className="h-8 w-[5.5rem] border-input bg-transparent px-2 font-mono text-xs shadow-xs"
                     aria-label="End time 24h"
                   />
+                  {endRejected ? (
+                    <span role="alert" className="text-xs text-destructive">
+                      End must be after the start
+                    </span>
+                  ) : null}
                 </div>
               ) : null}
             </div>

@@ -15,6 +15,7 @@ import {
   scopeTasks,
   shapeProject,
   shapeTask,
+  clampDuration,
   taskByAppId,
 } from './lib'
 import { eventsToDelete, taskWantsEvent } from './calendar'
@@ -329,10 +330,6 @@ export const deleteProject = mutation({
 
 /* ---------------------------------------------------------------- tasks */
 
-function clampDuration(minutes: number): number {
-  return Math.max(5, Math.min(24 * 60, Math.round(minutes)))
-}
-
 export const createTask = mutation({
   args: {
     id: v.string(),
@@ -391,10 +388,7 @@ export const createTask = mutation({
       doneAt: null,
       archived: false,
       dueAt: args.dueAt ?? null,
-      durationMinutes:
-        args.durationMinutes == null
-          ? null
-          : clampDuration(args.durationMinutes),
+      durationMinutes: clampDuration(args.durationMinutes),
       inFocus: false,
       focusOrder: 0,
       createdAt: Date.now(),
@@ -634,7 +628,7 @@ export const updateTask = mutation({
     }
     const patch: Partial<Doc<'tasks'>> = { ...rest }
     if (args.addToCalendar === true) patch.calendarSyncIssue = undefined
-    if (args.durationMinutes != null)
+    if (args.durationMinutes !== undefined)
       patch.durationMinutes = clampDuration(args.durationMinutes)
     // Trim like `createTask` does, so the stored title and the activity-log
     // comparison below never disagree on whitespace.

@@ -4,7 +4,7 @@ import type { Infer } from 'convex/values'
 
 import { internalMutation, mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
-import { requireUserId } from './lib'
+import { clampDuration, requireUserId } from './lib'
 import { eventsToDelete } from './calendar'
 
 import type { Doc } from './_generated/dataModel'
@@ -275,7 +275,7 @@ async function importBackupSide(
       archived: Boolean(t.archived),
       dueAt: fromIso(t.dueAt),
       reminderMinutes: t.reminderMinutes ?? null,
-      durationMinutes: t.durationMinutes ?? null,
+      durationMinutes: clampDuration(t.durationMinutes),
       addToCalendar: Boolean(t.addToCalendar),
       calendarEventId: t.calendarEventId ?? null,
       inFocus: Boolean(t.inFocus),
