@@ -193,3 +193,13 @@ Order matters: deploy Convex and set its secrets before the front end that point
 
 - The board query reads a user's whole board and a space's whole board in one call. That is deliberate: a bounded read would silently truncate a board. At a few thousand tasks per board it is well inside Convex's per-function read budget.
 - `pnpm check` (Prettier) reports pre-existing offenders in files this project has not touched since. Run `pnpm format` if you want the whole tree normalized.
+
+## License
+
+Life OS is fair source under the [Functional Source License, Version 1.1, ALv2 Future License](LICENSE.md) (FSL-1.1-ALv2). Each release becomes Apache 2.0 two years after it ships.
+
+- **Can I self-host it?** Yes, for yourself or inside your company, Spaces included.
+- **Can I fork it, change it, and hack on it?** Yes.
+- **Can I sell it, or run it as a hosted product that competes with Life OS?** No, not until that release turns Apache 2.0.
+
+The Life OS name and logo are not covered by the license. Forks should use their own.
