@@ -295,7 +295,7 @@ export const setProjectStatus = mutation({
 async function projectTasks(
   ctx: MutationCtx,
   userId: string,
-  project: Doc<'projects'>,
+  project: Pick<Doc<'projects'>, 'id' | 'spaceId'>,
 ): Promise<Array<Doc<'tasks'>>> {
   if (project.spaceId) {
     return await ctx.db
@@ -340,6 +340,7 @@ export const createTask = mutation({
     dueAt: v.optional(v.union(v.number(), v.null())),
     durationMinutes: v.optional(v.union(v.number(), v.null())),
     assigneeId: v.optional(v.union(v.string(), v.null())),
+    createdFrom: v.optional(v.literal('calendar')),
   },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
@@ -392,6 +393,7 @@ export const createTask = mutation({
       inFocus: false,
       focusOrder: 0,
       createdAt: Date.now(),
+      ...(args.createdFrom && { createdFrom: args.createdFrom }),
       assigneeId,
       spaceId: project.spaceId ?? null,
     })
@@ -601,6 +603,63 @@ async function deleteTasksBatched(
     })
   }
 }
+
+const STALE_CALENDAR_TASK_MS = 7 * 24 * 60 * 60 * 1000
+const STALE_ROOTS_PER_PASS = 50
+
+function groupBy<T, K>(items: Array<T>, key: (item: T) => K) {
+  const groups = new Map<K, Array<T>>()
+  for (const item of items) {
+    const list = groups.get(key(item)) ?? []
+    list.push(item)
+    groups.set(key(item), list)
+  }
+  return groups
+}
+
+/** Removes tasks that were made on the calendar and are dated more than a
+ *  week in the past, together with their subtasks. Only rows that carry
+ *  `createdFrom: 'calendar'` are indexed, so tasks made anywhere else, and
+ *  every task from before the field existed, are out of reach. */
+export const purgeStaleCalendarTasks = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const cutoff = Date.now() - STALE_CALENDAR_TASK_MS
+    const stale = await ctx.db
+      .query('tasks')
+      .withIndex('by_created_from_due', (q) =>
+        q.eq('createdFrom', 'calendar').gt('dueAt', 0).lt('dueAt', cutoff),
+      )
+      .take(STALE_ROOTS_PER_PASS)
+
+    const doomed = new Map<string, Doc<'tasks'>>()
+    const boards = new Map<string, Array<Doc<'tasks'>>>()
+    for (const root of stale) {
+      const key = `${root.spaceId ?? root.userId}:${root.projectId}`
+      const board =
+        boards.get(key) ??
+        (await projectTasks(ctx, root.userId, {
+          id: root.projectId,
+          spaceId: root.spaceId,
+        }))
+      boards.set(key, board)
+      for (const task of withDescendants(board, root)) {
+        doomed.set(task._id, task)
+      }
+    }
+
+    const rows = [...doomed.values()]
+    for (const [userId, owned] of groupBy(rows, (t) => t.userId)) {
+      await scheduleEventCleanup(ctx, userId, owned)
+    }
+    for (const [spaceId, inSpace] of groupBy(rows, (t) => t.spaceId ?? null)) {
+      await deleteTasksBatched(ctx, inSpace, spaceId)
+    }
+    if (stale.length === STALE_ROOTS_PER_PASS) {
+      await ctx.scheduler.runAfter(0, internal.tracker.purgeStaleCalendarTasks)
+    }
+  },
+})
 
 /** `doneAt` is derived from `done` rather than accepted as an argument, so the
  *  two can never disagree. */
