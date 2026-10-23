@@ -103,6 +103,10 @@ export default defineSchema({
     inFocus: v.boolean(),
     focusOrder: v.number(),
     createdAt: v.number(),
+    // Where the task was born. Absent on every row written before this field
+    // existed, which keeps those rows out of `by_created_from_due`, so the
+    // calendar cleanup can never reach them.
+    createdFrom: v.optional(v.literal('calendar')),
     assigneeId: v.optional(v.union(v.string(), v.null())),
     // Denormalized from the project so a board reads one index and a walk can
     // never cross scopes. Kept equal to the project's by the same-scope rule.
@@ -125,7 +129,8 @@ export default defineSchema({
     // Removing someone has to find the tasks that name them. Without this the
     // only way in is a whole-space scan, which is the unbounded read the space
     // delete used to do.
-    .index('by_space_assignee', ['spaceId', 'assigneeId']),
+    .index('by_space_assignee', ['spaceId', 'assigneeId'])
+    .index('by_created_from_due', ['createdFrom', 'dueAt']),
 
   /** A small, denormalized directory of the names collaborators see. It is
    *  deliberately not the source of authorization: identity still comes from

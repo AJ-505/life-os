@@ -402,6 +402,7 @@ function QuickCreate({
       title: t,
       position: positionAfter(project.tasks.filter((x) => !x.parentId)),
       dueAt,
+      createdFrom: 'calendar',
     })
     onDone()
   }
