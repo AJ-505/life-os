@@ -1,0 +1,57 @@
+[
+  {
+    "label": "LifeOS: app server (Vite SSR + server functions)",
+    "adapter": "JavaScript",
+    "type": "node",
+    "request": "launch",
+    "runtimeExecutable": "pnpm",
+    "runtimeArgs": ["exec", "vite", "dev", "--port", "5174", "--strictPort"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
+    "autoAttachChildProcesses": true
+  },
+  {
+    "label": "LifeOS: browser (Chrome)",
+    "adapter": "JavaScript",
+    "type": "chrome",
+    "request": "launch",
+    "url": "http://localhost:5174",
+    "webRoot": "$ZED_WORKTREE_ROOT",
+    "runtimeExecutable": "/usr/bin/google-chrome"
+  },
+  {
+    "label": "LifeOS: Convex function tests (current file)",
+    "adapter": "JavaScript",
+    "type": "node",
+    "request": "launch",
+    "runtimeExecutable": "pnpm",
+    "runtimeArgs": [
+      "exec",
+      "vitest",
+      "run",
+      "--no-file-parallelism",
+      "$ZED_FILE"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
+    "autoAttachChildProcesses": true
+  },
+  {
+    "label": "LifeOS: all Convex tests",
+    "adapter": "JavaScript",
+    "type": "node",
+    "request": "launch",
+    "runtimeExecutable": "pnpm",
+    "runtimeArgs": [
+      "exec",
+      "vitest",
+      "run",
+      "--no-file-parallelism",
+      "--project",
+      "convex"
+    ],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "skipFiles": ["<node_internals>/**", "**/node_modules/**"],
+    "autoAttachChildProcesses": true
+  }
+]

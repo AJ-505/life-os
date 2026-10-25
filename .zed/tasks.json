@@ -1,0 +1,11 @@
+[
+  {
+    "label": "LifeOS: convex dev (push functions)",
+    "command": "pnpm",
+    "args": ["exec", "convex", "dev"],
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  }
+]
