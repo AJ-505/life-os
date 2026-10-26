@@ -130,6 +130,8 @@ pnpm dev    # runs Vite + Convex together (via portless)
 
 `pnpm dev` starts both the app and `convex dev` in one command. It writes `VITE_CONVEX_URL` to `.env.local` on first run.
 
+To step through the code in Zed, see [docs/debugging.md](docs/debugging.md).
+
 ### The two secrets, and where each one lives
 
 Auth and the calendar push need two values on the **Convex deployment**, not in the front-end env:
