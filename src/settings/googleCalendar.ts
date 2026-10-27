@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
-import { useUser } from '@clerk/tanstack-react-start'
-import { useAction } from 'convex/react'
+import { useAuth, useUser } from '@clerk/tanstack-react-start'
+import { useAction, useMutation } from 'convex/react'
 import { useQuery } from '@tanstack/react-query'
+import { toast } from 'sonner'
 
 import { api } from '../../convex/_generated/api'
 import {
@@ -106,6 +107,41 @@ export function useGoogleCalendar() {
   }
 
   return { connection, connect }
+}
+
+const RESTORE_KEY = 'lifeos.calendar.restoreSession'
+const RETRY_KEY = 'lifeos.calendar.retrySession'
+
+function firstTimeThisSession(key: string, sessionId: string): boolean {
+  if (localStorage.getItem(key) === sessionId) return false
+  localStorage.setItem(key, sessionId)
+  return true
+}
+
+export function useRestoreCalendarAccess() {
+  const { sessionId } = useAuth()
+  const { connection, connect } = useGoogleCalendar()
+  const { data: settings } = useQuery(calendarSettingsQueryOptions)
+  const retryAccessIssues = useMutation(api.calendar.retryAccessIssues)
+  const syncEnabled = settings?.syncEnabled ?? false
+  const status = connection.status
+
+  useEffect(() => {
+    if (!sessionId || !syncEnabled) return
+    if (status === 'connected' && firstTimeThisSession(RETRY_KEY, sessionId)) {
+      void retryAccessIssues({})
+      return
+    }
+    if (status !== 'needs_scope') return
+    if (!firstTimeThisSession(RESTORE_KEY, sessionId)) return
+    const id = toast.loading('Restoring Google Calendar access…')
+    connect().catch((error: unknown) => {
+      toast.error('Could not restore Google Calendar access', {
+        id,
+        description: error instanceof Error ? error.message : String(error),
+      })
+    })
+  }, [sessionId, syncEnabled, status, connect, retryAccessIssues])
 }
 
 /* ------------------------------------------------------------------- sync */

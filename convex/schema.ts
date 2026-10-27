@@ -130,7 +130,8 @@ export default defineSchema({
     // only way in is a whole-space scan, which is the unbounded read the space
     // delete used to do.
     .index('by_space_assignee', ['spaceId', 'assigneeId'])
-    .index('by_created_from_due', ['createdFrom', 'dueAt']),
+    .index('by_created_from_due', ['createdFrom', 'dueAt'])
+    .index('by_user_sync_issue', ['userId', 'calendarSyncIssue']),
 
   /** A small, denormalized directory of the names collaborators see. It is
    *  deliberately not the source of authorization: identity still comes from
