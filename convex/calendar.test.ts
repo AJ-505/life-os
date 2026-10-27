@@ -6,6 +6,7 @@ import { eventTimes } from './calendar'
 import schema from './schema'
 
 import type { TestConvex } from 'convex-test'
+import type { Doc } from './_generated/dataModel'
 
 /**
  * Calendar regressions found by the 2026-10-03 audit.
@@ -524,9 +525,10 @@ const seedTask = (
   overrides: Partial<{
     addToCalendar: boolean
     calendarEventId: string
-    calendarSyncIssue: 'event_removed'
+    calendarSyncIssue: NonNullable<Doc<'tasks'>['calendarSyncIssue']>
     dueAt: number | null
     spaceId: string | null
+    userId: string
   }> = {},
 ) =>
   t.run(async (ctx) => {
@@ -846,5 +848,76 @@ describe('auto add to calendar', () => {
     const task = await readById(t, taskIdFor(1))
     expect(creates(google)).toHaveLength(1)
     expect(task?.calendarSyncIssue).toBeUndefined()
+  })
+})
+
+describe('restoring Google access', () => {
+  it('re-pushes only the tasks a lost Google permission left behind', async () => {
+    const t = convexTest(schema, modules)
+    await seedAutoSettings(t, { autoAddToCalendar: false })
+    await seedTask(t, taskIdFor(1), {
+      addToCalendar: true,
+      calendarSyncIssue: 'missing_scope',
+    })
+    await seedTask(t, taskIdFor(2), {
+      addToCalendar: true,
+      calendarSyncIssue: 'reauth_required',
+    })
+    await seedTask(t, taskIdFor(3), {
+      addToCalendar: true,
+      calendarSyncIssue: 'event_removed',
+    })
+    await seedTask(t, taskIdFor(4), { addToCalendar: true })
+    await seedTask(t, taskIdFor(5), {
+      addToCalendar: true,
+      calendarSyncIssue: 'missing_scope',
+      userId: 'user_b',
+    })
+    const google = stubGoogle({})
+    vi.stubGlobal('fetch', google)
+
+    const queued = await asUser(t).mutation(api.calendar.retryAccessIssues, {})
+    await drainScheduler(t)
+
+    expect(queued).toBe(2)
+    expect(creates(google)).toHaveLength(2)
+    for (const n of [1, 2]) {
+      const task = await readById(t, taskIdFor(n))
+      expect(task?.calendarSyncIssue).toBeUndefined()
+      expect(task?.calendarEventId).toBe(taskIdFor(n).replace(/-/g, ''))
+    }
+    expect((await readById(t, taskIdFor(3)))?.calendarSyncIssue).toBe(
+      'event_removed',
+    )
+    const other = await t.run(async (ctx) =>
+      ctx.db
+        .query('tasks')
+        .withIndex('by_user_id', (q) =>
+          q.eq('userId', 'user_b').eq('id', taskIdFor(5)),
+        )
+        .first(),
+    )
+    expect(other?.calendarSyncIssue).toBe('missing_scope')
+  })
+
+  it('clears the mark on a stuck task that no longer wants an event', async () => {
+    const t = convexTest(schema, modules)
+    await seedAutoSettings(t, { autoAddToCalendar: false })
+    await seedTask(t, taskIdFor(1), { calendarSyncIssue: 'missing_scope' })
+    const google = stubGoogle({})
+    vi.stubGlobal('fetch', google)
+
+    await asUser(t).mutation(api.calendar.retryAccessIssues, {})
+    await drainScheduler(t)
+
+    expect(google).not.toHaveBeenCalled()
+    expect((await readById(t, taskIdFor(1)))?.calendarSyncIssue).toBeUndefined()
+  })
+
+  it('refuses a caller who is not signed in', async () => {
+    const t = convexTest(schema, modules)
+    await expect(
+      t.mutation(api.calendar.retryAccessIssues, {}),
+    ).rejects.toThrow('Not authenticated')
   })
 })

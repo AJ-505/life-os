@@ -53,6 +53,7 @@ import type { SyncOutcome } from '#/settings/googleCalendar'
 import {
   useEnsureTimezone,
   useGoogleCalendar,
+  useRestoreCalendarAccess,
   useSyncTaskToCalendar,
 } from '#/settings/googleCalendar'
 import { boardQueryOptions } from '#/tracker/queries'
@@ -177,6 +178,11 @@ function ProfileSync() {
  *  from the shell so it happens before any task can be pushed. */
 function EnsureTimezone() {
   useEnsureTimezone()
+  return null
+}
+
+function RestoreCalendarAccess() {
+  useRestoreCalendarAccess()
   return null
 }
 
@@ -657,6 +663,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         {CALENDAR_ENABLED ? <EnsureTimezone /> : null}
+        {CALENDAR_ENABLED ? <RestoreCalendarAccess /> : null}
         <ProfileSync />
         <PrefetchRoutes />
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden">

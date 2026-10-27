@@ -7,6 +7,7 @@ import {
   internalAction,
   internalMutation,
   internalQuery,
+  mutation,
 } from './_generated/server'
 import type { ActionCtx, MutationCtx } from './_generated/server'
 import { internal } from './_generated/api'
@@ -926,6 +927,41 @@ export const syncTaskForUser = internalAction({
       )
     }
     return result
+  },
+})
+
+const ACCESS_ISSUES = [
+  'not_connected',
+  'reauth_required',
+  'missing_scope',
+] as const satisfies ReadonlyArray<SyncIssue>
+
+const ACCESS_RETRY_LIMIT = 200
+const ACCESS_RETRY_SPACING_MS = 250
+
+export const retryAccessIssues = mutation({
+  args: {},
+  handler: async (ctx): Promise<number> => {
+    const userId = await requireUserId(ctx)
+    let queued = 0
+    for (const issue of ACCESS_ISSUES) {
+      const stuck = await ctx.db
+        .query('tasks')
+        .withIndex('by_user_sync_issue', (q) =>
+          q.eq('userId', userId).eq('calendarSyncIssue', issue),
+        )
+        .take(ACCESS_RETRY_LIMIT - queued)
+      for (const task of stuck) {
+        await ctx.scheduler.runAfter(
+          queued * ACCESS_RETRY_SPACING_MS,
+          internal.calendar.syncTaskForUser,
+          { userId, taskId: task.id, attempt: 0 },
+        )
+        queued += 1
+      }
+      if (queued >= ACCESS_RETRY_LIMIT) break
+    }
+    return queued
   },
 })
 

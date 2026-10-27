@@ -88,6 +88,7 @@ const LIVE_CLIENT_SENDS = {
     defaultReminderMinutes: 15,
   },
   'calendar:syncTask': { taskId: 'contract-probe' },
+  'calendar:retryAccessIssues': {},
   'backup:exportBackup': null,
   // A non-empty element, so Convex actually validates the task shape. Empty
   // arrays are never validated and hid a whole class of break.
