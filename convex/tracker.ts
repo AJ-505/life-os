@@ -341,6 +341,7 @@ export const createTask = mutation({
     durationMinutes: v.optional(v.union(v.number(), v.null())),
     assigneeId: v.optional(v.union(v.string(), v.null())),
     createdFrom: v.optional(v.literal('calendar')),
+    inFocus: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
@@ -377,6 +378,11 @@ export const createTask = mutation({
       )
     )
       return
+    // Same rule `setTaskFocus` enforces: focus is a personal working set, never
+    // a shared one. Throwing here (before the insert) keeps the task and its
+    // focus state from diverging.
+    const inFocus = args.inFocus ?? false
+    if (inFocus && project.spaceId) throw new Error('Focus is personal only')
     await ctx.db.insert('tasks', {
       userId,
       id: args.id,
@@ -390,8 +396,8 @@ export const createTask = mutation({
       archived: false,
       dueAt: args.dueAt ?? null,
       durationMinutes: clampDuration(args.durationMinutes),
-      inFocus: false,
-      focusOrder: 0,
+      inFocus,
+      focusOrder: inFocus ? Date.now() / 1000 : 0,
       createdAt: Date.now(),
       ...(args.createdFrom && { createdFrom: args.createdFrom }),
       assigneeId,
