@@ -30,14 +30,22 @@ const isDragKind = (kind: string): kind is DragIdKind =>
 export function parseDragId(raw: string | number): {
   kind: DragIdKind | 'focuszone'
   key: string
+  occurrence: number | null
 } | null {
   const s = String(raw)
-  if (s === 'focuszone') return { kind: 'focuszone', key: '' }
+  if (s === 'focuszone') return { kind: 'focuszone', key: '', occurrence: null }
   const at = s.indexOf('@')
   if (at === -1) return null
   const kind = s.slice(0, at)
   if (!isDragKind(kind)) return null
-  return { kind, key: s.slice(at + 1) }
+  const key = s.slice(at + 1)
+  if (kind !== 'cal') return { kind, key, occurrence: null }
+  const split = key.lastIndexOf('@')
+  if (split === -1) return { kind, key, occurrence: null }
+  const occurrence = Number(key.slice(split + 1))
+  return Number.isFinite(occurrence)
+    ? { kind, key: key.slice(0, split), occurrence }
+    : { kind, key, occurrence: null }
 }
 
 export function activeProjects(board: BoardData): Array<ProjectWithTasks> {

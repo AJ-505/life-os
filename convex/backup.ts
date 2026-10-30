@@ -65,6 +65,16 @@ const backupTask = v.object({
   durationMinutes: v.optional(v.union(v.number(), v.null())),
   addToCalendar: v.optional(v.union(v.boolean(), v.null())),
   calendarEventId: v.optional(v.union(v.string(), v.null())),
+  repeat: v.optional(
+    v.union(
+      v.literal('daily'),
+      v.literal('weekdays'),
+      v.literal('weekly'),
+      v.literal('monthly'),
+      v.literal('yearly'),
+      v.null(),
+    ),
+  ),
 })
 
 async function personalRows(ctx: QueryCtx | MutationCtx, userId: string) {
@@ -124,6 +134,7 @@ export const exportBackup = query({
         durationMinutes: t.durationMinutes ?? null,
         addToCalendar: t.addToCalendar ?? false,
         calendarEventId: t.calendarEventId ?? null,
+        repeat: t.repeat ?? null,
       })),
     }
   },
@@ -278,6 +289,7 @@ async function importBackupSide(
       durationMinutes: clampDuration(t.durationMinutes),
       addToCalendar: Boolean(t.addToCalendar),
       calendarEventId: t.calendarEventId ?? null,
+      repeat: t.repeat ?? null,
       inFocus: Boolean(t.inFocus),
       focusOrder: Number(t.focusOrder ?? 0),
       createdAt: fromIso(t.createdAt) ?? Date.now(),
