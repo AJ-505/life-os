@@ -1,17 +1,24 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  BLOCK_MINUTES,
+  DEFAULT_BLOCK_MINUTES,
   HOUR_PX,
   atMinute,
+  blockShortLabel,
   calendarWeek,
   dropMinute,
   durationUntil,
   externalPlacement,
+  hourPxFor,
   importedEventIds,
   isAllDay,
+  labelStep,
   minuteOfDay,
+  normalizeBlockMinutes,
   placeInLanes,
   resizedMinutes,
+  slotMinute,
   taskMinutes,
   visibleDays,
   weekDays,
@@ -230,6 +237,55 @@ describe('placeInLanes with mixed durations', () => {
   it('reports minutes per placed task, defaulting to an hour', () => {
     const placed = placeInLanes([item('a', 540, null), item('b', 700, 45)])
     expect(placed.map((p) => p.minutes)).toEqual([60, 45])
+  })
+})
+
+describe('calendar block size', () => {
+  it('offers fine through hourly blocks and falls back to the default', () => {
+    expect(BLOCK_MINUTES).toEqual([10, 15, 20, 30, 60])
+    expect(DEFAULT_BLOCK_MINUTES).toBe(60)
+    expect(normalizeBlockMinutes(20)).toBe(20)
+    expect(normalizeBlockMinutes(17)).toBe(DEFAULT_BLOCK_MINUTES)
+  })
+
+  it('reads back as a short label', () => {
+    expect(blockShortLabel(10)).toBe('10m')
+    expect(blockShortLabel(60)).toBe('1h')
+  })
+
+  it('stretches the hour only when a block would be too short', () => {
+    expect(hourPxFor(10)).toBe(96)
+    expect(hourPxFor(15)).toBe(64)
+    expect(hourPxFor(20)).toBe(HOUR_PX)
+    expect(hourPxFor(30)).toBe(HOUR_PX)
+    expect(hourPxFor(60)).toBe(HOUR_PX)
+  })
+
+  it('labels a grid at a readable step that matches the blocks', () => {
+    expect(labelStep(10)).toBe(30)
+    expect(labelStep(15)).toBe(30)
+    expect(labelStep(20)).toBe(60)
+    expect(labelStep(30)).toBe(30)
+    expect(labelStep(60)).toBe(60)
+  })
+
+  it('lands a click on the block that contains it', () => {
+    expect(slotMinute(HOUR_PX * 9.5, 60)).toBe(570)
+    expect(slotMinute(HOUR_PX * 9.99, 60)).toBe(570)
+    expect(slotMinute(hourPxFor(10) * 9.5, 10)).toBe(570)
+    expect(slotMinute(HOUR_PX * 9.5, 20)).toBe(560)
+    expect(slotMinute(hourPxFor(10) * 23.95, 10)).toBe(1430)
+  })
+
+  it('snaps drops to the finer of the block and 15 minutes', () => {
+    expect(dropMinute(hourPxFor(10) * 9.51, 10, hourPxFor(10))).toBe(570)
+    expect(dropMinute(HOUR_PX * 9.5, 60, HOUR_PX)).toBe(570)
+  })
+
+  it('resizes in block steps when the block is finer than 15 minutes', () => {
+    const hourPx = hourPxFor(10)
+    expect(resizedMinutes(540, 60, hourPx / 6, 10, hourPx)).toBe(70)
+    expect(resizedMinutes(540, 60, hourPx / 2, 10, hourPx)).toBe(90)
   })
 })
 
