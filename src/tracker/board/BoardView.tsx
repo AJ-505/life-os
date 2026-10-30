@@ -18,7 +18,7 @@ import { useSuspenseQuery } from '@tanstack/react-query'
 import { Check, Crosshair, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { cn, useLocalFlag } from '#/design-system'
+import { cn, useLocalFlag, useLocalNumber } from '#/design-system'
 import { Button } from '#/design-system/ui/button'
 import {
   Dialog,
@@ -66,7 +66,13 @@ import {
   CalendarView,
   calendarSlotAt,
 } from '../calendar/CalendarView'
-import { atMinute, dropMinute } from '../calendar/calendar-logic'
+import {
+  DEFAULT_BLOCK_MINUTES,
+  atMinute,
+  dropMinute,
+  hourPxFor,
+  normalizeBlockMinutes,
+} from '../calendar/calendar-logic'
 
 import type {
   CollisionDetection,
@@ -74,6 +80,7 @@ import type {
   DragStartEvent,
   DroppableContainer,
 } from '@dnd-kit/core'
+import type { BlockMinutes } from '../calendar/calendar-logic'
 import type { BoardData, ProjectWithTasks, Task } from '../types'
 
 type DragKind = 'proj' | 'task' | 'fitem' | 'cal' | null
@@ -520,12 +527,16 @@ function FastDragOverlay({
 function calendarDropAt(
   dst: { kind: 'day' | 'allday'; key: string },
   ghostTop: number,
+  blockMinutes: BlockMinutes,
 ): number {
   const dayStart = Number(dst.key)
   if (dst.kind === 'allday') return dayStart
   const column = document.querySelector(`[data-cal-day="${dst.key}"]`)
   const top = column?.getBoundingClientRect().top ?? ghostTop
-  return atMinute(dayStart, dropMinute(ghostTop - top))
+  return atMinute(
+    dayStart,
+    dropMinute(ghostTop - top, blockMinutes, hourPxFor(blockMinutes)),
+  )
 }
 
 function useMountWhenIdle(needed: boolean) {
@@ -563,6 +574,11 @@ export function BoardView({
 
   const [showDone, setShowDone] = useLocalFlag('lifeos-show-done', false)
   const [focusOpen, setFocusOpen] = useLocalFlag('lifeos-focus-open', true)
+  const [storedBlockMinutes, setBlockMinutes] = useLocalNumber(
+    'lifeos-calendar-block',
+    DEFAULT_BLOCK_MINUTES,
+  )
+  const blockMinutes = normalizeBlockMinutes(storedBlockMinutes)
   // The keybinding handler in TaskDetailsHost closes over `toggleFocus`.
   // Reading the flag through a ref keeps that handler's identity off the
   // flag's identity, so the host's context value (and every row consuming
@@ -677,6 +693,7 @@ export function BoardView({
       const dueAt = calendarDropAt(
         { kind: dst.kind, key: dst.key },
         pointerPos.current.y - grabOffset.current.y,
+        blockMinutes,
       )
       if (findTask(src.key)?.task.dueAt !== dueAt)
         updateTask.mutate({ id: src.key, dueAt })
@@ -832,6 +849,8 @@ export function BoardView({
               <CalendarView
                 board={board}
                 showDone={showDone}
+                blockMinutes={blockMinutes}
+                onBlockMinutesChange={setBlockMinutes}
                 active={view === 'calendar'}
               />
             ) : null}

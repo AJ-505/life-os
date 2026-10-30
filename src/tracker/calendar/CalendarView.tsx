@@ -4,7 +4,7 @@ import { addDays } from 'date-fns/addDays'
 import { format } from 'date-fns/format'
 import { isSameMonth } from 'date-fns/isSameMonth'
 import { isToday } from 'date-fns/isToday'
-import { ChevronLeft, ChevronRight, Flag } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Flag, Grid2x2 } from 'lucide-react'
 
 import { cn, useMediaQuery } from '#/design-system'
 import { Button } from '#/design-system/ui/button'
@@ -29,19 +29,27 @@ import { useBoardScope } from '../board-scope'
 import { activeProjects } from '../board/board-logic'
 import { useBoardUI } from '../board/board-ui'
 import {
-  EVENT_MINUTES,
-  HOUR_PX,
+  BLOCK_MINUTES,
   allDayId,
   atMinute,
+  blockShortLabel,
   calTaskId,
   calendarWeek,
   dayId,
+  hourPxFor,
+  labelStep,
   minuteOfDay,
   resizedMinutes,
+  slotMinute,
   visibleDays,
 } from './calendar-logic'
 
-import type { CalendarDay, CalendarTask, PlacedTask } from './calendar-logic'
+import type {
+  BlockMinutes,
+  CalendarDay,
+  CalendarTask,
+  PlacedTask,
+} from './calendar-logic'
 import type { BoardData, Project, Task } from '../types'
 
 type Draft = { dayStart: number; minute: number | null }
@@ -50,8 +58,6 @@ export function calendarSlotAt(point: { x: number; y: number }) {
   const hit = document.elementFromPoint(point.x, point.y)
   return hit?.closest<HTMLElement>('[data-cal-drop]')?.dataset.calDrop ?? null
 }
-
-const HOURS = Array.from({ length: 24 }, (_, h) => h)
 
 function useNow() {
   const [now, setNow] = useState(() => Date.now())
@@ -78,11 +84,13 @@ export function CalendarEventCard({
   task,
   project,
   compact,
+  tight,
   dragging,
 }: {
   task: Task
   project: Project
   compact?: boolean
+  tight?: boolean
   dragging?: boolean
 }) {
   return (
@@ -91,6 +99,7 @@ export function CalendarEventCard({
       className={cn(
         '@container flex h-full min-w-0 flex-col overflow-hidden rounded-md border-l-2 border-proj bg-proj/15 px-1.5 text-left text-proj transition-colors hover:bg-proj/25',
         compact ? 'py-0.5' : 'py-1',
+        tight && 'py-0',
         task.done && 'opacity-55',
         dragging && 'bg-proj/30 shadow-lg ring-2 ring-signal/40',
       )}
@@ -98,6 +107,7 @@ export function CalendarEventCard({
       <span
         className={cn(
           'truncate text-xs font-medium leading-tight text-foreground @max-[5.5rem]:line-clamp-2 @max-[5.5rem]:whitespace-normal @max-[5.5rem]:[overflow-wrap:anywhere]',
+          tight && 'text-[10px] leading-none',
           task.done && 'line-through decoration-border',
         )}
       >
@@ -115,11 +125,13 @@ export function CalendarEventCard({
 function DraggableTask({
   entry,
   compact,
+  tight,
   className,
   style,
 }: {
   entry: CalendarTask
   compact?: boolean
+  tight?: boolean
   className?: string
   style?: React.CSSProperties
 }) {
@@ -149,6 +161,7 @@ function DraggableTask({
         task={entry.task}
         project={entry.project}
         compact={compact}
+        tight={tight}
       />
     </button>
   )
@@ -156,9 +169,13 @@ function DraggableTask({
 
 function ResizeHandle({
   placed,
+  hourPx,
+  blockMinutes,
   onLive,
 }: {
   placed: PlacedTask
+  hourPx: number
+  blockMinutes: BlockMinutes
   onLive: (minutes: number | null) => void
 }) {
   const updateTask = useUpdateTask()
@@ -169,6 +186,8 @@ function ResizeHandle({
       placed.start,
       placed.minutes,
       clientY - (drag.current?.y ?? clientY),
+      blockMinutes,
+      hourPx,
     )
 
   return (
@@ -217,7 +236,15 @@ function ResizeHandle({
   )
 }
 
-function TimedTask({ placed }: { placed: PlacedTask }) {
+function TimedTask({
+  placed,
+  hourPx,
+  blockMinutes,
+}: {
+  placed: PlacedTask
+  hourPx: number
+  blockMinutes: BlockMinutes
+}) {
   const [live, setLive] = useState<number | null>(null)
   const minutes = live ?? placed.minutes
 
@@ -225,29 +252,43 @@ function TimedTask({ placed }: { placed: PlacedTask }) {
     <div
       className="absolute z-10 p-px"
       style={{
-        top: (placed.start / 60) * HOUR_PX,
-        height: (minutes / 60) * HOUR_PX,
+        top: (placed.start / 60) * hourPx,
+        height: (minutes / 60) * hourPx,
         left: `${(placed.lane / placed.lanes) * 100}%`,
         width: `${100 / placed.lanes}%`,
       }}
     >
-      <DraggableTask entry={placed} className="block size-full" />
-      <ResizeHandle placed={placed} onLive={setLive} />
+      <DraggableTask
+        entry={placed}
+        compact={placed.minutes < 30}
+        tight={placed.minutes < 20}
+        className="block size-full"
+      />
+      <ResizeHandle
+        placed={placed}
+        hourPx={hourPx}
+        blockMinutes={blockMinutes}
+        onLive={setLive}
+      />
     </div>
   )
 }
 
-function DraftAnchor({ minute }: { minute: number | null }) {
-  if (minute === null)
-    return (
-      <PopoverAnchor className="h-5 rounded-md border border-dashed border-signal/60 bg-signal/10" />
-    )
+function DraftAnchor({
+  minute,
+  hourPx,
+  blockMinutes,
+}: {
+  minute: number
+  hourPx: number
+  blockMinutes: BlockMinutes
+}) {
   return (
     <PopoverAnchor
-      className="pointer-events-none absolute inset-x-0 z-20 rounded-md border border-dashed border-signal/60 bg-signal/10 px-1.5 py-1 font-mono text-[10px] text-signal"
+      className="pointer-events-none absolute inset-x-0 z-20 rounded-md border border-dashed border-signal/60 bg-signal/10 px-1.5 py-0.5 font-mono text-[10px] leading-none text-signal"
       style={{
-        top: (minute / 60) * HOUR_PX,
-        height: (EVENT_MINUTES / 60) * HOUR_PX,
+        top: (minute / 60) * hourPx,
+        height: (blockMinutes / 60) * hourPx,
       }}
     >
       {timeLabel(minute)}
@@ -302,7 +343,7 @@ function AllDayCell({
         />
       ))}
       {draft?.dayStart === day.start && draft.minute === null ? (
-        <DraftAnchor minute={null} />
+        <PopoverAnchor className="h-5 rounded-md border border-dashed border-signal/60 bg-signal/10" />
       ) : null}
     </div>
   )
@@ -312,11 +353,15 @@ function DayColumn({
   day,
   now,
   draft,
+  blockMinutes,
+  hourPx,
   onDraft,
 }: {
   day: CalendarDay
   now: number
   draft: Draft | null
+  blockMinutes: BlockMinutes
+  hourPx: number
   onDraft: (draft: Draft) => void
 }) {
   const { setNodeRef, isOver } = useDroppable({
@@ -324,6 +369,7 @@ function DayColumn({
     data: { type: 'day' },
   })
   const today = isToday(day.start)
+  const blockPx = (blockMinutes / 60) * hourPx
 
   return (
     <div
@@ -333,8 +379,10 @@ function DayColumn({
       onClick={(e) => {
         if (e.target !== e.currentTarget) return
         const offset = e.clientY - e.currentTarget.getBoundingClientRect().top
-        const minute = Math.floor((offset / HOUR_PX) * 2) * 30
-        onDraft({ dayStart: day.start, minute: Math.min(minute, 23 * 60) })
+        onDraft({
+          dayStart: day.start,
+          minute: slotMinute(offset, blockMinutes),
+        })
       }}
       className={cn(
         'relative min-w-0 cursor-pointer border-l transition-colors',
@@ -342,26 +390,40 @@ function DayColumn({
         isOver && 'bg-accent/50',
       )}
       style={{
-        height: 24 * HOUR_PX,
+        height: 24 * hourPx,
         backgroundImage:
-          'linear-gradient(to bottom, var(--border) 1px, transparent 1px)',
-        backgroundSize: `100% ${HOUR_PX}px`,
+          blockMinutes < 60
+            ? 'linear-gradient(to bottom, var(--border) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in oklab, var(--border) 45%, transparent) 1px, transparent 1px)'
+            : 'linear-gradient(to bottom, var(--border) 1px, transparent 1px)',
+        backgroundSize:
+          blockMinutes < 60
+            ? `100% ${hourPx}px, 100% ${blockPx}px`
+            : `100% ${hourPx}px`,
       }}
     >
       {day.timed.map((placed) => (
-        <TimedTask key={placed.task.id} placed={placed} />
+        <TimedTask
+          key={placed.task.id}
+          placed={placed}
+          hourPx={hourPx}
+          blockMinutes={blockMinutes}
+        />
       ))}
       {today ? (
         <div
           className="pointer-events-none absolute inset-x-0 z-30 flex items-center"
-          style={{ top: (minuteOfDay(now) / 60) * HOUR_PX }}
+          style={{ top: (minuteOfDay(now) / 60) * hourPx }}
         >
           <span className="-ml-1 size-2 rounded-full bg-signal" />
           <span className="h-px flex-1 bg-signal" />
         </div>
       ) : null}
       {draft?.dayStart === day.start && draft.minute !== null ? (
-        <DraftAnchor minute={draft.minute} />
+        <DraftAnchor
+          minute={draft.minute}
+          hourPx={hourPx}
+          blockMinutes={blockMinutes}
+        />
       ) : null}
     </div>
   )
@@ -370,12 +432,14 @@ function DayColumn({
 function QuickCreate({
   board,
   draft,
+  blockMinutes,
   projectId,
   onProjectChange,
   onDone,
 }: {
   board: BoardData
   draft: Draft
+  blockMinutes: BlockMinutes
   projectId: string | null
   onProjectChange: (id: string) => void
   onDone: () => void
@@ -408,6 +472,7 @@ function QuickCreate({
       title: t,
       position: positionAfter(project.tasks.filter((x) => !x.parentId)),
       dueAt,
+      durationMinutes: draft.minute === null ? null : blockMinutes,
       createdFrom: 'calendar',
       inFocus: inFocus || undefined,
     })
@@ -496,10 +561,14 @@ function useSwipe(onSwipe: (direction: 1 | -1) => void) {
 export function CalendarView({
   board,
   showDone,
+  blockMinutes,
+  onBlockMinutesChange,
   active,
 }: {
   board: BoardData
   showDone: boolean
+  blockMinutes: BlockMinutes
+  onBlockMinutesChange: (minutes: number) => void
   active: boolean
 }) {
   const wide = useMediaQuery('(min-width: 768px)')
@@ -510,6 +579,13 @@ export function CalendarView({
   const scrollRef = useRef<HTMLDivElement>(null)
   const scrolledRef = useRef(false)
   const now = useNow()
+  const hourPx = hourPxFor(blockMinutes)
+  const step = labelStep(blockMinutes)
+  const labelEvery = wide ? step : Math.max(step, 60)
+  const labelMinutes = Array.from(
+    { length: (24 * 60) / labelEvery - 1 },
+    (_, index) => (index + 1) * labelEvery,
+  )
 
   const days = visibleDays(anchor, span)
   const week = calendarWeek(board, days, showDone)
@@ -521,8 +597,26 @@ export function CalendarView({
     const el = scrollRef.current
     if (!active || !el || scrolledRef.current) return
     scrolledRef.current = true
-    el.scrollTop = Math.max(0, new Date().getHours() - 2) * HOUR_PX
-  }, [active])
+    el.scrollTop = Math.max(0, new Date().getHours() - 2) * hourPx
+  }, [active, hourPx])
+
+  // Keep the same time of day in view when the grid resolution changes. The
+  // scroll offset is captured before the new height lands, because the browser
+  // clamps a shrinking scroll area to its new maximum on layout.
+  const pendingScrollHour = useRef<number | null>(null)
+  const changeBlock = (minutes: number) => {
+    if (minutes === blockMinutes) return
+    const el = scrollRef.current
+    if (el) pendingScrollHour.current = el.scrollTop / hourPx
+    onBlockMinutesChange(minutes)
+  }
+  useEffect(() => {
+    const el = scrollRef.current
+    const hour = pendingScrollHour.current
+    if (!el || hour === null) return
+    pendingScrollHour.current = null
+    el.scrollTop = hour * hourPx
+  }, [hourPx])
 
   const shift = (direction: 1 | -1) => {
     setDraft(null)
@@ -562,9 +656,33 @@ export function CalendarView({
         >
           <ChevronRight className="size-4" />
         </Button>
-        <h2 className="min-w-0 truncate text-sm font-semibold">
+        <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">
           {weekLabel(days)}
         </h2>
+        <Select
+          value={String(blockMinutes)}
+          onValueChange={(value) => changeBlock(Number(value))}
+        >
+          <SelectTrigger
+            size="sm"
+            className="h-7 w-auto shrink-0 gap-1 px-2 text-xs"
+            aria-label="Calendar block size"
+            title="Calendar block size"
+          >
+            <Grid2x2 className="hidden size-3.5 sm:block" />
+            <span className="hidden text-muted-foreground sm:inline">
+              Block
+            </span>
+            <SelectValue>{blockShortLabel(blockMinutes)}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {BLOCK_MINUTES.map((minutes) => (
+              <SelectItem key={minutes} value={String(minutes)}>
+                {minutes >= 60 ? '1 hour' : `${minutes} minutes`}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <CalendarSyncButton />
       </div>
 
@@ -612,14 +730,14 @@ export function CalendarView({
             </div>
 
             <div className="grid" style={columns}>
-              <div className="relative" style={{ height: 24 * HOUR_PX }}>
-                {HOURS.slice(1).map((h) => (
+              <div className="relative" style={{ height: 24 * hourPx }}>
+                {labelMinutes.map((minute) => (
                   <span
-                    key={h}
-                    className="absolute right-1.5 -translate-y-1/2 font-mono text-[10px] text-muted-foreground"
-                    style={{ top: h * HOUR_PX }}
+                    key={minute}
+                    className="absolute right-1.5 -translate-y-1/2 whitespace-nowrap font-mono text-[10px] text-muted-foreground"
+                    style={{ top: (minute / 60) * hourPx }}
                   >
-                    {timeLabel(h * 60)}
+                    {timeLabel(minute)}
                   </span>
                 ))}
               </div>
@@ -629,6 +747,8 @@ export function CalendarView({
                   day={day}
                   now={now}
                   draft={draft}
+                  blockMinutes={blockMinutes}
+                  hourPx={hourPx}
                   onDraft={setDraft}
                 />
               ))}
@@ -647,6 +767,7 @@ export function CalendarView({
               key={`${draft.dayStart}:${draft.minute}`}
               board={board}
               draft={draft}
+              blockMinutes={blockMinutes}
               projectId={projectId}
               onProjectChange={setProjectId}
               onDone={() => setDraft(null)}
