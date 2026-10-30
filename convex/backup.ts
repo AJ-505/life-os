@@ -68,6 +68,16 @@ const backupTask = v.object({
   // The pull-side association. Optional for the same reason: backups written
   // before imports existed have no field, and restoring one must not fail.
   importedFromEventId: v.optional(v.union(v.string(), v.null())),
+  repeat: v.optional(
+    v.union(
+      v.literal('daily'),
+      v.literal('weekdays'),
+      v.literal('weekly'),
+      v.literal('monthly'),
+      v.literal('yearly'),
+      v.null(),
+    ),
+  ),
 })
 
 async function personalRows(ctx: QueryCtx | MutationCtx, userId: string) {
@@ -128,6 +138,7 @@ export const exportBackup = query({
         addToCalendar: t.addToCalendar ?? false,
         calendarEventId: t.calendarEventId ?? null,
         importedFromEventId: t.importedFromEventId ?? null,
+        repeat: t.repeat ?? null,
       })),
     }
   },
@@ -283,6 +294,7 @@ async function importBackupSide(
       addToCalendar: Boolean(t.addToCalendar),
       calendarEventId: t.calendarEventId ?? null,
       importedFromEventId: t.importedFromEventId ?? null,
+      repeat: t.repeat ?? null,
       inFocus: Boolean(t.inFocus),
       focusOrder: Number(t.focusOrder ?? 0),
       createdAt: fromIso(t.createdAt) ?? Date.now(),

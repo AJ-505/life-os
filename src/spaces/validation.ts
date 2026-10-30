@@ -1,6 +1,8 @@
 import 'zod/compile'
 import * as z from 'zod'
 
+import { REPEAT_RULES } from '../../convex/recurrence'
+
 /** The space row as the server shapes it. */
 export const space = z.object({
   id: z.string(),
@@ -63,6 +65,7 @@ const backupTaskSchema = z.object({
   calendarEventId: z.string().nullable().optional(),
   // Same reason as above: backups written before imports existed restore fine.
   importedFromEventId: z.string().nullable().optional(),
+  repeat: z.enum(REPEAT_RULES).nullable().optional(),
 })
 
 const backupFileSchema = z.object({

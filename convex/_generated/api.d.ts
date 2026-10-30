@@ -14,6 +14,7 @@ import type * as calendarPull from "../calendarPull.js";
 import type * as crons from "../crons.js";
 import type * as lib from "../lib.js";
 import type * as migrations from "../migrations.js";
+import type * as recurrence from "../recurrence.js";
 import type * as release from "../release.js";
 import type * as settings from "../settings.js";
 import type * as spaces from "../spaces.js";
@@ -32,6 +33,7 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   lib: typeof lib;
   migrations: typeof migrations;
+  recurrence: typeof recurrence;
   release: typeof release;
   settings: typeof settings;
   spaces: typeof spaces;

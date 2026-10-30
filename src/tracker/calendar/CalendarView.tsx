@@ -4,7 +4,7 @@ import { addDays } from 'date-fns/addDays'
 import { format } from 'date-fns/format'
 import { isSameMonth } from 'date-fns/isSameMonth'
 import { isToday } from 'date-fns/isToday'
-import { ChevronLeft, ChevronRight, Flag, Grid2x2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Flag, Grid2x2, Repeat } from 'lucide-react'
 
 import { cn, useMediaQuery } from '#/design-system'
 import { Button } from '#/design-system/ui/button'
@@ -99,13 +99,16 @@ export function CalendarEventCard({
   compact,
   tight,
   dragging,
+  occurrence,
 }: {
   task: Task
   project: Project
   compact?: boolean
   tight?: boolean
   dragging?: boolean
+  occurrence?: number
 }) {
+  const at = occurrence ?? task.dueAt
   return (
     <div
       data-proj={project.color}
@@ -117,32 +120,46 @@ export function CalendarEventCard({
         dragging && 'bg-proj/30 shadow-lg ring-2 ring-signal/40',
       )}
     >
-      <span
-        className={cn(
-          'truncate text-xs font-medium leading-tight text-foreground @max-[5.5rem]:line-clamp-2 @max-[5.5rem]:whitespace-normal @max-[5.5rem]:[overflow-wrap:anywhere]',
-          tight && 'text-[10px] leading-none',
-          task.done && 'line-through decoration-border',
-        )}
-      >
-        {task.title}
-      </span>
-      {!compact && task.dueAt !== null ? (
+      <div className="flex min-w-0 items-start gap-1">
+        <span
+          className={cn(
+            'truncate text-xs font-medium leading-tight text-foreground @max-[5.5rem]:line-clamp-2 @max-[5.5rem]:whitespace-normal @max-[5.5rem]:[overflow-wrap:anywhere]',
+            tight && 'text-[10px] leading-none',
+            task.done && 'line-through decoration-border',
+          )}
+        >
+          {task.title}
+        </span>
+        {task.repeat !== null ? (
+          <Repeat
+            aria-label="Repeats"
+            className="mt-px size-2.5 shrink-0 opacity-60"
+          />
+        ) : null}
+      </div>
+      {!compact && at !== null ? (
         <span className="truncate font-mono text-[10px] leading-tight @max-[5.5rem]:hidden">
-          {timeLabel(minuteOfDay(task.dueAt))}
+          {timeLabel(minuteOfDay(at))}
         </span>
       ) : null}
     </div>
   )
 }
 
-function overviewWhen(task: Task): string {
-  if (task.dueAt === null) return 'No date'
-  if (isAllDay(task.dueAt))
-    return `All day · ${format(task.dueAt, 'EEE d MMM')}`
-  return `${format(task.dueAt, 'EEE d MMM')} · ${timeLabel(minuteOfDay(task.dueAt))} – ${timeLabel(minuteOfDay(task.dueAt + taskMinutes(task) * 60_000))}`
+function overviewWhen(task: Task, at: number): string {
+  if (isAllDay(at)) return `All day · ${format(at, 'EEE d MMM')}`
+  return `${format(at, 'EEE d MMM')} · ${timeLabel(minuteOfDay(at))} – ${timeLabel(minuteOfDay(at + taskMinutes(task) * 60_000))}`
 }
 
-function TaskOverview({ task, project }: { task: Task; project: Project }) {
+function TaskOverview({
+  task,
+  project,
+  occurrence,
+}: {
+  task: Task
+  project: Project
+  occurrence: number
+}) {
   return (
     <div data-proj={project.color} className="flex min-w-0 flex-col gap-2">
       <p
@@ -154,7 +171,7 @@ function TaskOverview({ task, project }: { task: Task; project: Project }) {
         {task.title}
       </p>
       <p className="font-mono text-[11px] text-muted-foreground">
-        {overviewWhen(task)}
+        {overviewWhen(task, occurrence)}
       </p>
       {task.notes ? (
         <p className="line-clamp-4 whitespace-pre-line break-words text-xs leading-snug text-muted-foreground">
@@ -166,7 +183,7 @@ function TaskOverview({ task, project }: { task: Task; project: Project }) {
           <span className="size-1.5 rounded-full bg-proj" />
           {project.name}
         </span>
-        {task.dueAt !== null && !isAllDay(task.dueAt) ? (
+        {!isAllDay(occurrence) ? (
           <span className="rounded-full border px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
             {durationLabel(taskMinutes(task))}
           </span>
@@ -203,7 +220,7 @@ function DraggableTask({
 }) {
   const { openTask, setHovered } = useBoardUI()
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: calTaskId(entry.task.id),
+    id: calTaskId(entry.task.id, entry.occurrence),
     data: { type: 'cal', taskId: entry.task.id },
   })
   const [hoverOpen, setHoverOpen] = useState(false)
@@ -239,7 +256,7 @@ function DraggableTask({
       window.removeEventListener('scroll', close, { capture: true })
       window.removeEventListener('blur', close)
     }
-  }, [hoverOpen])
+  }, [hoverOpen, setHovered])
 
   return (
     <Popover open={hoverOpen && !isDragging}>
@@ -270,6 +287,7 @@ function DraggableTask({
             project={entry.project}
             compact={compact}
             tight={tight}
+            occurrence={entry.occurrence}
           />
         </button>
       </PopoverAnchor>
@@ -281,7 +299,11 @@ function DraggableTask({
         className="pointer-events-none w-64 data-[state=closed]:animate-none!"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <TaskOverview task={entry.task} project={entry.project} />
+        <TaskOverview
+          task={entry.task}
+          project={entry.project}
+          occurrence={entry.occurrence}
+        />
       </PopoverContent>
     </Popover>
   )
@@ -485,7 +507,7 @@ function AllDayCell({
       ))}
       {day.allDay.map((entry) => (
         <DraggableTask
-          key={entry.task.id}
+          key={`${entry.task.id}@${entry.occurrence}`}
           entry={entry}
           compact
           className="h-5"
@@ -769,7 +791,9 @@ function useSwipe(onSwipe: (direction: 1 | -1) => void) {
 /** A stable React key across the two entry kinds: a task id and a Google event
  *  id never collide by construction. */
 function entryKey(entry: TimedEntry): string {
-  return entry.kind === 'task' ? entry.task.id : entry.event.eventId
+  return entry.kind === 'task'
+    ? `${entry.task.id}@${entry.occurrence}`
+    : entry.event.eventId
 }
 
 export function CalendarView({

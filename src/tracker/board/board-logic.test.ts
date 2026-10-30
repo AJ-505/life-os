@@ -7,6 +7,7 @@ import {
   descendantIds,
   focusDrop,
   focusTasks,
+  parseDragId,
   withTasksIn,
 } from './board-logic'
 import { NO_PROJECT_ID } from '../types'
@@ -36,6 +37,7 @@ function task(id: string, parentId: string | null): Task {
     dueAt: null,
     reminderMinutes: null,
     durationMinutes: null,
+    repeat: null,
     addToCalendar: false,
     calendarEventId: null,
     calendarSyncIssue: null,
@@ -253,5 +255,31 @@ describe('the no-project bucket', () => {
   it('drops tasks aimed at a project the board does not have', () => {
     const board = [project('p1', [])]
     expect(withTasksIn(board, 'gone', null, [at('a', 1)])).toEqual(board)
+  })
+})
+
+describe('parseDragId', () => {
+  it('reads a plain calendar drag id', () => {
+    expect(parseDragId('cal@task-1')).toEqual({
+      kind: 'cal',
+      key: 'task-1',
+      occurrence: null,
+    })
+  })
+
+  it('splits the occurrence off a repeating calendar drag id', () => {
+    expect(parseDragId('cal@task-1@1761000000000')).toEqual({
+      kind: 'cal',
+      key: 'task-1',
+      occurrence: 1761000000000,
+    })
+  })
+
+  it('leaves the other kinds without an occurrence', () => {
+    expect(parseDragId('task@task-1')).toEqual({
+      kind: 'task',
+      key: 'task-1',
+      occurrence: null,
+    })
   })
 })

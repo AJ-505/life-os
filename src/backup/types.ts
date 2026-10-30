@@ -1,6 +1,8 @@
 /** Wire format for the JSON backup file. Dates travel as ISO strings (matching
  *  the original on-device backups, so old files still import). The Convex
  *  `exportBackup`/`importBackup` functions produce and consume this shape. */
+import type { RepeatRule } from '../../convex/recurrence'
+
 export interface BackupProject {
   id: string
   name: string
@@ -36,6 +38,7 @@ export interface BackupTask {
   durationMinutes?: number | null
   addToCalendar?: boolean | null
   calendarEventId?: string | null
+  repeat?: RepeatRule | null
 }
 
 /** Backup covers the personal board only: a space's projects are shared, so a
