@@ -790,8 +790,8 @@ export function TaskDetails({
             className="field-sizing-fixed max-h-64 resize-y"
           />
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2 flex flex-col gap-1.5">
               <Label className="os-label">Due</Label>
               <div className="flex items-center gap-1.5">
                 <Popover open={dueOpen} onOpenChange={setDueOpen}>
@@ -926,41 +926,40 @@ export function TaskDetails({
                   ) : null}
                 </div>
               ) : null}
-              <div className="flex flex-col gap-1.5">
-                <Label className="os-label">Repeat</Label>
-                <Select
-                  value={localRepeat ?? 'never'}
-                  onValueChange={(value) =>
-                    setLocalRepeat(isRepeatRule(value) ? value : null)
-                  }
-                  disabled={localDueAt === null}
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label className="os-label">Repeat</Label>
+              <Select
+                value={localRepeat ?? 'none'}
+                onValueChange={(value) =>
+                  setLocalRepeat(isRepeatRule(value) ? value : null)
+                }
+                disabled={localDueAt === null}
+              >
+                <SelectTrigger
+                  size="sm"
+                  className="w-full text-xs"
+                  aria-label="Repeat"
                 >
-                  <SelectTrigger
-                    size="sm"
-                    className="text-xs"
-                    aria-label="Repeat"
-                  >
-                    <SelectValue>
-                      {localRepeat === null
-                        ? 'Never'
-                        : REPEAT_LABELS[localRepeat]}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="never">Never</SelectItem>
-                    {REPEAT_RULES.map((rule) => (
-                      <SelectItem key={rule} value={rule}>
-                        {REPEAT_LABELS[rule]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {localDueAt === null ? (
-                  <p className="text-[11px] text-muted-foreground">
-                    Set a date to repeat.
-                  </p>
-                ) : null}
-              </div>
+                  <SelectValue>
+                    {localRepeat === null ? 'None' : REPEAT_LABELS[localRepeat]}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  {REPEAT_RULES.map((rule) => (
+                    <SelectItem key={rule} value={rule}>
+                      {REPEAT_LABELS[rule]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {localDueAt === null ? (
+                <p className="text-[11px] text-muted-foreground">
+                  Set a date to repeat.
+                </p>
+              ) : null}
             </div>
 
             <div className="flex flex-col gap-1.5">
@@ -977,7 +976,7 @@ export function TaskDetails({
                   })
                 }}
               >
-                <SelectTrigger size="sm" className="text-xs">
+                <SelectTrigger size="sm" className="w-full text-xs">
                   {/* A bare <SelectValue /> echoes the selected item's own
                       text, which is blank when the value has no matching item.
                       We pass the name in so an archived project still reads. */}
