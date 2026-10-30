@@ -43,6 +43,11 @@ export interface Task {
   calendarEventId: string | null
   /** Why the last background push to Google failed, or null when it worked. */
   calendarSyncIssue: CalendarSyncIssue | null
+  /** The Google event this task was pulled back from, or null for any task
+   *  that was not an import. Copy semantics: the link is only ever used to
+   *  keep the same event from being imported twice — edits on either side do
+   *  not propagate. */
+  importedFromEventId: string | null
   inFocus: boolean
   focusOrder: number
   createdAt: number

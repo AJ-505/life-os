@@ -35,7 +35,10 @@ import { getUserSettings, requireUserId, taskByAppId } from './lib'
  * to remember. The public `syncTask` exists for an explicit resync.
  */
 
-const GOOGLE_EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events'
+/** Shared with the pull side (`calendarPull.ts`), which reads events with the
+ *  same grant. */
+export const GOOGLE_EVENTS_SCOPE =
+  'https://www.googleapis.com/auth/calendar.events'
 const GCAL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events'
 
 /** How long a task's calendar block runs. Tasks have a due *moment*, not a
@@ -119,20 +122,25 @@ export type SyncResult =
       action: 'created' | 'updated' | 'deleted' | 'noop'
       link: string | null
     }
-  | {
-      ok: false
-      reason:
-        | 'not_configured'
-        | 'not_connected'
-        | 'reauth_required'
-        | 'missing_scope'
-        | 'no_timezone'
-        | 'not_personal'
-        | 'event_removed'
-        | 'rate_limited'
-        | 'google_error'
-      detail: string
-    }
+  | SyncFailure
+
+/** Every not-ok outcome the push can report. Narrower aliases stay assignable
+ *  to this, so the pull side (whose reason set is a subset) can share the
+ *  outcome helpers without widening its own type. */
+export type SyncFailure = {
+  ok: false
+  reason:
+    | 'not_configured'
+    | 'not_connected'
+    | 'reauth_required'
+    | 'missing_scope'
+    | 'no_timezone'
+    | 'not_personal'
+    | 'event_removed'
+    | 'rate_limited'
+    | 'google_error'
+  detail: string
+}
 
 /* -------------------------------------------------------------- internals */
 
@@ -271,10 +279,9 @@ export const setEventId = internalMutation({
  * problems with two different fixes — and its expiry, so an expired token is
  * reported as needing a reconnect instead of being sent and rejected.
  */
-/** Every network call goes through here, so a transport failure is a typed
- *  outcome instead of a throw: the client can render a reason, and a scheduled
- *  run is a result rather than a failed job. */
-async function request(
+/** Shared with the pull side, which needs the same error-to-outcome maps: one
+ *  home for what an HTTP status means, or two modules drift apart. */
+export async function request(
   url: string,
   init: RequestInit,
 ): Promise<{ ok: true; response: Response } | { ok: false; detail: string }> {
@@ -331,7 +338,7 @@ function clerkRefusal(status: number) {
   return null
 }
 
-async function googleAccessToken(clerkUserId: string): Promise<
+export async function googleAccessToken(clerkUserId: string): Promise<
   | { ok: true; token: string; scopes: Array<string> }
   | {
       ok: false
@@ -531,12 +538,17 @@ export function taskWantsEvent(
     done: boolean
     archived: boolean
     spaceId?: string | null
+    importedFromEventId?: string | null
   },
   settings: { syncEnabled: boolean; autoAdd: boolean },
 ): boolean {
   return (
     settings.syncEnabled &&
     !task.spaceId &&
+    // A task pulled back from Google is a copy of an event that already lives
+    // on the calendar. Pushing it would create a second event for the same
+    // slot, one Life OS no longer owns, so imports are never pushed.
+    (task.importedFromEventId ?? null) === null &&
     (task.addToCalendar === true || settings.autoAdd) &&
     task.dueAt !== null &&
     !task.done &&
@@ -548,7 +560,7 @@ function wantsEvent(snapshot: Snapshot): boolean {
   return taskWantsEvent(snapshot, snapshot)
 }
 
-function transportOutcome(detail: string): SyncResult {
+export function transportOutcome(detail: string): SyncFailure {
   return {
     ok: false,
     reason: 'google_error',
@@ -556,7 +568,7 @@ function transportOutcome(detail: string): SyncResult {
   }
 }
 
-function statusOutcome(status: number, doing: string): SyncResult {
+export function statusOutcome(status: number, doing: string): SyncFailure {
   if (status === 401)
     return {
       ok: false,

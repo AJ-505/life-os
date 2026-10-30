@@ -30,6 +30,7 @@ function task(id: string, parentId: string | null): Task {
     addToCalendar: false,
     calendarEventId: null,
     calendarSyncIssue: null,
+    importedFromEventId: null,
     inFocus: false,
     focusOrder: 0,
     createdAt: 1,

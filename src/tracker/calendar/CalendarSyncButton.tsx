@@ -12,6 +12,7 @@ import {
 } from '#/design-system/ui/popover'
 import { Switch } from '#/design-system/ui/switch'
 import { useGoogleCalendar } from '#/settings/googleCalendar'
+import { lastPulledAt } from './pull'
 import {
   calendarSettingsQueryOptions,
   useUpdateCalendarSettings,
@@ -140,7 +141,33 @@ function CalendarSyncControl() {
             }
           />
         </div>
+        <BackwardSyncNote />
       </PopoverContent>
     </Popover>
   )
+}
+
+/** The line that says the mirror has a read side: your calendar's own events
+ *  appear in Calendar view, read-only, clickable to import. The status shows
+ *  when that read last ran so "my meetings aren't showing" has an answer
+ *  without leaving the popover. */
+function BackwardSyncNote() {
+  const pulled = lastPulledAt()
+  return (
+    <p className="border-t pt-2 text-xs leading-snug text-muted-foreground">
+      Events in your Google calendar also show in Calendar view, read-only.
+      {pulled !== null ? ` Last pull: ${relativeAge(pulled)}.` : null}
+      {pulled === null
+        ? ' They load the first time you open Calendar view.'
+        : null}
+    </p>
+  )
+}
+
+function relativeAge(at: number): string {
+  const seconds = Math.max(0, Math.round((Date.now() - at) / 1000))
+  if (seconds < 60) return 'just now'
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes} min ago`
+  return `${Math.round(minutes / 60)} h ago`
 }

@@ -200,6 +200,7 @@ export function useCreateTask() {
                   addToCalendar: false,
                   calendarEventId: null,
                   calendarSyncIssue: null,
+                  importedFromEventId: null,
                   inFocus: args.inFocus ?? false,
                   focusOrder: args.inFocus ? Date.now() / 1000 : 0,
                   createdAt: Date.now(),

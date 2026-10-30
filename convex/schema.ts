@@ -100,6 +100,11 @@ export default defineSchema({
         v.literal('google_error'),
       ),
     ),
+    // An event that was *pulled back* from Google Calendar rather than pushed.
+    // Set once by `calendarPull.importEvent` and never by anything else, so the
+    // push side (which would create a second event for the same slot) can
+    // exclude these rows with one predicate.
+    importedFromEventId: v.optional(v.union(v.string(), v.null())),
     inFocus: v.boolean(),
     focusOrder: v.number(),
     createdAt: v.number(),
@@ -206,6 +211,40 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index('by_user', ['userId']),
+
+  /**
+   * The read side of the calendar mirror: snapshots of the events that live in
+   * the user's Google calendar, pulled in on demand and rewritten on every
+   * pull. Rows are a *cache*, deliberately: Google's event id is the key, so a
+   * changed event patches in place and a deleted event drops out at the next
+   * prune. Nothing else in the app points at these rows — importing one copies
+   * its id into a task (`importedFromEventId`), and the task then owns itself.
+   *
+   * `start`/`end` are epoch ms built in the *user's* timezone, matching the
+   * push side's wall-clock rule. For an all-day event, `end` is the exclusive
+   * first instant of the day after the last day (multi-day spans survive),
+   * and `durationMinutes` is meaningless — the null it shares with a task.
+   */
+  calendarEvents: defineTable({
+    userId: v.string(),
+    // Google's event id. Stable across edits, so a pull patches the same row
+    // instead of appending a duplicate.
+    eventId: v.string(),
+    title: v.string(),
+    notes: v.union(v.string(), v.null()),
+    location: v.union(v.string(), v.null()),
+    allDay: v.boolean(),
+    start: v.number(),
+    end: v.number(),
+    link: v.union(v.string(), v.null()),
+    // Every pull stamps the rows it fetched, and any row a pull did not touch
+    // is pruned. Absence of a fresh stamp is the only delete signal — Google
+    // does not push us a feed.
+    fetchedAt: v.number(),
+  })
+    .index('by_user_eventId', ['userId', 'eventId'])
+    .index('by_user_start', ['userId', 'start'])
+    .index('by_user_fetchedAt', ['userId', 'fetchedAt']),
 
   /** One row per user, holding a sliding window of failed join attempts. The
    *  throttle exists for the live 6-character legacy codes at roughly 31 bits,
