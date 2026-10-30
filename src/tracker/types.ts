@@ -1,4 +1,5 @@
 import type { Doc } from '../../convex/_generated/dataModel'
+import type { RepeatRule } from '../../convex/recurrence'
 
 /**
  * The tracker domain types. These intentionally mirror the shape returned by
@@ -37,6 +38,7 @@ export interface Task {
   dueAt: number | null
   reminderMinutes: number | null
   durationMinutes: number | null
+  repeat: RepeatRule | null
   /** The user's intent to mirror this task onto Google Calendar. Separate from
    *  `calendarEventId`, which only ever holds a real Google event id. */
   addToCalendar: boolean

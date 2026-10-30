@@ -19,6 +19,7 @@ import {
   taskByAppId,
 } from './lib'
 import { eventsToDelete, taskWantsEvent } from './calendar'
+import { nextOccurrence, usableTimeZone } from './recurrence'
 
 import type { Doc } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
@@ -479,6 +480,17 @@ async function scheduleNewTaskSync(
   })
 }
 
+async function repeatZone(
+  ctx: MutationCtx,
+  userId: string,
+  requested: string | undefined,
+): Promise<string> {
+  const direct = usableTimeZone(requested)
+  if (direct) return direct
+  const settings = await getUserSettings(ctx, userId)
+  return usableTimeZone(settings?.timeZone) ?? 'UTC'
+}
+
 /** Best-effort event deletion for rows about to disappear. The rule for which
  *  events a personal task owns lives in one place (see `eventsToDelete`). */
 async function scheduleEventCleanup(
@@ -681,11 +693,22 @@ export const updateTask = mutation({
     durationMinutes: v.optional(v.union(v.number(), v.null())),
     reminderMinutes: v.optional(v.union(v.number(), v.null())),
     addToCalendar: v.optional(v.boolean()),
+    repeat: v.optional(
+      v.union(
+        v.literal('daily'),
+        v.literal('weekdays'),
+        v.literal('weekly'),
+        v.literal('monthly'),
+        v.literal('yearly'),
+        v.null(),
+      ),
+    ),
+    timeZone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
     const task = await getWritableTask(ctx, userId, args.id)
-    const { id: _id, done, assigneeId, ...rest } = args
+    const { id: _id, done, assigneeId, timeZone, repeat, ...rest } = args
     if (assigneeId !== undefined && assigneeId !== null) {
       if (!task.spaceId)
         throw new Error('Tasks on a personal board cannot be assigned')
@@ -699,12 +722,42 @@ export const updateTask = mutation({
     // comparison below never disagree on whitespace.
     if (args.title !== undefined) patch.title = args.title.trim()
     if (assigneeId !== undefined) patch.assigneeId = assigneeId
+
+    const dueAt = args.dueAt !== undefined ? args.dueAt : task.dueAt
+    const series =
+      dueAt === null
+        ? null
+        : repeat !== undefined
+          ? repeat
+          : (task.repeat ?? null)
+    if (repeat !== undefined || args.dueAt === null) {
+      patch.repeat = series
+      if (series !== null) patch.createdFrom = undefined
+    }
+
     if (done !== undefined) {
-      patch.done = done
-      // Preserve the old stamp when un-ticking, so a task that gets re-opened
-      // and finished again lands at the top of the finished pile by when it was
-      // actually finished this time, not by when it was finished months ago.
-      patch.doneAt = done ? Date.now() : (task.doneAt ?? null)
+      const rolled =
+        done && series !== null && dueAt !== null
+          ? nextOccurrence(
+              dueAt,
+              series,
+              Date.now(),
+              await repeatZone(ctx, userId, timeZone),
+            )
+          : null
+      if (rolled !== null) {
+        // Completing one occurrence rolls the series to its next date instead
+        // of closing the task for good.
+        patch.dueAt = rolled
+        patch.done = false
+        patch.doneAt = null
+      } else {
+        patch.done = done
+        // Preserve the old stamp when un-ticking, so a task that gets re-opened
+        // and finished again lands at the top of the finished pile by when it was
+        // actually finished this time, not by when it was finished months ago.
+        patch.doneAt = done ? Date.now() : (task.doneAt ?? null)
+      }
     }
     await ctx.db.patch(task._id, patch)
     await scheduleCalendarSync(ctx, userId, task, patch)
@@ -748,7 +801,8 @@ export const updateTask = mutation({
       if (
         (args.title !== undefined && args.title.trim() !== task.title) ||
         (args.notes !== undefined && args.notes !== task.notes) ||
-        (args.dueAt !== undefined && args.dueAt !== task.dueAt)
+        (args.dueAt !== undefined && args.dueAt !== task.dueAt) ||
+        (repeat !== undefined && repeat !== (task.repeat ?? null))
       ) {
         await recordTaskActivity(ctx, activityTask, userId, 'updated', {
           detail: 'Task details updated',

@@ -3,7 +3,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { format } from 'date-fns/format'
 import { isPast } from 'date-fns/isPast'
 import { isToday } from 'date-fns/isToday'
-import { CornerDownRight, Crosshair } from 'lucide-react'
+import { CornerDownRight, Crosshair, Repeat } from 'lucide-react'
 
 import { cn } from '#/design-system'
 import { Checkbox } from '#/design-system/ui/checkbox'
@@ -99,6 +99,12 @@ export function TaskRowBody({
           </span>
         ) : null}
       </button>
+      {task.repeat !== null ? (
+        <Repeat
+          aria-label="Repeats"
+          className="mt-1 size-3 shrink-0 text-muted-foreground"
+        />
+      ) : null}
       {task.dueAt ? <DueChip due={task.dueAt} done={task.done} /> : null}
       {spaceId === null ? (
         <button

@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { descendantIds, focusDrop, focusTasks } from './board-logic'
+import {
+  descendantIds,
+  focusDrop,
+  focusTasks,
+  parseDragId,
+} from './board-logic'
 
 import type { ProjectWithTasks, Task } from '../types'
 
@@ -27,6 +32,7 @@ function task(id: string, parentId: string | null): Task {
     dueAt: null,
     reminderMinutes: null,
     durationMinutes: null,
+    repeat: null,
     addToCalendar: false,
     calendarEventId: null,
     calendarSyncIssue: null,
@@ -205,5 +211,31 @@ describe('focusDrop', () => {
       ]),
     ]
     expect(focusDrop(board, 'c', { kind: 'fitem', key: 'a' }, 'before')).toBe(0)
+  })
+})
+
+describe('parseDragId', () => {
+  it('reads a plain calendar drag id', () => {
+    expect(parseDragId('cal@task-1')).toEqual({
+      kind: 'cal',
+      key: 'task-1',
+      occurrence: null,
+    })
+  })
+
+  it('splits the occurrence off a repeating calendar drag id', () => {
+    expect(parseDragId('cal@task-1@1761000000000')).toEqual({
+      kind: 'cal',
+      key: 'task-1',
+      occurrence: 1761000000000,
+    })
+  })
+
+  it('leaves the other kinds without an occurrence', () => {
+    expect(parseDragId('task@task-1')).toEqual({
+      kind: 'task',
+      key: 'task-1',
+      occurrence: null,
+    })
   })
 })

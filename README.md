@@ -28,6 +28,7 @@ The board has two views, switched from its header: **Board** and **Calendar** (`
 - Click an empty slot to add a task there. Pick its project in the popover.
 - Drag a task to another day or time. It snaps to 15 minutes, and the top edge of the block is the new start. Drop it on the all-day row to clear the time.
 - Drag a task from the Focus panel onto the grid to schedule it, or drag a block onto Focus to focus it.
+- Give a dated task a repeat rule (daily, weekdays, weekly, monthly, yearly) in its details. Every occurrence shows in the week, and completing one moves the series to its next date instead of closing it. Clearing the date ends the series.
 
 Spaces get the same view. A task that syncs to Google Calendar moves there too when you reschedule it.
 
@@ -70,7 +71,7 @@ Leaving a space is a real action. A member leaves and loses access; an owner han
 
 Connect Google Calendar in Settings, then a dated personal task can push to your calendar. Set a date and time, pick a reminder (5, 15, 30, or 60 minutes), enable "Add to calendar."
 
-The event follows the task for its whole life: it is created once, renamed and re-timed in place, and removed when the due date is cleared, the task is completed or archived, the task or its project is deleted, or you turn sync off. Events you delete in Google Calendar are respected rather than recreated; **Repair calendar** in Settings is the explicit way to put them back.
+The event follows the task for its whole life: it is created once, renamed and re-timed in place, and removed when the due date is cleared, the task is completed or archived, the task or its project is deleted, or you turn sync off. A repeating task keeps one event that moves to each next occurrence. Events you delete in Google Calendar are respected rather than recreated; **Repair calendar** in Settings is the explicit way to put them back.
 
 Two details worth knowing:
 

@@ -774,7 +774,8 @@ export function BoardView({
         setFocus.mutate({ id: src.key, inFocus: true, focusOrder })
         return
       }
-      if (dst.kind === 'proj') dst = { kind: 'list', key: dst.key }
+      if (dst.kind === 'proj')
+        dst = { kind: 'list', key: dst.key, occurrence: null }
       if (dst.kind !== 'task' && dst.kind !== 'list') return
       const { kind: dstKind, key: dstKey } = dst
       const overProj =

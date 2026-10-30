@@ -40,6 +40,7 @@ function task(id: string, overrides: Partial<Task> = {}): Task {
     dueAt: null,
     reminderMinutes: null,
     durationMinutes: null,
+    repeat: null,
     addToCalendar: false,
     calendarEventId: null,
     calendarSyncIssue: null,
@@ -141,6 +142,7 @@ describe('placeInLanes', () => {
   ) => ({
     task: task(id, { durationMinutes }),
     project: project('p1', []),
+    occurrence: 0,
     start,
   })
   const summary = (items: ReturnType<typeof placeInLanes>) =>
@@ -194,6 +196,7 @@ describe('placeInLanes with mixed durations', () => {
   const item = (id: string, start: number, durationMinutes: number | null) => ({
     task: task(id, { durationMinutes }),
     project: project('p1', []),
+    occurrence: 0,
     start,
   })
 
@@ -382,6 +385,72 @@ describe('calendarWeek', () => {
     const week = calendarWeek([launch], days, true)
     expect(week[thursday].milestones.map((p) => p.id)).toEqual(['launch'])
     expect(week[wednesday].milestones).toEqual([])
+  })
+})
+
+describe('calendarWeek with repeating tasks', () => {
+  const days = weekDays(new Date(2026, 9, 14, 12, 0))
+  const timedPerDay = (week: ReturnType<typeof calendarWeek>) =>
+    week.map((day) => day.timed.length)
+
+  it('places a daily series on every day of the week', () => {
+    const board = [
+      project('p1', [task('standup', { dueAt: at(14, 10), repeat: 'daily' })]),
+    ]
+    const week = calendarWeek(board, days, true)
+    expect(timedPerDay(week)).toEqual([0, 0, 1, 1, 1, 1, 1])
+    expect(week[3].timed[0].start).toBe(600)
+    expect(week[3].timed[0].occurrence).toBe(at(15, 10))
+  })
+
+  it('places a weekly series only on its weekday', () => {
+    const board = [
+      project('p1', [task('review', { dueAt: at(7, 10), repeat: 'weekly' })]),
+    ]
+    const week = calendarWeek(board, days, true)
+    expect(timedPerDay(week)).toEqual([0, 0, 1, 0, 0, 0, 0])
+    expect(week[2].timed[0].task.id).toBe('review')
+  })
+
+  it('keeps every occurrence of one task distinct', () => {
+    const board = [
+      project('p1', [task('water', { dueAt: at(14, 8), repeat: 'daily' })]),
+    ]
+    const week = calendarWeek(board, days, true)
+    const starts = week.flatMap((day) => day.timed.map((p) => p.occurrence))
+    expect(new Set(starts).size).toBe(starts.length)
+  })
+
+  it('repeats an all-day series through the all-day row', () => {
+    const board = [
+      project('p1', [task('pills', { dueAt: at(14, 0), repeat: 'daily' })]),
+    ]
+    const week = calendarWeek(board, days, true)
+    expect(week.map((day) => day.allDay.length)).toEqual([0, 0, 1, 1, 1, 1, 1])
+    expect(week[3].allDay[0].occurrence).toBe(at(15, 0))
+  })
+
+  it('skips weekends for a weekday series', () => {
+    const board = [
+      project('p1', [task('desk', { dueAt: at(16, 9), repeat: 'weekdays' })]),
+    ]
+    const week = calendarWeek(board, days, true)
+    expect(timedPerDay(week)).toEqual([0, 0, 0, 0, 1, 0, 0])
+  })
+
+  it('hides a done series unless done tasks are shown', () => {
+    const board = [
+      project('p1', [
+        task('daily', {
+          dueAt: at(14, 10),
+          repeat: 'daily',
+          done: true,
+          doneAt: 5,
+        }),
+      ]),
+    ]
+    expect(calendarWeek(board, days, false)[2].timed).toEqual([])
+    expect(calendarWeek(board, days, true)[2].timed).toHaveLength(1)
   })
 })
 

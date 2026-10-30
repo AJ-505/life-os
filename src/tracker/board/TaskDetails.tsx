@@ -44,6 +44,7 @@ import { Textarea } from '#/design-system/ui/textarea'
 import { useBoardScope } from '../board-scope'
 import { useSpaceMembers } from '#/spaces/queries'
 import { AssigneeSelect } from '#/spaces/components/AssigneeSelect'
+import { isRepeatRule, REPEAT_RULES } from '../../../convex/recurrence'
 import { POSITION_GAP, newId, positionAfter } from '../types'
 import {
   EVENT_MINUTES,
@@ -65,6 +66,15 @@ import { syncIssueMessage, useGoogleCalendar } from '#/settings/googleCalendar'
 import { toast } from 'sonner'
 
 import type { BoardData, CalendarSyncIssue, Task } from '../types'
+import type { RepeatRule } from '../../../convex/recurrence'
+
+const REPEAT_LABELS: Record<RepeatRule, string> = {
+  daily: 'Every day',
+  weekdays: 'Every weekday',
+  weekly: 'Every week',
+  monthly: 'Every month',
+  yearly: 'Every year',
+}
 
 /**
  * Capture-now / write-later. Optimistic board patches must not run in the same
@@ -511,6 +521,7 @@ export function TaskDetails({
   const [localDuration, setLocalDuration] = useState<number | null>(
     task.durationMinutes,
   )
+  const [localRepeat, setLocalRepeat] = useState<RepeatRule | null>(task.repeat)
   const [endDraft, setEndDraft] = useState<string | null>(null)
   const [endRejected, setEndRejected] = useState(false)
   const [timeInput, setTimeInput] = useState<string>(() =>
@@ -521,6 +532,7 @@ export function TaskDetails({
     setLocalReminder(task.reminderMinutes)
     setLocalDuration(task.durationMinutes)
     setLocalAddToCal(task.addToCalendar)
+    setLocalRepeat(task.repeat)
     setTimeInput(task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00')
   }, [
     task.id,
@@ -528,6 +540,7 @@ export function TaskDetails({
     task.reminderMinutes,
     task.durationMinutes,
     task.addToCalendar,
+    task.repeat,
   ])
 
   const parseTime24 = (s: string): { h: number; m: number } | null => {
@@ -645,6 +658,7 @@ export function TaskDetails({
     const reminderToCommit = localReminder
     const addToCalToCommit = localAddToCal
     const durationToCommit = localDuration
+    const repeatToCommit = localRepeat
     onClose()
     setTimeout(() => {
       p.subtask?.()
@@ -655,6 +669,7 @@ export function TaskDetails({
         reminderMinutes?: number | null
         durationMinutes?: number | null
         addToCalendar?: boolean
+        repeat?: RepeatRule | null
       } = {}
       if (dueAtToCommit !== task.dueAt) patch.dueAt = dueAtToCommit
       if (reminderToCommit !== task.reminderMinutes)
@@ -663,6 +678,7 @@ export function TaskDetails({
         patch.durationMinutes = durationToCommit
       if (addToCalToCommit !== task.addToCalendar)
         patch.addToCalendar = addToCalToCommit
+      if (repeatToCommit !== task.repeat) patch.repeat = repeatToCommit
 
       // The calendar push is not awaited here. `updateTask` schedules it for
       // every calendar-relevant field, so one writer owns the change and the
@@ -699,6 +715,7 @@ export function TaskDetails({
     setLocalDuration(task.durationMinutes)
     setEndDraft(null)
     setLocalAddToCal(task.addToCalendar)
+    setLocalRepeat(task.repeat)
     setTimeInput(task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00')
     // Same capture the close path uses: it reads and clears the new-subtask
     // draft. Dropping the result (instead of committing it) is exactly what a
@@ -806,6 +823,7 @@ export function TaskDetails({
                         setDueOpen(false)
                         if (!d) {
                           setLocalDueAt(null)
+                          setLocalRepeat(null)
                           return
                         }
                         const timeStr = timeInput || '09:00'
@@ -824,6 +842,7 @@ export function TaskDetails({
                         onClick={() => {
                           setDueOpen(false)
                           setLocalDueAt(null)
+                          setLocalRepeat(null)
                         }}
                       >
                         Clear date
@@ -907,6 +926,41 @@ export function TaskDetails({
                   ) : null}
                 </div>
               ) : null}
+              <div className="flex flex-col gap-1.5">
+                <Label className="os-label">Repeat</Label>
+                <Select
+                  value={localRepeat ?? 'never'}
+                  onValueChange={(value) =>
+                    setLocalRepeat(isRepeatRule(value) ? value : null)
+                  }
+                  disabled={localDueAt === null}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className="text-xs"
+                    aria-label="Repeat"
+                  >
+                    <SelectValue>
+                      {localRepeat === null
+                        ? 'Never'
+                        : REPEAT_LABELS[localRepeat]}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="never">Never</SelectItem>
+                    {REPEAT_RULES.map((rule) => (
+                      <SelectItem key={rule} value={rule}>
+                        {REPEAT_LABELS[rule]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {localDueAt === null ? (
+                  <p className="text-[11px] text-muted-foreground">
+                    Set a date to repeat.
+                  </p>
+                ) : null}
+              </div>
             </div>
 
             <div className="flex flex-col gap-1.5">

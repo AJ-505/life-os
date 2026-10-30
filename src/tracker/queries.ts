@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { convexQuery, useConvexMutation } from '@convex-dev/react-query'
 
 import { api } from '../../convex/_generated/api'
+import { localTimeZone, nextOccurrence } from '../../convex/recurrence'
 import { descendantIds } from './board/board-logic'
 import { useBoardScope } from './board-scope'
 
@@ -17,6 +18,7 @@ import type { BoardData, Project, Task } from './types'
  */
 export type CreateProjectArgs = FunctionArgs<typeof api.tracker.createProject>
 export type CreateTaskArgs = FunctionArgs<typeof api.tracker.createTask>
+export type UpdateTaskArgs = FunctionArgs<typeof api.tracker.updateTask>
 
 /**
  * The board is one reactive Convex query. Convex server-renders it, then the
@@ -197,6 +199,7 @@ export function useCreateTask() {
                   dueAt: args.dueAt ?? null,
                   reminderMinutes: null,
                   durationMinutes: args.durationMinutes ?? null,
+                  repeat: null,
                   addToCalendar: false,
                   calendarEventId: null,
                   calendarSyncIssue: null,
@@ -230,14 +233,32 @@ export function useAddTask() {
 
 export function useUpdateTask() {
   const spaceId = useBoardScope()
-  const mutationFn = useConvexMutation(
+  const convexUpdate = useConvexMutation(
     api.tracker.updateTask,
   ).withOptimisticUpdate((store, args) => {
-    const { id, done, ...rest } = args
+    const { id, done, timeZone: _timeZone, ...rest } = args
     withBoard(store, spaceId, (board) => {
       const current = board.flatMap((p) => p.tasks).find((t) => t.id === id)
+      if (done === true && current?.repeat && current.dueAt !== null) {
+        const next = nextOccurrence(
+          current.dueAt,
+          current.repeat,
+          Date.now(),
+          localTimeZone(),
+        )
+        if (next !== null)
+          return patchTask(board, id, {
+            ...rest,
+            done: false,
+            doneAt: null,
+            dueAt: next,
+          })
+      }
       return patchTask(board, id, {
         ...rest,
+        // Mirrors the server: clearing the date ends the series.
+        ...(rest.dueAt === null &&
+          rest.repeat === undefined && { repeat: null }),
         // Mirrors the server: re-ticking stamps now, un-ticking keeps the old
         // stamp. The sort reads `doneAt`, so dropping it here would make the row
         // jump the instant the server answered.
@@ -248,6 +269,8 @@ export function useUpdateTask() {
       })
     })
   })
+  const mutationFn = (args: UpdateTaskArgs) =>
+    convexUpdate({ ...args, timeZone: localTimeZone() })
   return useMutation({ mutationFn })
 }
 

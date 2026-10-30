@@ -1,6 +1,8 @@
 import 'zod/compile'
 import * as z from 'zod'
 
+import { REPEAT_RULES } from '../../convex/recurrence'
+
 /** The space row as the server shapes it. */
 export const space = z.object({
   id: z.string(),
@@ -61,6 +63,7 @@ const backupTaskSchema = z.object({
   durationMinutes: z.number().int().min(5).max(1440).nullable().optional(),
   addToCalendar: z.boolean().nullable().optional(),
   calendarEventId: z.string().nullable().optional(),
+  repeat: z.enum(REPEAT_RULES).nullable().optional(),
 })
 
 const backupFileSchema = z.object({
