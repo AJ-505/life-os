@@ -61,6 +61,8 @@ const backupTaskSchema = z.object({
   durationMinutes: z.number().int().min(5).max(1440).nullable().optional(),
   addToCalendar: z.boolean().nullable().optional(),
   calendarEventId: z.string().nullable().optional(),
+  // Same reason as above: backups written before imports existed restore fine.
+  importedFromEventId: z.string().nullable().optional(),
 })
 
 const backupFileSchema = z.object({

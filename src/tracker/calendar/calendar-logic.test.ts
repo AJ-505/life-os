@@ -9,7 +9,9 @@ import {
   calendarWeek,
   dropMinute,
   durationUntil,
+  externalPlacement,
   hourPxFor,
+  importedEventIds,
   isAllDay,
   labelStep,
   minuteOfDay,
@@ -17,11 +19,13 @@ import {
   placeInLanes,
   resizedMinutes,
   slotMinute,
+  taskMinutes,
   visibleDays,
   weekDays,
 } from './calendar-logic'
 
 import type { ProjectWithTasks, Task } from '../types'
+import type { CalendarDay, ExternalEvent } from './calendar-logic'
 
 const at = (day: number, hour: number, minute = 0) =>
   new Date(2026, 9, day, hour, minute).getTime()
@@ -43,6 +47,7 @@ function task(id: string, overrides: Partial<Task> = {}): Task {
     addToCalendar: false,
     calendarEventId: null,
     calendarSyncIssue: null,
+    importedFromEventId: null,
     inFocus: false,
     focusOrder: 0,
     createdAt: 1,
@@ -142,8 +147,10 @@ describe('placeInLanes', () => {
     task: task(id, { durationMinutes }),
     project: project('p1', []),
     start,
+    minutes: taskMinutes(task(id, { durationMinutes })),
   })
-  const summary = (items: ReturnType<typeof placeInLanes>) =>
+  type Item = ReturnType<typeof item>
+  const summary = (items: Array<Item & { lane: number; lanes: number }>) =>
     items.map((p) => ({
       id: p.task.id,
       lane: p.lane,
@@ -195,6 +202,7 @@ describe('placeInLanes with mixed durations', () => {
     task: task(id, { durationMinutes }),
     project: project('p1', []),
     start,
+    minutes: taskMinutes(task(id, { durationMinutes })),
   })
 
   it('lets a short task free its lane for the next one', () => {
@@ -312,6 +320,11 @@ describe('calendarWeek', () => {
   const wednesday = 2
   const thursday = 3
 
+  const taskIds = (day: CalendarDay) =>
+    day.timed
+      .filter((p) => p.kind === 'task')
+      .map((p) => (p.kind === 'task' ? p.task.id : ''))
+
   it('excludes archived tasks', () => {
     const board = [
       project('p1', [
@@ -320,7 +333,7 @@ describe('calendarWeek', () => {
       ]),
     ]
     const wed = calendarWeek(board, days, true)[wednesday]
-    expect(wed.timed.map((p) => p.task.id)).toEqual(['live'])
+    expect(taskIds(wed)).toEqual(['live'])
   })
 
   it('excludes done tasks unless showDone is true', () => {
@@ -331,9 +344,9 @@ describe('calendarWeek', () => {
       ]),
     ]
     const hidden = calendarWeek(board, days, false)[wednesday]
-    expect(hidden.timed.map((p) => p.task.id)).toEqual(['open'])
+    expect(taskIds(hidden)).toEqual(['open'])
     const shown = calendarWeek(board, days, true)[wednesday]
-    expect(shown.timed.map((p) => p.task.id)).toEqual(['done', 'open'])
+    expect(taskIds(shown)).toEqual(['done', 'open'])
   })
 
   it('excludes tasks outside the week', () => {
@@ -360,9 +373,8 @@ describe('calendarWeek', () => {
     const board = [project('p1', [task('standup', { dueAt: at(14, 9, 30) })])]
     const wed = calendarWeek(board, days, true)[wednesday]
     expect(wed.allDay).toEqual([])
-    expect(wed.timed).toHaveLength(1)
-    expect(wed.timed[0].task.id).toBe('standup')
-    expect(wed.timed[0].start).toBe(570)
+    expect(taskIds(wed)).toEqual(['standup'])
+    expect(wed.timed[0]?.start).toBe(570)
   })
 
   it('ignores tasks in shelved and done projects', () => {
@@ -374,7 +386,7 @@ describe('calendarWeek', () => {
       project('activeP', [task('a', { dueAt: at(14, 12) })]),
     ]
     const wed = calendarWeek(board, days, true)[wednesday]
-    expect(wed.timed.map((p) => p.task.id)).toEqual(['a'])
+    expect(taskIds(wed)).toEqual(['a'])
   })
 
   it('lists an active project milestone on its target day', () => {
@@ -398,5 +410,126 @@ describe('visibleDays', () => {
       [10, 1, 0],
       [10, 2, 0],
     ])
+  })
+})
+
+const event = (overrides: Partial<ExternalEvent> = {}): ExternalEvent => ({
+  eventId: 'evt_google',
+  title: 'Team meeting',
+  notes: null,
+  location: null,
+  allDay: false,
+  start: at(14, 10),
+  end: at(14, 11),
+  link: null,
+  ...overrides,
+})
+
+describe('externalPlacement', () => {
+  it('rejects an event that ends before the day starts', () => {
+    expect(externalPlacement(event(), at(15, 0, 0))).toBeNull()
+  })
+
+  it('rejects an event that starts after the day ends', () => {
+    expect(
+      externalPlacement(
+        event({ start: at(15, 10), end: at(15, 11) }),
+        at(14, 0),
+      ),
+    ).toBeNull()
+  })
+
+  it('marks an all-day event as all-day for its whole span', () => {
+    const span = event({
+      allDay: true,
+      start: at(14, 0),
+      end: at(16, 0),
+    })
+    expect(externalPlacement(span, at(14, 0, 0))).toEqual({ allDay: true })
+    expect(externalPlacement(span, at(15, 0, 0))).toEqual({ allDay: true })
+    expect(externalPlacement(span, at(16, 0, 0))).toBeNull()
+  })
+
+  it('clips a timed event at the day edges', () => {
+    const late = event({
+      start: at(14, 23, 30),
+      end: new Date(2026, 9, 15, 0, 30).getTime(),
+    })
+    expect(externalPlacement(late, at(14, 0, 0))).toEqual({
+      allDay: false,
+      start: 23 * 60 + 30,
+      minutes: 30,
+    })
+    expect(externalPlacement(late, at(15, 0, 0))).toEqual({
+      allDay: false,
+      start: 0,
+      minutes: 30,
+    })
+  })
+
+  it('never places fewer than fifteen minutes', () => {
+    const tiny = event({ start: at(14, 10), end: at(14, 10, 3) })
+    const placed = externalPlacement(tiny, at(14, 0, 0))
+    if (!placed || placed.allDay) throw new Error('expected a timed placement')
+    expect(placed.minutes).toBe(15)
+  })
+})
+
+describe('calendarWeek with external events', () => {
+  const days = weekDays(new Date(2026, 9, 14, 12, 0))
+  const wednesday = 2
+
+  it('blends tasks and events into one lane layout', () => {
+    const board = [project('p1', [task('nine', { dueAt: at(14, 9, 0) })])]
+    const wed = calendarWeek(board, days, true, [
+      event({ start: at(14, 9, 0), end: at(14, 10, 0) }),
+    ])[wednesday]
+    expect(wed.timed).toHaveLength(2)
+    expect(wed.timed.every((p) => p.lanes === 2)).toBe(true)
+    expect(wed.timed.some((p) => p.kind === 'external')).toBe(true)
+    expect(
+      wed.timed.some((p) => p.kind === 'task' && p.task.id === 'nine'),
+    ).toBe(true)
+  })
+
+  it('keeps all-day events out of the timed grid', () => {
+    const wed = calendarWeek([project('p1', [])], days, true, [
+      event({ allDay: true, start: at(15, 0), end: at(16, 0) }),
+    ])[wednesday]
+    expect(wed.timed).toEqual([])
+    expect(wed.externalAllDay).toEqual([])
+    expect(
+      calendarWeek([project('p1', [])], days, true, [
+        event({ allDay: true, start: at(15, 0), end: at(16, 0) }),
+      ])[3].externalAllDay,
+    ).toHaveLength(1)
+  })
+
+  it('falls back to the empty feed when none is given', () => {
+    const board = [project('p1', [task('a', { dueAt: at(14, 9) })])]
+    const wed = calendarWeek(board, days, true)[wednesday]
+    expect(wed.externalAllDay).toEqual([])
+    expect(
+      wed.timed.map((p) => (p.kind === 'task' ? p.task.id : null)),
+    ).toEqual(['a'])
+  })
+})
+
+describe('importedEventIds', () => {
+  it('collects the ids tasks were imported from', () => {
+    const board = [
+      project('p1', [
+        task('plain'),
+        task('fromGoogle', { importedFromEventId: 'evt_1' }),
+      ]),
+      project('p2', [task('alsoImported', { importedFromEventId: 'evt_2' })]),
+    ]
+    expect(importedEventIds(board)).toEqual(new Set(['evt_1', 'evt_2']))
+  })
+
+  it('ignores tasks with no association', () => {
+    expect(importedEventIds([project('p1', [task('plain')])])).toEqual(
+      new Set(),
+    )
   })
 })

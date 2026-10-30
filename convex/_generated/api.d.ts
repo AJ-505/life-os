@@ -10,6 +10,7 @@
 
 import type * as backup from "../backup.js";
 import type * as calendar from "../calendar.js";
+import type * as calendarPull from "../calendarPull.js";
 import type * as crons from "../crons.js";
 import type * as lib from "../lib.js";
 import type * as migrations from "../migrations.js";
@@ -27,6 +28,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   backup: typeof backup;
   calendar: typeof calendar;
+  calendarPull: typeof calendarPull;
   crons: typeof crons;
   lib: typeof lib;
   migrations: typeof migrations;

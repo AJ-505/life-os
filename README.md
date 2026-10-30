@@ -29,7 +29,7 @@ The board has two views, switched from its header: **Board** and **Calendar** (`
 - Drag a task to another day or time. It snaps to 15 minutes, and the top edge of the block is the new start. Drop it on the all-day row to clear the time.
 - Drag a task from the Focus panel onto the grid to schedule it, or drag a block onto Focus to focus it.
 
-Spaces get the same view. A task that syncs to Google Calendar moves there too when you reschedule it.
+Spaces get the same view. A task that syncs to Google Calendar moves there too when you reschedule it. The pulled-back calendar is personal only: one member's Google calendar is not a feed a whole space should read.
 
 ## Focus
 
@@ -76,6 +76,26 @@ Two details worth knowing:
 
 - The event carries your timezone explicitly, so a 09:00 task stays at 09:00 in your calendar.
 - Turning sync off deletes the events Life OS created, and the confirmation says so first.
+
+### The calendar, pulled back
+
+Push is one direction, so it misses half the picture: the meetings and classes
+that already live in your Google calendar. Opening the personal Calendar view
+pulls a window of those events in and draws them on the grid as dashed, neutral
+cards, next to your own tasks but never mistaken for them. They cannot be
+dragged, resized or completed — they are your calendar shown here, not a plan.
+
+- Clicking one explains it (time, location, notes) and offers **Add as task**,
+  which copies it into a project you choose. The import is an idempotent copy,
+  not a link: deleting the task brings the event back into the grid, and edits
+  on either side after the fact do not propagate in either direction.
+- An imported task is never pushed back, so one slot never becomes two events.
+- The pull is on demand (on view open, on window change, then every five
+  minutes while the view is open); the cache is a shadow Life OS can discard,
+  so nothing is lost by not opening the app. A recurring series arrives as its
+  occurrences, so importing one meeting imports one meeting.
+- Life OS's own pushed events are filtered out of the pull by an extended
+  property they carry, so the grid never draws a task twice.
 
 > **Not released.** Calendar sync is behind `VITE_ENABLE_CALENDAR=1`. Without it the task and settings surfaces render a placeholder and no calendar query runs.
 

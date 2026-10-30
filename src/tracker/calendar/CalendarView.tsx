@@ -24,6 +24,8 @@ import {
 
 import { newId, positionAfter } from '../types'
 import { CalendarSyncButton } from './CalendarSyncButton'
+import { ExternalEventCard } from './ExternalEventCard'
+import { useBackwardSync } from './pull'
 import { useAddTask, useUpdateTask } from '../queries'
 import { useBoardScope } from '../board-scope'
 import { activeProjects } from '../board/board-logic'
@@ -37,10 +39,12 @@ import {
   calendarWeek,
   dayId,
   hourPxFor,
+  importedEventIds,
   labelStep,
   minuteOfDay,
   resizedMinutes,
   slotMinute,
+  timeLabel,
   visibleDays,
 } from './calendar-logic'
 
@@ -49,8 +53,9 @@ import type {
   CalendarDay,
   CalendarTask,
   PlacedTask,
+  TimedEntry,
 } from './calendar-logic'
-import type { BoardData, Project, Task } from '../types'
+import type { BoardData, Project, ProjectWithTasks, Task } from '../types'
 
 type Draft = { dayStart: number; minute: number | null }
 
@@ -74,10 +79,6 @@ function weekLabel(days: Array<Date>) {
   return isSameMonth(first, last)
     ? format(first, 'MMMM yyyy')
     : `${format(first, 'MMM')} – ${format(last, 'MMM yyyy')}`
-}
-
-function timeLabel(minute: number) {
-  return format(atMinute(0, minute), minute % 60 === 0 ? 'h a' : 'h:mm a')
 }
 
 export function CalendarEventCard({
@@ -167,13 +168,15 @@ function DraggableTask({
   )
 }
 
+type PlacedTaskEntry = Extract<PlacedTask, { kind: 'task' }>
+
 function ResizeHandle({
   placed,
   hourPx,
   blockMinutes,
   onLive,
 }: {
-  placed: PlacedTask
+  placed: PlacedTaskEntry
   hourPx: number
   blockMinutes: BlockMinutes
   onLive: (minutes: number | null) => void
@@ -236,17 +239,39 @@ function ResizeHandle({
   )
 }
 
-function TimedTask({
+function TimedEntryView({
   placed,
+  projects,
   hourPx,
   blockMinutes,
 }: {
   placed: PlacedTask
+  projects: Array<ProjectWithTasks>
   hourPx: number
   blockMinutes: BlockMinutes
 }) {
   const [live, setLive] = useState<number | null>(null)
   const minutes = live ?? placed.minutes
+
+  if (placed.kind === 'external') {
+    return (
+      <div
+        className="absolute z-10 p-px"
+        style={{
+          top: (placed.start / 60) * hourPx,
+          height: (minutes / 60) * hourPx,
+          left: `${(placed.lane / placed.lanes) * 100}%`,
+          width: `${100 / placed.lanes}%`,
+        }}
+      >
+        <ExternalEventCard
+          event={placed.event}
+          placed={placed}
+          projects={projects}
+        />
+      </div>
+    )
+  }
 
   return (
     <div
@@ -300,10 +325,12 @@ function AllDayCell({
   day,
   draft,
   onDraft,
+  projects,
 }: {
   day: CalendarDay
   draft: Draft | null
   onDraft: (draft: Draft) => void
+  projects: Array<ProjectWithTasks>
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: allDayId(day.start),
@@ -342,7 +369,17 @@ function AllDayCell({
           className="h-5"
         />
       ))}
-      {draft?.dayStart === day.start && draft.minute === null ? (
+      {day.externalAllDay.map((event) => (
+        <ExternalEventCard
+          key={event.eventId}
+          event={event}
+          compact
+          projects={projects}
+        />
+      ))}
+      {draft !== null &&
+      draft.dayStart === day.start &&
+      draft.minute === null ? (
         <PopoverAnchor className="h-5 rounded-md border border-dashed border-signal/60 bg-signal/10" />
       ) : null}
     </div>
@@ -356,6 +393,7 @@ function DayColumn({
   blockMinutes,
   hourPx,
   onDraft,
+  projects,
 }: {
   day: CalendarDay
   now: number
@@ -363,6 +401,7 @@ function DayColumn({
   blockMinutes: BlockMinutes
   hourPx: number
   onDraft: (draft: Draft) => void
+  projects: Array<ProjectWithTasks>
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: dayId(day.start),
@@ -402,9 +441,10 @@ function DayColumn({
       }}
     >
       {day.timed.map((placed) => (
-        <TimedTask
-          key={placed.task.id}
+        <TimedEntryView
+          key={entryKey(placed)}
           placed={placed}
+          projects={projects}
           hourPx={hourPx}
           blockMinutes={blockMinutes}
         />
@@ -418,7 +458,9 @@ function DayColumn({
           <span className="h-px flex-1 bg-signal" />
         </div>
       ) : null}
-      {draft?.dayStart === day.start && draft.minute !== null ? (
+      {draft !== null &&
+      draft.dayStart === day.start &&
+      draft.minute !== null ? (
         <DraftAnchor
           minute={draft.minute}
           hourPx={hourPx}
@@ -558,6 +600,12 @@ function useSwipe(onSwipe: (direction: 1 | -1) => void) {
   }
 }
 
+/** A stable React key across the two entry kinds: a task id and a Google event
+ *  id never collide by construction. */
+function entryKey(entry: TimedEntry): string {
+  return entry.kind === 'task' ? entry.task.id : entry.event.eventId
+}
+
 export function CalendarView({
   board,
   showDone,
@@ -588,7 +636,18 @@ export function CalendarView({
   )
 
   const days = visibleDays(anchor, span)
-  const week = calendarWeek(board, days, showDone)
+  const projects = activeProjects(board)
+  // The backward feed is personal only: a space calendar renders the shared
+  // board's tasks, and one member's Google calendar must not appear there.
+  const spaceId = useBoardScope()
+  const personal = spaceId === null
+  const { events } = useBackwardSync(days, active && personal)
+  const imported = importedEventIds(board)
+  const feed = personal
+    ? events.filter((event) => !imported.has(event.eventId))
+    : []
+
+  const week = calendarWeek(board, days, showDone, feed)
   const columns = {
     gridTemplateColumns: `${wide ? '4rem' : '3rem'} repeat(${span}, minmax(0, 1fr))`,
   }
@@ -724,6 +783,7 @@ export function CalendarView({
                     day={day}
                     draft={draft}
                     onDraft={setDraft}
+                    projects={projects}
                   />
                 ))}
               </div>
@@ -750,6 +810,7 @@ export function CalendarView({
                   blockMinutes={blockMinutes}
                   hourPx={hourPx}
                   onDraft={setDraft}
+                  projects={projects}
                 />
               ))}
             </div>
