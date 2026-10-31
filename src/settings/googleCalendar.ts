@@ -9,18 +9,8 @@ import {
   useUpdateCalendarSettings,
 } from './queries'
 
-/**
- * The client half of the calendar integration. Two jobs, and deliberately not
- * a third: it reports whether Google is connected, and it starts the connect
- * flow. It never touches a Google access token — that lives entirely in the
- * Convex action (see `convex/calendar.ts`).
- */
-
 export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events'
 
-/** Clerk's resource types don't resolve through this package's export map, so
- *  the two shapes we actually read are declared here. Narrow on purpose: if
- *  Clerk changes, this breaks loudly at one place rather than everywhere. */
 type ExternalAccount = {
   provider?: string
   approvedScopes?: string
@@ -44,21 +34,11 @@ type ClerkUser = {
 }
 
 export type CalendarConnection =
-  /** No Google account on this Clerk user. */
   | { status: 'disconnected' }
-  /** Google is linked but calendar access was never granted. */
   | { status: 'needs_scope' }
   | { status: 'connected' }
   | { status: 'loading' }
 
-/**
- * Connection state read from Clerk, which is the only place that knows.
- *
- * The previous version stored a `googleConnected` boolean that the app set
- * itself, including in the OAuth *failure* path — so a user who cancelled the
- * Google prompt was recorded as connected, and every later sync attempt failed
- * silently against a permission they never gave.
- */
 export function useGoogleCalendar() {
   const { user, isLoaded } = useUser()
 
@@ -72,11 +52,6 @@ export function useGoogleCalendar() {
       : { status: 'needs_scope' }
   })()
 
-  /**
-   * No consent URL back from Clerk is a real failure and is reported as one.
-   * The old code caught that case and recorded "connected" anyway, which is
-   * how users ended up syncing against a permission they never granted.
-   */
   const connect = async () => {
     const clerkUser = user as ClerkUser | null | undefined
     if (!clerkUser) throw new Error('Not signed in')
@@ -108,11 +83,6 @@ export function useGoogleCalendar() {
   return { connection, connect }
 }
 
-/* ------------------------------------------------------------------- sync */
-
-/** Every outcome the action can report, with the words a person reads. Typed
- *  over the server's own union, so adding a case there is a compile error here
- *  rather than a silent fallthrough to a generic message. */
 type SyncMessage = Record<SyncAction | SyncReason, string>
 
 type SyncResultShape = Awaited<
@@ -138,10 +108,6 @@ const MESSAGES: SyncMessage = {
   google_error: 'Google rejected the change',
 }
 
-/** The reasons whose fix is a reconnect, so a caller can offer the action
- *  rather than only show a message. `not_configured` is deliberately absent:
- *  the secret is ours and the user cannot see it, so a reconnect button would
- *  be an offer to do nothing. */
 const RECONNECT_REASONS: Set<SyncReason> = new Set([
   'not_connected',
   'reauth_required',
@@ -152,15 +118,9 @@ export type SyncOutcome =
   | { ok: true; silent: boolean; message: string; link: string | null }
   | { ok: false; message: string; detail: string; needsReconnect: boolean }
 
-/**
- * Callers pass a task id and get back a message. They never learn that Google
- * exists, that there is a token, or that a create and an update differ.
- */
 export function useSyncTaskToCalendar() {
   const syncTask = useAction(api.calendar.syncTask)
 
-  // Promise-chain style, not async/await with try/catch: a try/catch with
-  // value blocks opts the hook out of React Compiler memoization.
   return (taskId: string): Promise<SyncOutcome> =>
     syncTask({ taskId }).then(
       (result): SyncOutcome =>
@@ -186,16 +146,6 @@ export function useSyncTaskToCalendar() {
     )
 }
 
-/* ---------------------------------------------------------------- timezone */
-
-/**
- * Google reads an offset-bearing timestamp as a fixed instant, so the only way
- * to keep a 09:00 task at 09:00 is to tell it the zone the wall clock was
- * captured in. The browser knows it; the server cannot. This writes it once.
- *
- * Mounted from behind the calendar flag, so a build without the feature never
- * touches the settings query.
- */
 export function useEnsureTimezone() {
   const { data: settings } = useQuery(calendarSettingsQueryOptions)
   const update = useUpdateCalendarSettings()

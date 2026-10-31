@@ -7,13 +7,9 @@ import { dropMembership, requireMember, requireUserId } from './lib'
 import type { Doc } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
 
-/** 32 symbols with no I, O, 0 or 1, so a code read aloud or copied by hand
- *  cannot be mistyped into another one. 10 of them is about 50 bits. */
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
 const CODE_LENGTH = 10
 
-/** Legacy codes are shorter and use a wider alphabet, so lookups accept them
- *  and only generation is strict. Live links keep working. */
 const CODE_SHAPE = /^[A-Z0-9]{4,16}$/
 
 const JOIN_WINDOW_MS = 5 * 60 * 1000
@@ -56,8 +52,6 @@ function memberInitials(name: string): string {
   return `${words[0][0]}${words.at(-1)?.[0] ?? ''}`.toUpperCase()
 }
 
-/** Keep the directory current without making Clerk a database lookup on every
- *  board read. The identity is still the only authorization source. */
 export const syncUserProfile = mutation({
   args: {
     displayName: v.optional(v.string()),
@@ -107,15 +101,6 @@ async function unusedInviteCode(
   }
 }
 
-/**
- * Count a *failed* attempt and report the wait when the window is spent. The
- * window only starts on a code that failed to resolve, so re-opening an invite
- * link you already belong to never counts against the window. A sliding
- * window, and read with `.first()` so a duplicate row can never lock a user
- * out of joining forever. The throttle exists for the live 6-character legacy
- * codes at roughly 31 bits; a new 10-character code is already infeasible to
- * guess, and a per-account limit does not slow a multi-account attacker.
- */
 async function joinThrottleStartWindow(
   ctx: MutationCtx,
   userId: string,
@@ -152,15 +137,6 @@ function joinThrottleWaitMinutes(
 export const createSpace = mutation({
   args: {
     name: v.string(),
-    /**
-     * Legacy fields the pre-release front end still sends. Convex rejects an
-     * unknown field outright, so accepting and ignoring them is what keeps that
-     * client working. The server generates the id and the code, and the old
-     * client's success handler already ignores a non-string answer.
-     *
-     * Delete both, and tighten `getBoard` and `createProject` back to a
-     * required `spaceId`, once Vercel points at its own deployment.
-     */
     id: v.optional(v.string()),
     inviteCode: v.optional(v.string()),
   },
@@ -169,8 +145,6 @@ export const createSpace = mutation({
     const name = args.name.trim()
     if (!name) throw new Error('Space name is required')
 
-    // Both the id and the code are generated here. Accepting either from the
-    // client is what let one caller reach another caller's invite code.
     const id = crypto.randomUUID()
     const inviteCode = await unusedInviteCode(ctx)
     const createdAt = Date.now()
@@ -210,9 +184,6 @@ export const joinSpaceByCode = mutation({
     const code = args.inviteCode.trim().toUpperCase()
     if (!CODE_SHAPE.test(code)) return { ok: false, reason: 'invalid' }
 
-    // Read the throttle row without counting anything yet: the window only
-    // advances on a code that fails to resolve, so re-opening an invite link
-    // the user already belongs to never burns an attempt.
     const now = Date.now()
     const throttleRow = await ctx.db
       .query('inviteAttempts')
@@ -224,8 +195,6 @@ export const joinSpaceByCode = mutation({
 
     const space = await spaceByInviteCode(ctx, code)
     if (!space) {
-      // Count the failed attempt, and tell the user they are out of the window
-      // in the same reply when this attempt spends it.
       const row = await joinThrottleStartWindow(ctx, userId, throttleRow, now)
       const wait = joinThrottleWaitMinutes(row, now)
       return wait === null
@@ -233,9 +202,6 @@ export const joinSpaceByCode = mutation({
         : { ok: false, reason: 'throttled', retryAfterMinutes: wait }
     }
 
-    // `.first()`, for the same reason the guard uses it: the pair is not unique
-    // by construction, so a duplicate from outside this mutation must not lock
-    // the member out with a throwing read.
     const membership = await ctx.db
       .query('spaceMembers')
       .withIndex('by_space_user', (q) =>
@@ -258,12 +224,6 @@ export const joinSpaceByCode = mutation({
   },
 })
 
-/**
- * Leaving hands the space on rather than stranding it. An owner's seat goes to
- * the longest-standing member, ordered by join time and then by user id so two
- * same-millisecond joins still pick the same successor, and the invite code is
- * rotated because the person leaving may still hold it.
- */
 export const leaveSpace = mutation({
   args: { spaceId: v.string() },
   handler: async (ctx, args) => {
@@ -288,8 +248,6 @@ export const leaveSpace = mutation({
         'You are the only member of this space. Delete it instead of leaving.',
       )
 
-    // Every row, not the one this read happened to return: a duplicate would
-    // otherwise keep the leaver's access alive.
     await dropMembership(ctx, args.spaceId, userId)
     await scheduleUnassign(ctx, args.spaceId, userId)
 
@@ -312,19 +270,12 @@ export const getMySpaces = query({
       .query('spaceMembers')
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .collect()
-    // The app-id index makes each of these a point read; running them together
-    // keeps the count at K+1 reads instead of K serial round trips. Denormalizing
-    // the space onto the membership row is the follow-up that makes it one.
     const resolved = await Promise.all(
       memberships.map(async (membership) => {
         const space = await ctx.db
           .query('spaces')
           .withIndex('by_app_id', (q) => q.eq('id', membership.spaceId))
           .unique()
-        // The role is derived from the space's `ownerId`, which is the one
-        // authority for who owns it. Reading the membership row's stored role
-        // instead would be a second copy that can drift, and the UI gates
-        // owner-only controls on this.
         return space
           ? {
               ...shapeSpace(space),
@@ -333,8 +284,6 @@ export const getMySpaces = query({
           : null
       }),
     )
-    // A duplicate membership row would otherwise list the same space twice and
-    // give React two identical keys.
     const byId = new Map<string, NonNullable<(typeof resolved)[number]>>()
     for (const space of resolved) {
       if (space && !byId.has(space.id)) byId.set(space.id, space)
@@ -359,8 +308,6 @@ export const getSpaceMembers = query({
     const sorted = membershipRows.sort(
       (a, b) => a.joinedAt - b.joinedAt || (a.userId < b.userId ? -1 : 1),
     )
-    // Same two reasons as `getMySpaces`: the role comes from `spaces.ownerId`,
-    // and a duplicate row must not render the same person twice.
     const seen = new Set<string>()
     const members = sorted.flatMap((m) => {
       if (seen.has(m.userId)) return []
@@ -389,31 +336,17 @@ export const getSpaceMembers = query({
   },
 })
 
-/**
- * Rotation, shared by both revocation paths. The code is the credential, so
- * anything that takes access away has to change it: removing a membership row
- * while the removed person still holds the code leaves them one page load from
- * walking back in.
- */
 async function rotateInviteCode(ctx: MutationCtx, space: Doc<'spaces'>) {
-  // The space document, not its app id: `patch` wants the Convex `_id`, and the
-  // string id would address nothing.
   const code = await unusedInviteCode(ctx, space.id)
   await ctx.db.patch(space._id, { inviteCode: code })
   return code
 }
 
-/** Owner-only check, with one clear message for the member case. */
 function assertOwner(space: Doc<'spaces'>, userId: string) {
   if (space.ownerId !== userId)
     throw new Error('Only the owner can do that with this space')
 }
 
-/**
- * Issue a new invite link for the whole space. For "the link leaked and I do
- * not know who has it". Everyone already in stays in; anyone holding the old
- * link cannot use it any more.
- */
 export const resetInviteCode = mutation({
   args: { spaceId: v.string() },
   handler: async (ctx, args) => {
@@ -428,14 +361,6 @@ export const resetInviteCode = mutation({
   },
 })
 
-/**
- * Take one person's access away: their memberships go, and the code changes in
- * the same transaction so the link they hold stops working. Both halves are
- * needed; either alone leaves them able to return.
- *
- * A member's own projects and tasks are untouched: they belong to the space and
- * carry their own creator, not a grant.
- */
 export const removeMember = mutation({
   args: { spaceId: v.string(), userId: v.string() },
   handler: async (ctx, args) => {
@@ -452,8 +377,6 @@ export const removeMember = mutation({
       throw new Error('The owner cannot be removed. Delete the space instead.')
 
     const removed = await dropMembership(ctx, space.id, args.userId)
-    // Rotating after a no-op would break the link for people who have not
-    // joined yet, in exchange for removing nobody.
     if (removed === 0)
       throw new Error('That person is not a member of this space')
 
@@ -463,18 +386,6 @@ export const removeMember = mutation({
   },
 })
 
-/**
- * Clear the removed member's assignments.
- *
- * The assignee dropdown lists only current members, so a task still naming them
- * renders as nothing at all with no explanation and no way to see who held it.
- * Unassigning is the honest repair: reassigning to the owner would invent an
- * assignment nobody chose. No activity row is written, because history already
- * records that this person was assigned the task, and that is what happened.
- *
- * Scheduled rather than done inline, because a space can hold more tasks than
- * one transaction may read, and `removeMember` has no way to resume.
- */
 async function scheduleUnassign(
   ctx: MutationCtx,
   appSpaceId: string,
@@ -498,31 +409,11 @@ export const continueUnassign = internalMutation({
     for (const task of tasks) {
       await ctx.db.patch(task._id, { assigneeId: null })
     }
-    // A full page means there are probably more. The tasks whose assignment is
-    // cleared leave the index range they were found in, so the next pass simply
-    // asks again and sees whatever is left.
     if (tasks.length === UNASSIGN_BATCH)
       await ctx.scheduler.runAfter(0, internal.spaces.continueUnassign, args)
   },
 })
 
-/**
- * Deleting a space deletes everything it holds: projects, tasks, memberships,
- * and the activity rows behind those tasks.
- *
- * One transaction can only paginate once, and this cascade drains three tables,
- * so it cannot read the whole space up front the way it used to. Instead it
- * walks one table per phase, taking a page, deleting it, and asking the index
- * what is left. Re-reading from the start each pass is what makes a cursor
- * unnecessary: deleted rows invalidate one.
- *
- * Phase order is projects, tasks, members, then the space document itself.
- * Members go late on purpose. `/spaces` lists what the caller is a member of, so
- * removing members first would leave an interrupted cascade with a space the
- * owner can no longer find, and therefore no way to retry. Leaving the space
- * document until last means a dead continuation is always resumable by clicking
- * Delete again, with no marker row and no runbook.
- */
 export const deleteSpace = mutation({
   args: { spaceId: v.string() },
   handler: async (ctx, args) => {
@@ -538,41 +429,13 @@ export const deleteSpace = mutation({
   },
 })
 
-/**
- * The tables this cascade drains, in the order it drains them. Each phase is a
- * separate transaction because Convex allows one paginated query per function,
- * so a single pass cannot cover more than one table.
- *
- * Activity goes before tasks. Its rows are keyed by the app-facing task id and
- * one task can carry more of them than a single page, so they are drained
- * through their own index range. Deleting a task first and reading its history
- * as a side effect is what orphans the tail of a long history: the task row is
- * gone, so no later pass ever asks for that id again.
- */
 const DELETE_PHASES = ['projects', 'activity', 'tasks', 'members'] as const
 type DeletePhase = (typeof DELETE_PHASES)[number]
 
-/**
- * Every page the cascade takes is a read, and so is every delete it performs on
- * that page, so a page of `DELETE_BATCH` costs about twice that in documents.
- * The audit's regression holds this to 250; 100 keeps the worst single pass
- * under it with room for the space document on the final one. Raise it and the
- * deletion of a large space stops working at exactly the size it was built for.
- */
 const DELETE_BATCH = 100
 
-/** One page of tasks to clear an assignment from. Half the delete cascade's
- *  page: clearing costs a read and a write per row rather than two reads. */
 const UNASSIGN_BATCH = 100
 
-/**
- * One bounded phase: delete a page of one table, then hand the rest off.
- *
- * Returns the phase that should run next, or `null` once every table has
- * drained and the space document itself can go. Each phase re-reads its index
- * from the start, which is what makes the cursor unnecessary: deleted rows
- * invalidate one.
- */
 async function deleteSpacePhase(
   ctx: MutationCtx,
   next: { spaceId: string; phase: DeletePhase },
@@ -586,19 +449,8 @@ async function deleteSpacePhase(
   return following ?? 'drained'
 }
 
-/** `'gone'` and `'drained'` are sentinels, never phase names. They must be
- *  distinct: a cascade that finds the space already deleted and a cascade that
- *  has drained every table look the same otherwise, and the first must not fall
- *  through to deleting the document a second time. */
 type PhaseOutcome = DeletePhase | 'gone' | 'drained'
 
-/** Delete up to `DELETE_BATCH` rows of one table. True when that table is done.
- *
- *  Activity has no `by_space` index of its own; its `by_space_task` index is
- *  keyed `spaceId` first, so an equality on `spaceId` alone ranges over every
- *  activity row in the space regardless of task. That is the whole history,
- *  drained one page at a time, which is what keeps a task with a long history
- *  from leaving its tail behind. */
 async function deleteTablePage(
   ctx: MutationCtx,
   phase: DeletePhase,
@@ -618,21 +470,12 @@ async function deleteTablePage(
   return rows.length < DELETE_BATCH
 }
 
-/** The table each non-activity phase drains. Written out rather than inferred,
- *  so adding a phase is a compile error here instead of silently draining the
- *  wrong table — which is exactly how the tasks phase once became members. */
 const TABLE_FOR_PHASE = {
   projects: 'projects',
   tasks: 'tasks',
   members: 'spaceMembers',
 } as const satisfies Record<Exclude<DeletePhase, 'activity'>, string>
 
-/**
- * Drive the cascade from one transaction's starting phase, scheduling a
- * continuation for each pass after this one. The first click and every
- * scheduled pass share this function, so no path can drain the tables and
- * forget to delete the space.
- */
 async function runDeleteCascade(
   ctx: MutationCtx,
   start: { spaceId: string; phase: DeletePhase },
@@ -640,21 +483,14 @@ async function runDeleteCascade(
   let next: { spaceId: string; phase: DeletePhase } = start
   for (;;) {
     const outcome = await deleteSpacePhase(ctx, next)
-    // A second click can start a second cascade while the first is still
-    // draining, so by the time this pass runs the document may already be gone.
-    // That is success, not a phase to continue.
     if (outcome === 'gone') return
     if (outcome === 'drained') break
     if (outcome === next.phase) {
-      // The table is not empty, so the next transaction continues it.
       await ctx.scheduler.runAfter(0, internal.spaces.continueDeleteSpace, next)
       return
     }
     next = { spaceId: start.spaceId, phase: outcome }
   }
-  // Everything the space holds is gone, so the space itself can go. Until this
-  // point the document survives, which is what lets an interrupted cascade be
-  // retried by the owner clicking Delete again.
   await ctx.db.delete(start.spaceId as Doc<'spaces'>['_id'])
 }
 

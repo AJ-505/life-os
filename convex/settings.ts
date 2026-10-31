@@ -8,19 +8,6 @@ import { eventsToDelete } from './calendar'
 import type { MutationCtx } from './_generated/server'
 import type { Doc } from './_generated/dataModel'
 
-/**
- * Per-user calendar preferences.
- *
- * Two things used to live here that no longer do. `googleConnected` was a flag
- * we set ourselves, which meant a failed OAuth attempt could still leave the
- * app believing Google was connected. Whether Google is connected is Clerk's
- * fact, so the client reads it from Clerk and the server re-checks it when it
- * actually needs a token. And `calendarEnabled` / `calendarSyncEnabled` were
- * two stored names for one switch, mirrored into each other by hand in four
- * branches. Both columns still exist for old rows and are written together,
- * but the API exposes one field.
- */
-
 const DEFAULT_REMINDER_MINUTES = 15
 
 const DEFAULTS = {
@@ -43,17 +30,6 @@ export const getCalendarSettings = query({
   },
 })
 
-/**
- * Turning sync off has to take the events with it, or the user is left with a
- * calendar full of reminders for a feature they switched off. The fan-out is
- * scheduled because the Google call cannot run inside a mutation; the client
- * names the deletion before it happens.
- *
- * The walk over the user's tasks is bounded and self-continuing: a page of
- * 500, its event ids handed to the action, then the next page. Collecting the
- * whole board instead would put every task the user owns inside one
- * transaction just to read two fields off each.
- */
 async function scheduleSyncOffCleanup(ctx: MutationCtx, userId: string) {
   await ctx.scheduler.runAfter(0, internal.settings.continueSyncOffCleanup, {
     userId,
@@ -68,9 +44,6 @@ export const continueSyncOffCleanup = internalMutation({
       .query('tasks')
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
       .paginate({ numItems: 500, cursor: args.cursor })
-    // One home for the rule: which events these tasks own, and which task each
-    // id belongs to. The task id rides along so the action can clear the row
-    // that still points at the event it just removed.
     const events = eventsToDelete(page.page)
     if (events.length > 0) {
       await ctx.scheduler.runAfter(0, internal.calendar.deleteEventsForUser, {

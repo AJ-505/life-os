@@ -70,26 +70,8 @@ async function profileName(
   return profile?.displayName?.trim() || 'Member'
 }
 
-/** Everything for one board, in one query. Views derive what they need
- *  client-side — exactly like the original `fetchBoard`.
- *
- *  `spaceId: null` is the caller's personal board and excludes every row that
- *  belongs to a space, so a shared project can never leak into a private view.
- *  A space id is membership-checked before anything is read. */
 export const getBoard = query({
   args: {
-    /**
-     * Optional on purpose, and it has to stay that way while one deployment
-     * serves production. The deployed front end from before Spaces calls this
-     * with no arguments at all, so the absent case is the contract those users
-     * are on. Absent means the personal board.
-     *
-     * `?? null` below is load bearing: Convex hands an omitted optional field
-     * to the handler as `undefined`, and the branches compare to `null`, so
-     * without the normalization a no-argument call takes the space branch and
-     * throws. Tighten this back to required once Vercel points at its own
-     * deployment and no old bundle can reach this one.
-     */
     spaceId: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
@@ -154,13 +136,6 @@ export const getTaskHistory = query({
   },
 })
 
-/* ------------------------------------------------------------- projects */
-
-/** Reject an id the caller can already reach on a different board, and treat a
- *  repeat on the same board as the optimistic retry it is. Without this a
- *  member could plant a teammate's id inside a shared space and make every
- *  write to that id ambiguous. One helper for both tables: the two copies this
- *  replaces had already drifted once (the `spaceId` reachability check). */
 async function assertScopeIdFree(
   ctx: MutationCtx,
   userId: string,
@@ -192,9 +167,6 @@ export const createProject = mutation({
     color: v.string(),
     gridCol: v.number(),
     gridRow: v.number(),
-    /** Optional for the same reason as `getBoard`: the deployed front end from
-     *  before Spaces sends no `spaceId` at all. Absent means a personal
-     *  project. See the note on `getBoard`. */
     spaceId: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
@@ -204,8 +176,6 @@ export const createProject = mutation({
     const spaceId = args.spaceId ?? null
     if (spaceId !== null) await getMemberSpace(ctx, userId, spaceId)
 
-    // The client supplies the id so creation is optimistic; a duplicate on the
-    // same board means an optimistic retry already landed — success, not error.
     if (
       await assertScopeIdFree(
         ctx,
@@ -231,7 +201,6 @@ export const createProject = mutation({
       createdAt: Date.now(),
       finishedAt: null,
       shelvedAt: null,
-      // The schema stores `string | null`; the local is already normalized.
       spaceId,
     })
   },
@@ -287,8 +256,6 @@ export const setProjectStatus = mutation({
   },
 })
 
-/** The project-scoped task read, chosen from the project's own scope. A single
- *  `projectId` index would be the same query for every account. */
 async function projectTasks(
   ctx: MutationCtx,
   userId: string,
@@ -315,17 +282,12 @@ export const deleteProject = mutation({
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
     const project = await getWritableProject(ctx, userId, args.id)
-    // Hard delete cascades to the project's tasks, their events, and their
-    // activity rows — nothing reads orphaned history, so leaving it behind is
-    // unbounded table growth.
     const tasks = await projectTasks(ctx, userId, project)
     await scheduleEventCleanup(ctx, userId, tasks)
     await deleteTasksBatched(ctx, tasks, project.spaceId ?? null)
     await ctx.db.delete(project._id)
   },
 })
-
-/* ---------------------------------------------------------------- tasks */
 
 export const createTask = mutation({
   args: {
@@ -341,7 +303,6 @@ export const createTask = mutation({
     const userId = await requireUserId(ctx)
     const title = args.title.trim()
     if (!title) throw new Error('Task title is required')
-    // Writing to the destination project is what gates creation.
     const project = await getWritableProject(ctx, userId, args.projectId)
     const assigneeId = args.assigneeId ?? null
     if (assigneeId !== null) {
@@ -349,10 +310,6 @@ export const createTask = mutation({
         throw new Error('Tasks on a personal board cannot be assigned')
       await requireMember(ctx, assigneeId, project.spaceId)
     }
-    // A parent must exist on the same board and differ from the child. Without
-    // the self-check the row registers as its own child and every subtree walk
-    // (delete, move, client `descendantIds`) never drains — a client argument
-    // could hang the mutation until the transaction times out.
     const parentId = args.parentId ?? null
     if (parentId !== null) {
       if (parentId === args.id)
@@ -404,8 +361,6 @@ export const createTask = mutation({
   },
 })
 
-/** Fields whose change can make the Google event wrong. `done` and `archived`
- *  are here because a finished or shelved task should not keep an event. */
 const CALENDAR_FIELDS = [
   'dueAt',
   'reminderMinutes',
@@ -416,9 +371,6 @@ const CALENDAR_FIELDS = [
   'notes',
 ] as const
 
-/** Schedule the push when the *merged* row either has an event or wants one.
- *  Judging by the loaded row alone would miss the first time a user turns
- *  Add to calendar on, because that row has neither yet. */
 async function scheduleCalendarSync(
   ctx: MutationCtx,
   userId: string,
@@ -443,8 +395,6 @@ async function scheduleCalendarSync(
   })
 }
 
-/** Best-effort event deletion for rows about to disappear. The rule for which
- *  events a personal task owns lives in one place (see `eventsToDelete`). */
 async function scheduleEventCleanup(
   ctx: MutationCtx,
   userId: string,
@@ -458,7 +408,6 @@ async function scheduleEventCleanup(
   })
 }
 
-/** Index a set of tasks by their parent, for the subtree walks. */
 function childrenByParent(tasks: Array<Doc<'tasks'>>) {
   const childrenOf = new Map<string, Array<Doc<'tasks'>>>()
   for (const task of tasks) {
@@ -470,11 +419,6 @@ function childrenByParent(tasks: Array<Doc<'tasks'>>) {
   return childrenOf
 }
 
-/** Everything below `root`, inclusive, walked over one board's tasks. The
- *  visited set bounds the walk: `createTask` rejects self/cross-board parents,
- *  but a row from before that check (or from a restored backup) could carry a
- *  cycle, and an unbounded queue would hang the mutation to the transaction
- *  timeout instead of just deleting what is there. */
 function withDescendants(
   tasks: Array<Doc<'tasks'>>,
   root: Doc<'tasks'>,
@@ -493,16 +437,6 @@ function withDescendants(
   return found
 }
 
-/**
- * Convex bounds one transaction, so a delete that could outgrow it hands the
- * rest to a scheduled continuation instead of failing whole and leaving the
- * space half-removed.
- *
- * A scheduled pass cannot read the rows it was handed, so it carries each task
- * twice: the `_id` it deletes and the app-facing `id` its activity rows are
- * keyed on. Handing over `_id`s alone matches nothing in that index and
- * orphans every deleted task's history forever.
- */
 const DELETE_BATCH = 200
 
 const taskToDelete = v.object({ _id: v.string(), id: v.string() })
@@ -528,7 +462,6 @@ export const continueDeleteTasks = internalMutation({
   },
 })
 
-/** The activity rows behind a batch of tasks, keyed by app-facing task id. */
 async function deleteActivityRows(
   ctx: MutationCtx,
   spaceId: string,
@@ -556,7 +489,6 @@ async function deleteTasksBatched(
   await Promise.all(
     batch.map((task) => ctx.db.delete(task._id as Doc<'tasks'>['_id'])),
   )
-  // Activity rows for a space's tasks go with them, batched the same way.
   if (spaceId)
     await deleteActivityRows(
       ctx,
@@ -574,8 +506,6 @@ async function deleteTasksBatched(
   }
 }
 
-/** `doneAt` is derived from `done` rather than accepted as an argument, so the
- *  two can never disagree. */
 export const updateTask = mutation({
   args: {
     id: v.string(),
@@ -598,15 +528,10 @@ export const updateTask = mutation({
       await requireMember(ctx, assigneeId, task.spaceId)
     }
     const patch: Partial<Doc<'tasks'>> = { ...rest }
-    // Trim like `createTask` does, so the stored title and the activity-log
-    // comparison below never disagree on whitespace.
     if (args.title !== undefined) patch.title = args.title.trim()
     if (assigneeId !== undefined) patch.assigneeId = assigneeId
     if (done !== undefined) {
       patch.done = done
-      // Preserve the old stamp when un-ticking, so a task that gets re-opened
-      // and finished again lands at the top of the finished pile by when it was
-      // actually finished this time, not by when it was finished months ago.
       patch.doneAt = done ? Date.now() : (task.doneAt ?? null)
     }
     await ctx.db.patch(task._id, patch)
@@ -661,8 +586,6 @@ export const updateTask = mutation({
   },
 })
 
-/** Move within a project or across projects of the same board. Focus
- *  membership is untouched. Subtasks travel with their parent. */
 export const moveTask = mutation({
   args: { id: v.string(), projectId: v.string(), position: v.number() },
   handler: async (ctx, args) => {
@@ -687,12 +610,6 @@ export const moveTask = mutation({
       )
     }
 
-    // The whole subtree travels with the task, walked over the board's own
-    // tasks rather than the caller's: in a space a teammate may have created
-    // the children, and a caller-scoped walk would leave them behind. The
-    // writes go out one parallel batch per level (instead of one awaited patch
-    // per child) and the visited set bounds the walk, so a large or cyclic
-    // subtree can neither blow the transaction budget nor spin forever.
     const boardTasks = await scopeTasks(ctx, userId, source)
     const childrenOf = childrenByParent(boardTasks)
     const visited = new Set<string>()
@@ -714,14 +631,6 @@ export const moveTask = mutation({
   },
 })
 
-/**
- * Focus is a clone-by-reference: toggling it on makes the task appear in the
- * Focus panel while it keeps living inside its project.
- *
- * Refused in a space: `inFocus` is one boolean on a row every member reads, so
- * sharing a board would share everyone's working set. The per-user model is a
- * separate feature.
- */
 export const setTaskFocus = mutation({
   args: {
     id: v.string(),
@@ -744,7 +653,6 @@ export const deleteTask = mutation({
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
     const task = await getWritableTask(ctx, userId, args.id)
-    // Cascade to the subtree, walked over the board's own tasks.
     const boardTasks = await scopeTasks(ctx, userId, task.spaceId ?? null)
     const toDelete = withDescendants(boardTasks, task)
     await scheduleEventCleanup(ctx, userId, toDelete)

@@ -80,14 +80,6 @@ type DragKind = 'proj' | 'task' | 'fitem' | 'cal' | null
 
 export type BoardViewMode = 'board' | 'calendar'
 
-/**
- * Module scope, not in BoardView: dnd-kit memoizes its context values on
- * these option identities (`useSensor` deps on `options`, context deps on
- * `activators` and `measuringConfiguration`). Inline literals rebuilt both
- * contexts on EVERY board render, re-rendering every sortable row, card,
- * and column on each F press — work the React Compiler cannot skip, because
- * context changes force consumers. These never vary, so they live here.
- */
 const mouseSensorOptions = { activationConstraint: { distance: 5 } }
 const touchSensorOptions = {
   activationConstraint: { delay: 250, tolerance: 5 },
@@ -95,28 +87,12 @@ const touchSensorOptions = {
 const dndMeasuring = {
   droppable: {
     strategy: MeasuringStrategy.WhileDragging,
-    // Without an explicit frequency, the partial config drops dnd-kit's
-    // default `Optimized` and re-measures every droppable far more
-    // aggressively — pinning it back stops the leftmost/scrolled-away
-    // cards from working off stale rects after a horizontal scroll.
     frequency: MeasuringFrequency.Optimized,
   },
 }
 
-/**
- * The board nests droppables three deep (column ▸ task list ▸ task rows).
- * A naive pointerWithin then resolves a task drag to the *column* under the
- * cursor, which onDragEnd can't act on — so drops silently no-op. This
- * detection filters candidate droppables to only those that make sense for
- * what's being dragged, so a task always lands on a task/list/focus target.
- */
 function collisionFor(kind: DragKind): CollisionDetection {
   return (args) => {
-    // One pass over the droppables: bucket them by their declared `data.type`
-    // and index them by id. The droppable count grows with every task and card,
-    // and collision detection runs on *every* pointer move — so rescanning the
-    // whole list (once per `byType` call, several times per move) was the hot
-    // path. Group once, then read from the buckets.
     const buckets = new Map<string, Array<DroppableContainer>>()
     const byId = new Map<string | number, DroppableContainer>()
     for (const c of args.droppableContainers) {
@@ -149,16 +125,8 @@ function collisionFor(kind: DragKind): CollisionDetection {
       const y = args.pointerCoordinates?.y
       if (!colC || y == null) return hit(get('proj', 'col'))
       const colNum = colC.data.current?.col
-      // Same column: the sortable is already shifting cards to open a gap where
-      // you're hovering, so the plain pointer/rect hit lands exactly right.
       if (colNum === args.active.data.current?.col)
         return hit(get('proj', 'col'))
-      // Cross column the target's cards *don't* shift (sortable only animates
-      // within the source context), so the pointer sits in dead space between
-      // cards and the sole hit is the column → the drop appended to the end.
-      // Resolve by geometry instead: insert before the first card whose
-      // vertical midpoint is below the pointer (or append, i.e. target the
-      // column itself, when the pointer is below them all).
       const cards = get('proj')
         .filter((c) => c.data.current?.col === colNum)
         .sort(
@@ -182,14 +150,9 @@ function collisionFor(kind: DragKind): CollisionDetection {
     }
 
     if (kind === 'task' || kind === 'cal') {
-      // Pass 1 — which project list (or the focus zone) is the pointer inside?
-      // Resolving the *container* first is what makes in-project reordering and
-      // cross-project moves land where you actually release, instead of
-      // snapping to the globally-nearest task anywhere on the board.
       const top = hit(get('list', 'focuszone')).at(0)
       const container = top ? byId.get(top.id) : undefined
       if (!container) {
-        // Anywhere else on a project card (its header/edges) → drop into it.
         const onCard = hit(get('proj')).at(0)
         return onCard ? [{ id: onCard.id }] : []
       }
@@ -200,7 +163,6 @@ function collisionFor(kind: DragKind): CollisionDetection {
         })
         return within.length > 0 ? within : [{ id: container.id }]
       }
-      // Pass 2 — the closest task row *within that project only*.
       const projectId = container.data.current?.projectId
       const rows = get('task').filter(
         (c) => c.data.current?.projectId === projectId,
@@ -235,10 +197,6 @@ function NewProjectDialog({
   const [color, setColor] = useState<string>(nextColor(0))
 
   const create = (args: CreateProjectArgs) => {
-    // The dialog closes before the server confirms. That is safe: Convex runs
-    // one client's mutations in order, so a task added to the new card queues
-    // behind this insert and never reaches a missing project. On failure the
-    // draft stays reachable through Retry, so nothing the person typed is lost.
     createProject.mutate(args, {
       onError: (e: unknown) => {
         toast.error('Could not create the project', {
@@ -252,8 +210,6 @@ function NewProjectDialog({
   const submit = () => {
     const n = name.trim()
     if (!n) return
-    // Enter and the button share this path, so the guard sits here. Without it
-    // two quick presses made two projects.
     if (createProject.isPending) return
     create({
       id: newId(),
@@ -435,12 +391,6 @@ type ActiveDrag =
   | { type: 'fitem'; task: Task; project: ProjectWithTasks }
   | { type: 'cal'; task: Task; project: ProjectWithTasks; width: number }
 
-/**
- * Pixel-for-pixel drag overlay. Positions via direct DOM manipulation
- * (ref + requestAnimationFrame), bypassing React's render cycle entirely.
- * The 250ms CSS transition from useSortable is the #1 cause of drag lag —
- * this overlay never touches React state for its position.
- */
 function FastDragOverlay({
   active,
   offsetRef,
@@ -460,10 +410,6 @@ function FastDragOverlay({
 
   useEffect(() => {
     if (!active) return
-    // The portal node is recreated fresh each drag (we render null between
-    // drags), so seed it at the grabbed item's original position. Otherwise it
-    // renders at its `top:0;left:0` default and flashes at the top-left corner
-    // for the frame before the first pointermove lands.
     if (ref.current) {
       ref.current.style.transform = `translate3d(${initialRef.current.x}px, ${initialRef.current.y}px, 0)`
     }
@@ -473,9 +419,6 @@ function FastDragOverlay({
         raf.current = requestAnimationFrame(() => {
           raf.current = 0
           if (ref.current) {
-            // Subtract where *inside* the item the user grabbed, so the ghost
-            // sits under the cursor instead of a fixed corner offset — a
-            // mispositioned ghost reads as "lag" even at a perfect 60fps.
             const { x, y } = offsetRef.current
             ref.current.style.transform = `translate3d(${pos.current.x - x}px, ${pos.current.y - y}px, 0)`
           }
@@ -487,11 +430,6 @@ function FastDragOverlay({
       window.removeEventListener('pointermove', onMove)
       if (raf.current) {
         cancelAnimationFrame(raf.current)
-        // CRITICAL: reset the handle. The guard above is `if (!raf.current)`;
-        // if a drag ends with a frame still pending, cancelling without
-        // resetting leaves a stale non-zero id, so every *subsequent* drag's
-        // guard fails, no transform is ever applied, and the (freshly mounted)
-        // overlay stays pinned at the top-left until a full page reload.
         raf.current = 0
       }
     }
@@ -535,9 +473,6 @@ export function BoardView({
   spaceId: string | null
   view: BoardViewMode
 }) {
-  // A revoked membership is handled by the space route's own guard, which
-  // watches this same query and renders an explanation. `useSuspenseQuery`
-  // forces its own `throwOnError`, so an override here would be inert.
   const { data: board } = useSuspenseQuery(boardQueryOptions(spaceId))
   const moveProject = useMoveProject()
   const moveTask = useMoveTask()
@@ -546,10 +481,6 @@ export function BoardView({
 
   const [showDone, setShowDone] = useLocalFlag('lifeos-show-done', false)
   const [focusOpen, setFocusOpen] = useLocalFlag('lifeos-focus-open', true)
-  // The keybinding handler in TaskDetailsHost closes over `toggleFocus`.
-  // Reading the flag through a ref keeps that handler's identity off the
-  // flag's identity, so the host's context value (and every row consuming
-  // it) stays stable across panel open/close renders.
   const focusOpenRef = useRef(focusOpen)
   const [mobileFocusOpen, setMobileFocusOpen] = useState(false)
   const [newProjectCol, setNewProjectCol] = useState<number | null>(null)
@@ -563,19 +494,10 @@ export function BoardView({
   const toggleFocus = () => setFocusOpen(!focusOpenRef.current)
   const closeFocus = () => setFocusOpen(false)
 
-  // Keybinding handlers in TaskDetailsHost close over `toggleFocus`, so its
-  // identity must not ride the flag. An effect (not render) keeps the ref in
-  // sync: render-time ref writes opt this component out of compiler
-  // memoization.
   useEffect(() => {
     focusOpenRef.current = focusOpen
   }, [focusOpen])
 
-  // Mouse and touch get *separate* sensors so they never fight. A single
-  // PointerSensor would also catch touch (touch fires pointer events), letting
-  // it pre-empt the TouchSensor's long-press and break dragging on mobile.
-  // MouseSensor is mouse-only — desktop keeps the exact 5px-distance feel —
-  // while TouchSensor owns touch: hold 250ms to drag, swipe sooner to scroll.
   const sensors = useSensors(
     useSensor(MouseSensor, mouseSensorOptions),
     useSensor(TouchSensor, touchSensorOptions),
@@ -583,33 +505,24 @@ export function BoardView({
 
   const columns = boardColumns(board)
   const ghostCol = (columns.at(-1) ?? -1) + 1
-  // Memoized so HeaderStats math below only recomputes when the board changes,
-  // not on every dialog/drag/focus render at this root.
   const active = activeProjects(board)
   const openCount = active.reduce(
     (n, p) => n + p.tasks.filter((t) => !t.done && !t.archived).length,
     0,
   )
 
-  // Drag-only task lookup, from the same flattened index the keybindings in
-  // TaskDetailsHost use: O(1) per drag event instead of an O(projects x tasks)
-  // scan. Built from `board` identity, so it never feeds memoized rows.
   const taskIndex = buildTaskIndex(board)
   const findTask = (id: string) => taskIndex.get(id) ?? null
 
   const onDragStart = (e: DragStartEvent) => {
     const parsed = parseDragId(e.active.id)
     if (!parsed) return
-    // Remember where inside the item the pointer grabbed, so the overlay can
-    // track the cursor 1:1 (see FastDragOverlay).
     const activator = e.activatorEvent as PointerEvent | null
     const rect = e.active.rect.current.initial
     grabOffset.current =
       activator && 'clientX' in activator && rect
         ? { x: activator.clientX - rect.left, y: activator.clientY - rect.top }
         : { x: 10, y: 10 }
-    // The item's starting top-left, so the overlay can be seeded there before
-    // the first pointermove (prevents a top-left flash on a fresh portal node).
     initialPos.current = rect ? { x: rect.left, y: rect.top } : { x: 0, y: 0 }
     pointerPos.current =
       activator && 'clientX' in activator
@@ -666,11 +579,6 @@ export function BoardView({
       return
     }
 
-    // Before or after the hovered item? `verticalListSortingStrategy` decides
-    // the live gap purely by *direction* within the sortable list (drag down
-    // past an item → land after it; drag up → before it), never by pixel
-    // midpoint. To land exactly where the preview shows — no snap/jank on
-    // release — we mirror that: same-list reorders use index direction.
     const dirSide = (
       orderedIds: Array<string>,
       overKey: string,
@@ -680,8 +588,6 @@ export function BoardView({
       if (ai === -1 || oi === -1) return null
       return ai < oi ? 'after' : 'before'
     }
-    // Cross-list drops (active isn't in the target list) have no direction, so
-    // fall back to which half of the hovered item the cursor ended on.
     const activeRect = a.rect.current.translated
     const rectSide: 'before' | 'after' =
       activeRect &&
@@ -695,8 +601,6 @@ export function BoardView({
       if (dst.kind === 'col') {
         target = projectDrop(board, src.key, { kind: 'col', key: dst.key })
       } else {
-        // hovering a project's interior (a task or its list) means "insert
-        // before that project"
         let projKey: string | null = null
         if (dst.kind === 'proj') {
           projKey = dst.key
@@ -706,8 +610,6 @@ export function BoardView({
           projKey = findTask(dst.key)?.project.id ?? null
         }
         if (!projKey || projKey === src.key) return
-        // side only applies when hovering a project card directly; over a
-        // task/list interior `over.rect` isn't a project box, so keep 'before'.
         const proj = board.find((p) => p.id === projKey)
         const orderedProjects = proj
           ? columnProjects(board, proj.gridCol).map((p) => p.id)
@@ -729,8 +631,6 @@ export function BoardView({
 
     if (src.kind === 'task' || src.kind === 'cal') {
       if (dst.kind === 'focuszone' || dst.kind === 'fitem') {
-        // task → focus is always a cross-list move (the task isn't in the focus
-        // list yet), so there's no direction — the rect half is the right cue.
         const focusOrder = focusDrop(
           board,
           src.key,
@@ -840,14 +740,13 @@ export function BoardView({
             )}
           </div>
 
-          {/* Focus is a personal working set, and `inFocus` is one shared
-              boolean on a row, so a shared board has no rail to show. */}
+          {}
           {focusOpen && spaceId === null ? (
             <ResizableFocusPanel board={board} onClose={closeFocus} />
           ) : null}
         </div>
 
-        {/* Mobile focus */}
+        {}
         {spaceId === null ? (
           <Button
             size="icon"

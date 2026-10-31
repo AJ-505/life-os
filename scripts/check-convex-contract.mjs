@@ -1,42 +1,14 @@
 #!/usr/bin/env node
-/**
- * Does the deployed front end still match the deployed backend?
- *
- * The outage this script exists for: the live bundle at lifeos-track.vercel.app
- * was built before Spaces and calls `tracker:getBoard` with no arguments, while
- * the backend had been pushed with a required `spaceId`. Convex validates
- * arguments before it runs a handler and rejects unknown fields, so every user
- * got an ArgumentValidationError and the app never loaded.
- *
- * The check fetches the live chunks, extracts every public Convex function they
- * reference, and replays the exact argument object that client sends against the
- * deployment. A newly required field, or a field that no longer exists, fails.
- *
- *   node scripts/check-convex-contract.mjs
- *   node scripts/check-convex-contract.mjs --url https://lifeos-track.vercel.app
- *
- * Read only: every probe is unauthenticated, so a mutation cannot write.
- */
 import { readFileSync } from 'node:fs'
 import { setDefaultResultOrder } from 'node:dns'
 
-// This host's IPv6 route to Cloudflare drops connections often enough to fail
-// the check at random. Prefer A records so a clean run means a clean contract.
 setDefaultResultOrder('ipv4first')
 
 const args = process.argv.slice(2)
 const urlFlag = args.indexOf('--url')
 const APP = urlFlag >= 0 ? args[urlFlag + 1] : 'https://lifeos-track.vercel.app'
 
-/**
- * What the deployed client sends, per public function. `null` means it sends no
- * arguments at all, which is a distinct fact from "it sends an empty object".
- * Values are typed the way the client sends them.
- */
 const LIVE_CLIENT_SENDS = {
-  // `null` means the client sends no arguments at all, which is a distinct fact
-  // from an empty object. Every entry is the full argument set that client can
-  // send for that function, because a subset cannot catch a removed field.
   'tracker:getBoard': null,
   'tracker:createProject': {
     id: 'contract-probe',
@@ -82,15 +54,12 @@ const LIVE_CLIENT_SENDS = {
   'tracker:deleteTask': { id: 'contract-probe' },
   'tracker:getTaskHistory': { taskId: 'contract-probe' },
   'settings:getCalendarSettings': null,
-  // The dialog writes one at a time; sending both covers both.
   'settings:updateCalendarSettings': {
     syncEnabled: false,
     defaultReminderMinutes: 15,
   },
   'calendar:syncTask': { taskId: 'contract-probe' },
   'backup:exportBackup': null,
-  // A non-empty element, so Convex actually validates the task shape. Empty
-  // arrays are never validated and hid a whole class of break.
   'backup:importBackup': {
     app: 'lifeos',
     version: 1,
@@ -129,9 +98,6 @@ const LIVE_CLIENT_SENDS = {
     ],
   },
   'spaces:getMySpaces': null,
-  // The rebuilt live bundle (6013fca) reaches these three as well. Unknown
-  // fields are rejected, so a shape change on any of them breaks the deployed
-  // client exactly like a missing required field does.
   'spaces:getSpaceMembers': { spaceId: 'contract-probe' },
   'spaces:deleteSpace': { spaceId: 'contract-probe' },
   'spaces:leaveSpace': { spaceId: 'contract-probe' },
@@ -152,9 +118,6 @@ const LIVE_CLIENT_SENDS = {
   },
 }
 
-/** Which endpoint a function lives on. Actions answer only on /api/action, and
- *  asking the wrong one returns "defined as Action" rather than a validation
- *  verdict, which would read as a pass. */
 const ACTIONS = new Set(['calendar:syncTask'])
 
 function deployment() {
@@ -164,10 +127,6 @@ function deployment() {
   return line.slice('VITE_CONVEX_URL='.length).trim().replace(/\/$/, '')
 }
 
-/**
- * A fetch that survives a flaky network. Without this the check dies on one
- * dropped connection, which reads as "unknown" rather than "clean".
- */
 async function get(url, init) {
   let last
   for (let attempt = 1; attempt <= 4; attempt++) {
@@ -183,20 +142,13 @@ async function get(url, init) {
 
 async function chunks() {
   const html = await (await get(APP)).text()
-  // Both forms appear in a Vite build: `/assets/x.js` in the HTML, and a bare
-  // `assets/x.js` inside the preload manifest a chunk carries. Matching only the
-  // leading-slash form is what made an earlier check miss every route chunk.
   const ASSET = /(?:\/)?assets\/[\w.-]+\.js/g
   const found = new Set(
     [...html.matchAll(ASSET)].map((m) =>
       m[0].startsWith('/') ? m[0] : '/' + m[0],
     ),
   )
-  // Route chunks are referenced from other chunks, not from the HTML, so crawl
-  // transitively until the set stops growing.
   const seen = new Set()
-  // Crawl until the set stops growing. A fixed pass count can silently miss a
-  // chunk, and a missed chunk is a missed contract.
   for (let pass = 0; pass < 25; pass++) {
     const next = [...found].filter((c) => !seen.has(c))
     if (next.length === 0) break
@@ -218,13 +170,11 @@ async function referencedFunctions() {
     const res = await get(APP + chunk)
     if (!res.ok) continue
     const src = await res.text()
-    // `$` is a legal identifier character in a minified bundle.
     for (const m of src.matchAll(
       /\b(?:api\.)?[$A-Za-z_][$\w]*\.(tracker|spaces|settings|calendar|backup)\.([A-Za-z_$]\w*)/g,
     )) {
       refs.add(`${m[1]}:${m[2]}`)
     }
-    // Minified builds also carry the bare function name beside its module.
     for (const m of src.matchAll(
       /\b(tracker|spaces|settings|calendar|backup)\b/g,
     )) {
@@ -254,8 +204,6 @@ async function probe(convexUrl, path, body) {
     ? 'query'
     : 'mutation'
   const answer = await call(convexUrl, kind, path, body)
-  // Belt and braces: if the kind map is stale, retry where the function lives
-  // rather than reporting a pass on an answer we never got.
   if (answer.includes('defined as Action'))
     return await call(convexUrl, 'action', path, body)
   return answer

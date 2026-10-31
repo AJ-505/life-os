@@ -277,7 +277,7 @@ export function ProjectCardBody({
         listIsOver && 'ring-2 ring-signal/60 bg-signal/5 shadow-md',
       )}
     >
-      {/* identity bar + progress */}
+      {}
       <div className="relative h-1 bg-proj/25">
         <div
           className="h-full bg-proj transition-[width] duration-500"
@@ -462,8 +462,6 @@ export function ProjectCard({
     isDragging,
   } = useSortable({
     id: projId(project.id),
-    // `col` lets cross-column collision detection group cards by column without
-    // a board lookup (see collisionFor in BoardView).
     data: { type: 'proj', projectId: project.id, col: project.gridCol },
   })
 
@@ -472,9 +470,6 @@ export function ProjectCard({
       ref={setNodeRef}
       style={{
         transform: CSS.Transform.toString(transform),
-        // The active card follows the cursor → no transition (it'd lag behind
-        // the overlay). Displaced siblings keep dnd-kit's transform transition
-        // so the "make room here" gap animates instead of snapping.
         transition: isDragging ? 'none' : transition,
       }}
       className={cn(isDragging && 'opacity-30')}

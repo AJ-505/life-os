@@ -4,15 +4,6 @@ import { descendantIds, focusDrop, focusTasks } from './board-logic'
 
 import type { ProjectWithTasks, Task } from '../types'
 
-/**
- * Client subtree walk, from the 2026-10-03 audit.
- *
- * The server's walks carry a `seen` set because a restored backup can carry a
- * parent cycle. `descendantIds` did not, so a cycle recursed until the stack
- * blew. The cycle case below states the value it wants rather than "does not
- * throw", because an unbounded walk that threw nothing would also pass that.
- */
-
 function task(id: string, parentId: string | null): Task {
   return {
     id,
@@ -48,10 +39,6 @@ describe('descendantIds', () => {
   })
 
   it('terminates on a parent cycle, and still returns the other half', () => {
-    // a is b's child and b is a's child: unreachable through the mutations,
-    // but reachable through a hand-edited or round-tripped backup import.
-    // Skipping a candidate already seen, rather than bailing when the walk
-    // comes back around, is what keeps `b` in the answer for `a`.
     const cyclic = [task('a', 'b'), task('b', 'a')]
     expect(descendantIds(cyclic, 'a')).toEqual(['b'])
     expect(descendantIds(cyclic, 'b')).toEqual(['a'])
@@ -120,7 +107,6 @@ describe('focusTasks', () => {
         focusTask('middle', 3072, 200),
       ]),
     ]
-    // newest-first, regardless of the order they were added to focus
     expect(ids(board)).toEqual(['newest', 'middle', 'oldest'])
   })
 
@@ -133,7 +119,6 @@ describe('focusTasks', () => {
       ]),
     ]
     expect(ids(board)).toEqual(['first', 'second', 'third'])
-    // ticking the top one done: it must clear the open group entirely
     const marked = [
       project('p1', [
         focusTask('first', 1024, 500),
@@ -147,7 +132,6 @@ describe('focusTasks', () => {
   it('returns a row to its own slot when it is un-done', () => {
     const open = [project('p1', [focusTask('a', 1024), focusTask('b', 2048)])]
     expect(ids(open)).toEqual(['a', 'b'])
-    // only `done` flipped: focusOrder never moved, so un-docking is lossless
     const marked = [
       project('p1', [focusTask('a', 1024, 500), focusTask('b', 2048)]),
     ]
@@ -155,7 +139,6 @@ describe('focusTasks', () => {
   })
 
   it('sinks a finished row with no stamp below stamped ones', () => {
-    // a restored backup can mark a task done without a stamp
     const board = [
       project('p1', [
         { ...focusTask('stamped', 1024, 100), done: true, doneAt: null },
@@ -175,9 +158,6 @@ describe('focusDrop', () => {
         focusTask('c', 1024, 100),
       ]),
     ]
-    // `c` is finished, so its place in the list comes from when it was finished
-    // rather than its stored order. The drop must leave that order alone
-    // instead of honouring the pointer.
     expect(focusDrop(board, 'c', { kind: 'fitem', key: 'a' }, 'before')).toBe(
       1024,
     )

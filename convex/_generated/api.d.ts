@@ -8,29 +8,33 @@
  * @module
  */
 
-import type * as backup from "../backup.js";
-import type * as calendar from "../calendar.js";
-import type * as lib from "../lib.js";
-import type * as migrations from "../migrations.js";
-import type * as settings from "../settings.js";
-import type * as spaces from "../spaces.js";
-import type * as tracker from "../tracker.js";
+import type * as backup from '../backup.js'
+import type * as calendar from '../calendar.js'
+import type * as devAuth from '../devAuth.js'
+import type * as http from '../http.js'
+import type * as lib from '../lib.js'
+import type * as migrations from '../migrations.js'
+import type * as settings from '../settings.js'
+import type * as spaces from '../spaces.js'
+import type * as tracker from '../tracker.js'
 
 import type {
   ApiFromModules,
   FilterApi,
   FunctionReference,
-} from "convex/server";
+} from 'convex/server'
 
 declare const fullApi: ApiFromModules<{
-  backup: typeof backup;
-  calendar: typeof calendar;
-  lib: typeof lib;
-  migrations: typeof migrations;
-  settings: typeof settings;
-  spaces: typeof spaces;
-  tracker: typeof tracker;
-}>;
+  backup: typeof backup
+  calendar: typeof calendar
+  devAuth: typeof devAuth
+  http: typeof http
+  lib: typeof lib
+  migrations: typeof migrations
+  settings: typeof settings
+  spaces: typeof spaces
+  tracker: typeof tracker
+}>
 
 /**
  * A utility for referencing Convex functions in your app's public API.
@@ -42,8 +46,8 @@ declare const fullApi: ApiFromModules<{
  */
 export declare const api: FilterApi<
   typeof fullApi,
-  FunctionReference<any, "public">
->;
+  FunctionReference<any, 'public'>
+>
 
 /**
  * A utility for referencing Convex functions in your app's internal API.
@@ -55,7 +59,7 @@ export declare const api: FilterApi<
  */
 export declare const internal: FilterApi<
   typeof fullApi,
-  FunctionReference<any, "internal">
->;
+  FunctionReference<any, 'internal'>
+>
 
-export declare const components: {};
+export declare const components: {}

@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Life OS — Spaces &amp; Calendar Audit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=Fragment+Mono:ital@0;1&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --paper:#f6f3ec; --card:#fffdf9; --ink:#2b241f; --muted:#7a6f64;
+    --line:#e2dbcd; --line-strong:#cfc5b2;
+    --signal:#c2500a; --signal-soft:#f6e2d3;
+    --high:#b3261e; --high-soft:#fbe3e0;
+    --medium:#a86200; --medium-soft:#f8ecd6;
+    --low:#5a6472; --low-soft:#e8ebef;
+    --ok:#2f6b45; --ok-soft:#e0efe4;
+    --mono:'Fragment Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --sans:'Familjen Grotesk',ui-sans-serif,system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth; scroll-padding-top:76px}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);line-height:1.55;font-size:16px}
+  a{color:var(--signal)}
+  code{font-family:var(--mono);font-size:.86em;background:#efe9dc;padding:.1em .35em;border-radius:4px}
+  pre{font-family:var(--mono);font-size:12.5px;line-height:1.6;background:#241f1b;color:#f3ede2;padding:14px 16px;border-radius:10px;overflow:auto;margin:10px 0 0}
+  pre .g{color:#8fd6a3}.pre .r{color:#ff9d8a}
+  h1,h2,h3{line-height:1.15;margin:0}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+
+  /* nav */
+  header.top{position:sticky;top:0;z-index:50;background:rgba(246,243,236,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  .top .wrap{display:flex;align-items:center;gap:18px;height:58px;flex-wrap:wrap}
+  .brand{display:flex;align-items:baseline;gap:8px;font-weight:700;letter-spacing:-.02em}
+  .brand .os{background:var(--signal);color:#fff;font-family:var(--mono);font-size:12px;font-weight:700;padding:2px 7px;border-radius:5px}
+  nav.links{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+  nav.links a{color:var(--muted);text-decoration:none;font-size:14px;font-weight:500;padding:6px 10px;border-radius:7px}
+  nav.links a:hover{background:#ece5d8;color:var(--ink)}
+
+  /* hero */
+  .hero{padding:44px 0 10px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--signal);font-weight:500}
+  .hero h1{font-size:clamp(30px,4.4vw,46px);letter-spacing:-.03em;margin:8px 0 12px;font-weight:700}
+  .hero p.lede{font-size:18px;color:#4c433b;max-width:70ch;margin:0 0 20px}
+  .verdict{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:24px 0 6px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+  .stat b{display:block;font-size:30px;letter-spacing:-.02em;line-height:1}
+  .stat span{font-size:12px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em}
+  .stat.high b{color:var(--high)}.stat.medium b{color:var(--medium)}.stat.ok b{color:var(--ok)}
+
+  section{padding:34px 0;border-top:1px solid var(--line);margin-top:26px}
+  section > .wrap > h2{font-size:24px;letter-spacing:-.02em;margin-bottom:4px}
+  section > .wrap > p.sub{color:var(--muted);margin:0 0 20px;max-width:75ch}
+
+  /* filter */
+  .filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 18px}
+  .chip{cursor:pointer;border:1px solid var(--line-strong);background:var(--card);color:var(--ink);font:inherit;font-size:13px;font-weight:600;padding:7px 13px;border-radius:999px}
+  .chip:hover{border-color:var(--signal)}
+  .chip[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+  .spacer{flex:1}
+
+  /* finding cards */
+  .card{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--line-strong);border-radius:13px;padding:18px 20px;margin:0 0 16px;box-shadow:0 1px 0 rgba(43,36,31,.03)}
+  .card[data-sev="high"]{border-left-color:var(--high)}
+  .card[data-sev="medium"]{border-left-color:var(--medium)}
+  .card[data-sev="low"]{border-left-color:var(--low)}
+  .card.hidden{display:none}
+  .card h3{font-size:18px;letter-spacing:-.01em;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+  .badge{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:3px 8px;border-radius:6px;white-space:nowrap}
+  .badge.high{background:var(--high-soft);color:var(--high)}
+  .badge.medium{background:var(--medium-soft);color:var(--medium)}
+  .badge.low{background:var(--low-soft);color:var(--low)}
+  .badge.area{background:#efe9dc;color:var(--muted);font-weight:500;text-transform:none;letter-spacing:0}
+  .card .id{font-family:var(--mono);font-size:12px;color:var(--muted)}
+  .card p{margin:10px 0 0;color:#433b34}
+  .card p.first{margin-top:12px}
+  .fix{margin:12px 0 0;padding:10px 12px;background:#f2f6ef;border:1px solid #dbe6d5;border-radius:9px;font-size:14.5px}
+  .fix b{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--ok)}
+  details.fold{margin-top:12px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#fdfbf7}
+  details.fold > summary{cursor:pointer;list-style:none;padding:10px 14px;font-family:var(--mono);font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:8px}
+  details.fold > summary::-webkit-details-marker{display:none}
+  details.fold > summary::before{content:"▸";color:var(--signal)}
+  details.fold[open] > summary::before{content:"▾"}
+  details.fold > .body{padding:0 14px 14px;border-top:1px solid var(--line)}
+  .codewrap{position:relative}
+  .copy{position:absolute;top:10px;right:10px;cursor:pointer;font:inherit;font-family:var(--mono);font-size:11px;background:#3a332d;color:#f3ede2;border:1px solid #4a423a;border-radius:6px;padding:4px 9px}
+  .copy:hover{background:#4a423a}
+  .tag{font-family:var(--mono);font-size:11px;color:var(--muted)}
+
+  ul.checks{list-style:none;padding:0;margin:0;display:grid;gap:10px}
+  ul.checks li{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:13px 16px 13px 44px;position:relative}
+  ul.checks li::before{content:"✓";position:absolute;left:16px;top:12px;color:var(--ok);font-weight:700}
+  ul.checks li b{display:block;font-size:15px}
+  ul.checks li span{color:var(--muted);font-size:14px}
+
+  .callout{background:var(--signal-soft);border:1px solid #e8c7ad;border-radius:12px;padding:16px 18px;margin-top:14px}
+  .callout b{font-family:var(--mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--signal)}
+  .cmd{display:flex;gap:10px;align-items:stretch;background:#241f1b;border-radius:11px;padding:12px 14px;margin-top:10px}
+  .cmd code{background:none;color:#f3ede2;font-size:13px;flex:1;white-space:pre-wrap;word-break:break-word;padding:0}
+  .cmd button{cursor:pointer;font:inherit;font-family:var(--mono);font-size:11px;background:#4a423a;color:#f3ede2;border:1px solid #5a5148;border-radius:7px;padding:5px 10px;align-self:flex-start}
+  table{border-collapse:collapse;width:100%;font-size:14px;margin-top:12px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  footer{padding:40px 0 60px;color:var(--muted);font-size:13px;border-top:1px solid var(--line);margin-top:30px}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+  @media (max-width:640px){nav.links{display:none}.hero{padding-top:30px}}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <span class="brand">Life <span class="os">OS</span> <span style="color:var(--muted);font-weight:400;font-size:14px">audit</span></span>
+    <nav class="links">
+      <a href="#summary">Summary</a>
+      <a href="#findings">Findings</a>
+      <a href="#verified">Verified</a>
+      <a href="#reproduce">Reproduce</a>
+      <a href="#caveats">Caveats</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <div class="eyebrow">Deep audit · commit 7664ea8 · 2026-10-03</div>
+    <h1>Spaces &amp; Google Calendar integration</h1>
+    <p class="lede">I read the whole spaces and calendar surface and ran a 10-probe Convex test suite against the real functions. Ten defects, eight proven by a failing or instrumented probe. The worst two: deleting a space leaves its activity history behind, and “Resync” cannot put back an event you deleted in Google — it needs two clicks.</p>
+    <div class="verdict">
+      <div class="stat high"><b>3</b><span>high</span></div>
+      <div class="stat medium"><b>5</b><span>medium</span></div>
+      <div class="stat"><b>2</b><span>low</span></div>
+      <div class="stat ok"><b>9/10</b><span>probes passing</span></div>
+      <div class="stat ok"><b>5</b><span>flows verified</span></div>
+    </div>
+    <p class="tag" style="margin-top:14px">Both features ship behind <code>VITE_ENABLE_SPACES</code> / <code>VITE_ENABLE_CALENDAR</code> (default off), so nothing here is reachable in the default build yet. These are the bugs to fix before the flags flip.</p>
+  </div>
+
+  <section id="summary">
+    <div class="wrap">
+      <h2>Bottom line</h2>
+      <p class="sub">Authorization is solid: I could not break the ownership or membership gates. The failures are in lifecycle cleanup and in the calendar’s “event removed on Google’s side” path. One is a deployment hazard that can make every existing personal board look empty.</p>
+      <table>
+        <thead><tr><th>#</th><th>Finding</th><th>Area</th><th>Severity</th><th>Proof</th></tr></thead>
+        <tbody>
+          <tr><td>S-1</td><td>deleteSpace orphans task activity rows</td><td>spaces</td><td><span class="badge high">high</span></td><td>failing test</td></tr>
+          <tr><td>C-1</td><td>Resync needs two runs to restore a deleted event</td><td>calendar</td><td><span class="badge high">high</span></td><td>instrumented test</td></tr>
+          <tr><td>S-2</td><td>Un-migrated rows vanish from personal boards</td><td>spaces</td><td><span class="badge high">high</span></td><td>instrumented test</td></tr>
+          <tr><td>C-2</td><td>Sync-off deletes the event but keeps its id</td><td>calendar</td><td><span class="badge medium">medium</span></td><td>instrumented test</td></tr>
+          <tr><td>S-3</td><td>Removed member stays assigned to tasks</td><td>spaces</td><td><span class="badge medium">medium</span></td><td>instrumented test</td></tr>
+          <tr><td>C-3</td><td>Bad Clerk key reported as “not connected”</td><td>calendar</td><td><span class="badge medium">medium</span></td><td>instrumented test</td></tr>
+          <tr><td>S-4</td><td>deleteSpace reads the whole space at once</td><td>spaces</td><td><span class="badge medium">medium</span></td><td>limit probe</td></tr>
+          <tr><td>U-1</td><td>Client subtree walk loops on a parent cycle</td><td>client</td><td><span class="badge medium">medium</span></td><td>runtime crash</td></tr>
+          <tr><td>U-2</td><td>Space task dialog shows “calendar is on its way”</td><td>calendar UI</td><td><span class="badge low">low</span></td><td>code read</td></tr>
+          <tr><td>U-3</td><td>Enter double-submits create dialogs</td><td>spaces UI</td><td><span class="badge low">low</span></td><td>code read</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="findings">
+    <div class="wrap">
+      <h2>Findings</h2>
+      <p class="sub">Filter by severity. Open <em>Proof</em> to see the exact output the probe printed, and <em>Where</em> for the code path.</p>
+      <div class="filters">
+        <button class="chip" data-filter="all" aria-pressed="true">All</button>
+        <button class="chip" data-filter="high" aria-pressed="false">High</button>
+        <button class="chip" data-filter="medium" aria-pressed="false">Medium</button>
+        <button class="chip" data-filter="low" aria-pressed="false">Low</button>
+        <span class="spacer"></span>
+        <button class="chip" id="expandAll" aria-pressed="false">Expand all proofs</button>
+      </div>
+
+      <!-- S-1 -->
+      <article class="card" data-sev="high">
+        <h3><span class="id">S-1</span> deleteSpace orphans every task’s activity history <span class="badge high">high</span> <span class="badge area">spaces</span></h3>
+        <p class="first">Delete a shared space and the projects, tasks and members go — but the activity log rows behind the tasks stay in the database forever. The cascade passes the tasks’ internal Convex <code>_id</code> to the activity lookup, while activity rows are keyed by the app-facing task id. The lookup matches nothing, so nothing is deleted.</p>
+        <p>This is the one probe I wrote to assert the intended behaviour, and it fails: after <code>deleteSpace</code>, one activity row remains with <code>taskId: 't1'</code> while the task itself is gone. On a busy space this is unbounded table growth and a cascade that quietly does not do what its own comment says.</p>
+        <div class="fix"><b>Fix direction</b><br/>In <code>deleteSpaceSide</code>, look activity up by the task’s app id, not the Convex <code>_id</code> — exactly as <code>tracker.ts</code> already does. Carry both ids (or the task rows) through the continuation.</div>
+        <details class="fold"><summary>Proof · test I</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#p-s1">copy</button><pre id="p-s1">after delete: { tasks: 0, projects: 0, activity: 1, members: 0, spaces: 0 }
+orphaned activity row = {
+  taskId: 't1',
+  spaceId: 'c366b726-7c0a-4164-8c1b-0bf5f2c22b66',
+  kind: 'created'
+}
+
+FAIL  convex/__audit__.test.ts &gt; I. deleteSpace cascades projects, tasks, activity, members and the space
+AssertionError: expected 1 to be +0 // Object.is equality
+
+Test Files  1 failed (1)
+     Tests  1 failed | 9 passed (10)</pre></div>
+        </div></details>
+        <details class="fold"><summary>Where</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#c-s1">copy</button><pre id="c-s1">// convex/spaces.ts:506 — the ids collected are Convex _ids
+taskIds: tasks.map((t) =&gt; t._id),
+
+// convex/spaces.ts:537 — the activity row is keyed by the APP id, so this never matches
+...batch(side.taskIds).flatMap((id) =&gt; [
+  ctx.db.delete(id as Doc&lt;'tasks'&gt;['_id']),
+  ctx.db.query('taskActivity')
+    .withIndex('by_space_task', (q) =&gt;
+      q.eq('spaceId', side.appSpaceId).eq('taskId', id), // id is a _id
+    )
+    .collect()
+    .then((rows) =&gt; Promise.all(rows.map((row) =&gt; ctx.db.delete(row._id)))),
+]),
+
+// convex/tracker.ts:531 — the correct pattern, using the app id
+q.eq('spaceId', spaceId).eq('taskId', task.id)</pre></div>
+        </div></details>
+      </article>
+
+      <!-- C-1 -->
+      <article class="card" data-sev="high">
+        <h3><span class="id">C-1</span> “Resync” cannot restore an event deleted in Google — it takes two runs <span class="badge high">high</span> <span class="badge medium">calendar</span></h3>
+        <p class="first">The Resync control promises it will “re-push every synced task, including any event deleted in Google”. It does not. When Google answers a patch with 404/410, the sync clears the local event id and returns a failure (<code>event_removed</code>) whose own message says “Use Resync calendar to put it back”. A single click therefore clears the id and fails; only the <em>next</em> click creates the event.</p>
+        <p>The probe drives the real action with the network mocked at the fetch boundary: run one sends a PATCH and gets 404, returns <code>event_removed</code> and nulls the id; run two sends a POST and succeeds. Every task whose event was deleted this way — including every task after you toggle sync off and back on — costs two resyncs.</p>
+        <div class="fix"><b>Fix direction</b><br/>Give the explicit <code>syncTask</code> path a “recreate on missing” mode, or have the resync clear stale ids before pushing. Keep the background scheduler’s current behaviour, which deliberately does not resurrect events the user deleted.</div>
+        <details class="fold"><summary>Proof · test F</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#p-c1">copy</button><pre id="p-c1">resync #1 result = {"detail":"The calendar event was removed in Google. Use Resync calendar to put it back.","ok":false,"reason":"event_removed"}
+after resync #1, calendarEventId = null
+resync #2 result = {"action":"created","link":"https://cal/x","ok":true}
+
+fetch calls = [
+  'GET  https://api.clerk.com/v1/users/u1/oauth_access_tokens/google',
+  'PATCH https://www.googleapis.com/.../events/abcdef1234567890abcdef1234567890',  &lt;- 404
+  'GET  https://api.clerk.com/v1/users/u1/oauth_access_tokens/google',
+  'POST https://www.googleapis.com/calendar/v3/calendars/primary/events'            &lt;- created
+]</pre></div>
+        </div></details>
+        <details class="fold"><summary>Where</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#c-c1">copy</button><pre id="c-c1">// convex/calendar.ts:536
+const dropRemovedEvent = async (expect) =&gt; {
+  await ctx.runMutation(internal.calendar.setEventId, { ..., calendarEventId: null, expect })
+  return { result: { ok: false, reason: 'event_removed',
+    detail: 'The calendar event was removed in Google. Use Resync calendar to put it back.' },
+    pushed: null }
+}
+
+// src/shell/AppShell.tsx:361 — the copy the control shows
+"Re-push every synced task, including any event deleted in Google"</pre></div>
+        </div></details>
+      </article>
+
+      <!-- S-2 -->
+      <article class="card" data-sev="high">
+        <h3><span class="id">S-2</span> Un-migrated rows disappear from personal boards <span class="badge high">high</span> <span class="badge medium">spaces</span></h3>
+        <p class="first">Personal board reads now filter on <code>spaceId = null</code> through a new index. Rows written before that field existed have no <code>spaceId</code> key, and Convex omits a document from an index when the indexed field is absent. So until the manual <code>backfillSpaceId</code> migration runs, every pre-existing personal project and task is invisible: the board renders empty even though the data is still in the database.</p>
+        <p>The probe inserts a row exactly as the old code wrote it (no <code>spaceId</code>), queries the board (0 projects), runs the backfill, and queries again (1 project). The schema comment acknowledges the field is optional “until the backfill has run everywhere”, but nothing enforces the order — no deploy hook, no runtime fallback, and the reads do not treat a missing field as personal the way backup import does.</p>
+        <div class="fix"><b>Fix direction</b><br/>Either run the backfill as part of the deploy, or make the personal read tolerant of absent <code>spaceId</code> (as <code>personalRows</code> in backup already is) until the backfill is verified. <code>migrations.verifySpaceId</code> already exists to gate the switch.</div>
+        <details class="fold"><summary>Proof · test C</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#p-s2">copy</button><pre id="p-s2">getBoard length BEFORE backfill = 0
+getBoard length AFTER backfill  = 1
+
+// The row is present the whole time:
+//   ctx.db.insert('projects', { userId:'u1', id:'p1', ... })   // no spaceId key</pre></div>
+        </div></details>
+        <details class="fold"><summary>Where</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#c-s2">copy</button><pre id="c-s2">// convex/lib.ts:163 and :182
+.withIndex('by_user_space', (q) =&gt; q.eq('userId', userId).eq('spaceId', null))
+// documents whose spaceId field is absent are not in this index
+
+// convex/migrations.ts — manual, not automatic:
+//   npx convex run --prod migrations:backfillSpaceId '{"phase":"tasks"}'</pre></div>
+        </div></details>
+      </article>
+
+      <!-- C-2 -->
+      <article class="card" data-sev="medium">
+        <h3><span class="id">C-2</span> Turning sync off deletes the Google event but keeps its id <span class="badge medium">medium</span> <span class="badge medium">calendar</span></h3>
+        <p class="first">Switch calendar sync off and the cleanup deletes the events from Google, but the tasks keep their <code>calendarEventId</code>. That leaves a dangling pointer. The UI still counts those tasks as “synced”, and the next resync patches an event that no longer exists — which is exactly the two-run failure above. The two bugs compound.</p>
+        <div class="fix"><b>Fix direction</b><br/>When the cleanup deletes an event, also clear <code>calendarEventId</code> on the task (keep <code>addToCalendar</code>, the user’s intent). That makes re-enabling sync a single clean resync.</div>
+        <details class="fold"><summary>Proof · test E</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#p-c2">copy</button><pre id="p-c2">after sync-off + cleanup, calendarEventId = abcdef12345
+
+// Expected after the events are deleted: null
+// Actual: the id survives, pointing at a Google event that is gone</pre></div>
+        </div></details>
+        <details class="fold"><summary>Where</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#c-c2">copy</button><pre id="c-c2">// convex/settings.ts:64 — schedules Google deletes, never patches tasks
+const eventIds = eventIdsForTasks(page.page)
+if (eventIds.length &gt; 0) {
+  await ctx.scheduler.runAfter(0, internal.calendar.deleteEventsForUser, { userId, eventIds })
+}
+
+// convex/calendar.ts:695 — deletes only on Google's side
+export const deleteEventsForUser = internalAction({ ... for (const eventId of args.eventIds) { ... } })</pre></div>
+        </div></details>
+      </article>
+
+      <!-- S-3 -->
+      <article class="card" data-sev="medium">
+        <h3><span class="id">S-3</span> Removing a member leaves their tasks assigned to them <span class="badge medium">medium</span> <span class="badge medium">spaces</span></h3>
+        <p class="first">Remove someone from a space and their membership goes, but any task assigned to them still points at their id. The assignee dropdown only lists current members, so those tasks render with no valid selection — the person is gone from the member list but still the owner of work. The task dialog can still clear it to “Unassigned”, so it is recoverable, but the default state is wrong.</p>
+        <div class="fix"><b>Fix direction</b><br/>In <code>removeMember</code>, unassign (or reassign to the owner) that member’s tasks in the same transaction, and log an activity row for it.</div>
+        <details class="fold"><summary>Proof · test A</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#p-s3">copy</button><pre id="p-s3">after removal, members = [ 'u1' ]
+after removal, task.assigneeId = u2</pre></div>
+        </div></details>
+        <details class="fold"><summary>Where</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#c-s3">copy</button><pre id="c-s3">// convex/spaces.ts:441 removeMember
+const removed = await dropMembership(ctx, space.id, args.userId)
+if (removed === 0) throw new Error('That person is not a member of this space')
+return { inviteCode: await rotateInviteCode(ctx, space) }
+// no task reassignment</pre></div>
+        </div></details>
+      </article>
+
+      <!-- C-3 -->
+      <article class="card" data-sev="medium">
+        <h3><span class="id">C-3</span> A bad Clerk secret is reported as “no Google account connected” <span class="badge medium">medium</span> <span class="badge medium">calendar</span></h3>
+        <p class="first">The token fetch tries two Clerk provider slugs and treats <em>any</em> non-OK HTTP response as “try the next one”. When the deployment’s <code>CLERK_SECRET_KEY</code> is wrong or expired, Clerk answers 401 for both, and the user is told “No Google account is connected to this Clerk user” — a user-action message for an operator problem. The same swallow hides 403s and 5xxs.</p>
+        <div class="fix"><b>Fix direction</b><br/>Distinguish 401/403 (server credential problem → <code>not_configured</code>) from 404 (provider not linked → try the next slug / <code>not_connected</code>).</div>
+        <details class="fold"><summary>Proof · test G</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#p-c3">copy</button><pre id="p-c3">// Clerk fetch stubbed to return HTTP 401 for every call
+result for an invalid Clerk secret =
+  {"detail":"No Google account is connected to this Clerk user.","ok":false,"reason":"not_connected"}</pre></div>
+        </div></details>
+        <details class="fold"><summary>Where</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#c-c3">copy</button><pre id="c-c3">// convex/calendar.ts:270
+for (const provider of ['google', 'oauth_google']) {
+  const attempt = await request(`.../oauth_access_tokens/${provider}`, { headers })
+  if (!attempt.ok) continue
+  const res = attempt.response
+  if (!res.ok) continue          // 401/403/5xx swallowed here
+  ...
+}
+return { ok: false, reason: 'not_connected', detail: 'No Google account is connected...' }</pre></div>
+        </div></details>
+      </article>
+
+      <!-- S-4 -->
+      <article class="card" data-sev="medium">
+        <h3><span class="id">S-4</span> deleteSpace reads the whole space in one transaction <span class="badge medium">medium</span> <span class="badge medium">spaces</span></h3>
+        <p class="first">The cascade is advertised as batched so “a space larger than one transaction still goes without tripping the limits”. The writes are batched — but the first thing <code>deleteSpace</code> does is <code>.collect()</code> every member, project and task. That read scales with the space, not with the 200-row batch, so a large enough space cannot be deleted at all: the first transaction dies before any continuation is scheduled. Convex’s default read cap is 32,000 documents / 16&nbsp;MB; a space above that fails.</p>
+        <p>The probe lowers the document-read limit to 250 and creates 300 tasks, which makes the failure visible at test scale. At default limits the same shape bites at roughly 32,000 tasks (or 16&nbsp;MB of task documents). A second, related limit: the continuation passes whole id arrays through the scheduler, and Convex arrays cap at 8,192 values.</p>
+        <div class="fix"><b>Fix direction</b><br/>Page the initial read the way the import and sync-off cleanup already do (paginate, then schedule), instead of collecting all three tables up front.</div>
+        <details class="fold"><summary>Proof · test D</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#p-s4">copy</button><pre id="p-s4">// transactionLimits: { documentsRead: 250 }, 300 tasks
+deleteSpace error = Scanned too many documents in a single function execution (limit: 250).
+This is a Convex limit: https://docs.convex.dev/production/state/limits</pre></div>
+        </div></details>
+        <details class="fold"><summary>Where</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#c-s4">copy</button><pre id="c-s4">// convex/spaces.ts:489
+const [members, projects, tasks] = await Promise.all([
+  ctx.db.query('spaceMembers').withIndex('by_space', ...).collect(),
+  ctx.db.query('projects').withIndex('by_space', ...).collect(),
+  ctx.db.query('tasks').withIndex('by_space', ...).collect(),
+])
+// deleteSpaceSide then batches only the deletes (DELETE_BATCH = 200)</pre></div>
+        </div></details>
+      </article>
+
+      <!-- U-1 -->
+      <article class="card" data-sev="medium">
+        <h3><span class="id">U-1</span> Client subtree walk recurses forever on a parent cycle <span class="badge medium">medium</span> <span class="badge medium">client</span></h3>
+        <p class="first">The server’s subtree walks all carry a <code>visited</code> set, with a comment saying a restored backup can carry a cycle. The client’s <code>descendantIds</code>, used by the optimistic move and delete updates, has no such guard. A two-node cycle sends it into infinite recursion and a <code>RangeError</code>, which crashes the optimistic update.</p>
+        <p>Mutations reject a self-parent, but backup import inserts <code>parentId</code> from the file with no validation, so a hand-edited or round-tripped backup can create the cycle. Cycle nodes are hidden from project cards (they have no root path), but they can still appear in the flat Timeline if they have a due date; opening one and pressing Delete runs <code>descendantIds</code> and throws.</p>
+        <div class="fix"><b>Fix direction</b><br/>Add the same visited set the server uses. One line, and the two implementations stop disagreeing.</div>
+        <details class="fold"><summary>Proof · tsx probe</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#p-u1">copy</button><pre id="p-u1">input: a.parentId=b, b.parentId=a (a 2-cycle)
+THREW: RangeError - Maximum call stack size exceeded</pre></div>
+        </div></details>
+        <details class="fold"><summary>Where</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#c-u1">copy</button><pre id="c-u1">// src/tracker/board/board-logic.ts:115 — no visited set
+export function descendantIds(tasks, id) {
+  const out = []
+  const walk = (parent) =&gt; {
+    for (const t of tasks) {
+      if (t.parentId === parent) { out.push(t.id); walk(t.id) }   // can cycle
+    }
+  }
+  walk(id); return out
+}
+
+// convex/tracker.ts:461 — the server bounds the same walk
+const visited = new Set([root.id])
+while (queue.length &gt; 0) { const child = queue.shift(); if (visited.has(child.id)) continue; ... }</pre></div>
+        </div></details>
+      </article>
+
+      <!-- U-2 -->
+      <article class="card" data-sev="low">
+        <h3><span class="id">U-2</span> A space task’s dialog shows “Calendar sync is on its way” <span class="badge low">low</span> <span class="badge medium">calendar UI</span></h3>
+        <p class="first">Calendar sync is personal-only by design, but the task dialog renders the <code>ComingSoon</code> placeholder for shared-space tasks even when the calendar flag is on. A collaborator on a shared board is told the feature is coming when it exists and is simply not available to them. It should render nothing, or a one-line “personal tasks only”.</p>
+        <div class="fix"><b>Fix direction</b><br/>Branch on <code>spaceId === null</code> alone for the placeholder; render nothing (or a personal-only note) inside a space.</div>
+        <details class="fold"><summary>Where</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#c-u2">copy</button><pre id="c-u2">// src/tracker/board/TaskDetails.tsx:784
+{CALENDAR_ENABLED &amp;&amp; spaceId === null ? (
+  &lt;TaskCalendarFields ... /&gt;
+) : (
+  &lt;ComingSoon title="Calendar sync" description="Google Calendar integration is on its way." /&gt;
+)}</pre></div>
+        </div></details>
+      </article>
+
+      <!-- U-3 -->
+      <article class="card" data-sev="low">
+        <h3><span class="id">U-3</span> Enter key double-submits the create dialogs <span class="badge low">low</span> <span class="badge medium">spaces UI</span></h3>
+        <p class="first">The New Space and New Project dialogs submit on Enter without checking whether a request is already in flight. The buttons disable themselves while pending, but Enter bypasses the button. Press Enter twice quickly and you create two spaces or two projects. The same pattern appears in both dialogs.</p>
+        <div class="fix"><b>Fix direction</b><br/>Guard <code>handleCreate</code> / <code>submit</code> on <code>isPending</code>, matching the disabled button.</div>
+        <details class="fold"><summary>Where</summary><div class="body">
+          <div class="codewrap"><button class="copy" data-copy="#c-u3">copy</button><pre id="c-u3">// src/routes/spaces.tsx:298
+onKeyDown={(e) =&gt; e.key === 'Enter' &amp;&amp; handleCreate()}
+// handleCreate() has no createSpace.isPending guard
+
+// src/tracker/board/BoardView.tsx:248
+onKeyDown={(e) =&gt; e.key === 'Enter' &amp;&amp; submit()}</pre></div>
+        </div></details>
+      </article>
+
+    </div>
+  </section>
+
+  <section id="verified">
+    <div class="wrap">
+      <h2>Checked and holding</h2>
+      <p class="sub">These probes passed. They are the parts of the implementation I tried to break and could not.</p>
+      <ul class="checks">
+        <li><b>Join throttle</b><span>Counts only codes that fail to resolve (re-opening a valid link never burns an attempt), and blocks the 11th attempt within the window. Test B: nine <code>not_found</code>, then <code>throttled</code>.</span></li>
+        <li><b>Ownership succession and code rotation</b><span>When the owner leaves, the longest-standing member becomes owner and the invite code rotates; the old link stops working and the new one joins. Test H.</span></li>
+        <li><b>Authorization gates</b><span>Non-owners cannot delete, reset or remove; non-members cannot read the board or the member list. Test J: every probe rejected.</span></li>
+        <li><b>Cascade (activity aside)</b><span>deleteSpace removes projects, tasks, members and the space document itself. Test I.</span></li>
+        <li><b>Token isolation</b><span>The Google access token is fetched from Clerk with the deployment secret and used only inside the Convex action. The browser never receives it.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="reproduce">
+    <div class="wrap">
+      <h2>Reproduce it yourself</h2>
+      <p class="sub">The probes are now part of the repo's test suite. The open bugs are pinned in a <code>known bugs</code> block with <code>it.fails</code>: each case states the behaviour we want and is red on purpose, so the suite stays green while the bug is open. A fix makes the case pass and flags the <code>.fails</code> for removal.</p>
+      <div class="cmd"><code id="cmd1">pnpm test</code><button data-copy="#cmd1">copy</button></div>
+      <p class="tag" style="margin-top:10px">Cases live in <code>convex/spaces.test.ts</code>, <code>convex/calendar.test.ts</code>, <code>convex/migrations.test.ts</code> and <code>src/tracker/board/board-logic.test.ts</code>. The findings write-up is <code>docs/audits/2026-10-03-spaces-calendar.md</code>.</p>
+      <h3 style="margin-top:26px;font-size:17px">Raw evidence</h3>
+      <table>
+        <thead><tr><th>File</th><th>What it is</th></tr></thead>
+        <tbody>
+          <tr><td><code>…/lifeos-spaces-calendar-audit/vitest-run.txt</code></td><td>Full raw run from the original probe harness: all ten probes and the descendant-cycle crash.</td></tr>
+          <tr><td><code>…/lifeos-spaces-calendar-audit/__audit__.test.ts</code></td><td>The standalone probe suite the repo tests were distilled from.</td></tr>
+          <tr><td><code>…/lifeos-spaces-calendar-audit/descendant-cycle.ts</code></td><td>The pure-function cycle probe.</td></tr>
+          <tr><td><code>…/lifeos-spaces-calendar-audit/findings.json</code></td><td>Machine-readable findings.</td></tr>
+        </tbody>
+      </table>
+      <div class="callout"><b>How the probes run</b><br/>convex-test executes the real Convex functions in-process against an in-memory database. Network is stubbed at <code>fetch</code>, so the calendar probes prove the code’s decision logic, not live Google behaviour. The suite ran in ~1.4&nbsp;s and peaked at ~220&nbsp;MB.</div>
+    </div>
+  </section>
+
+  <section id="caveats">
+    <div class="wrap">
+      <h2>Caveats and what I did not test</h2>
+      <ul class="checks">
+        <li><b>No live Google or Clerk calls</b><span>The calendar probes stub the network. They prove which branch the code takes (404 → <code>event_removed</code>, 401 → <code>not_connected</code>), not Google’s real responses.</span></li>
+        <li><b>Delete-scale limit is demonstrated at lowered limits</b><span>Finding S-4 uses <code>documentsRead: 250</code> with 300 tasks so the unbounded read is visible at test scale. At Convex defaults the same failure needs ~32,000 tasks or ~16&nbsp;MB of task documents.</span></li>
+        <li><b>The cycle needs a cyclic parentId</b><span>Mutations reject self-parents, so the client crash needs a cycle to reach the database — the realistic route is a hand-edited or round-tripped backup through <code>importBackup</code>, which does not validate <code>parentId</code>.</span></li>
+        <li><b>No browser pass</b><span>I did not run the UI end to end; the two UI findings are code reads. The backend findings are runtime-proven.</span></li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer><div class="wrap">Life OS spaces &amp; calendar audit · commit 7664ea8 · probes in <code>/home/abasiono/code/artifacts/lifeos-spaces-calendar-audit/</code></div></footer>
+
+<script>
+  // severity filter
+  const chips = document.querySelectorAll('.chip[data-filter]')
+  const cards = document.querySelectorAll('.card')
+  chips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const f = chip.dataset.filter
+      chips.forEach((c) => c.setAttribute('aria-pressed', String(c === chip)))
+      cards.forEach((card) => {
+        card.classList.toggle('hidden', f !== 'all' && card.dataset.sev !== f)
+      })
+    })
+  })
+
+  // expand all proofs
+  const expandBtn = document.getElementById('expandAll')
+  expandBtn.addEventListener('click', () => {
+    const open = expandBtn.getAttribute('aria-pressed') !== 'true'
+    document.querySelectorAll('details.fold').forEach((d) => { d.open = open })
+    expandBtn.setAttribute('aria-pressed', String(open))
+    expandBtn.textContent = open ? 'Collapse all proofs' : 'Expand all proofs'
+  })
+
+  // copy buttons
+  document.querySelectorAll('.copy, .cmd button').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const sel = btn.dataset.copy
+      const el = sel ? document.querySelector(sel) : null
+      if (!el) return
+      try {
+        await navigator.clipboard.writeText(el.innerText)
+        const old = btn.textContent
+        btn.textContent = 'copied'
+        setTimeout(() => { btn.textContent = old }, 1200)
+      } catch (e) { /* clipboard unavailable on file:// in some browsers */ }
+    })
+  })
+</script>
+</body>
+</html>
