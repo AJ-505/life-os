@@ -7,7 +7,7 @@ import {
   atMinute,
   blockShortLabel,
   calendarWeek,
-  defaultEventMinutes,
+  cardDensity,
   dropMinute,
   durationUntil,
   externalPlacement,
@@ -139,17 +139,24 @@ describe('dropMinute', () => {
   })
 })
 
-describe('defaultEventMinutes', () => {
-  it('gives a slot far from midnight a full hour, not the block size', () => {
-    expect(defaultEventMinutes(0)).toBe(60)
-    expect(defaultEventMinutes(540)).toBe(60)
-    expect(defaultEventMinutes(1260)).toBe(60)
+describe('cardDensity', () => {
+  it('reads a freshly clicked block at full size on every grid', () => {
+    expect(cardDensity(60, HOUR_PX)).toBe('full')
+    expect(cardDensity(15, hourPxFor(15))).toBe('full')
+    expect(cardDensity(10, hourPxFor(10))).toBe('full')
+    expect(cardDensity(30, hourPxFor(30))).toBe('full')
   })
 
-  it('clips the hour at midnight', () => {
-    expect(defaultEventMinutes(23 * 60)).toBe(60)
-    expect(defaultEventMinutes(23 * 60 + 30)).toBe(30)
-    expect(defaultEventMinutes(23 * 60 + 45)).toBe(15)
+  it('hides the time label only when it cannot fit under the title', () => {
+    expect(cardDensity(60, hourPxFor(30))).toBe('full')
+    expect(cardDensity(45, HOUR_PX)).toBe('compact')
+    expect(cardDensity(30, HOUR_PX)).toBe('compact')
+  })
+
+  it('shrinks the font only on true slivers', () => {
+    expect(cardDensity(15, HOUR_PX)).toBe('tight')
+    expect(cardDensity(10, HOUR_PX)).toBe('tight')
+    expect(cardDensity(60, hourPxFor(30))).toBe('full')
   })
 })
 
