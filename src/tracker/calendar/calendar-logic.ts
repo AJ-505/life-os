@@ -138,12 +138,23 @@ export function taskMinutes(task: Task): number {
   return task.durationMinutes ?? EVENT_MINUTES
 }
 
-/** The duration a task created from a timed slot starts with, whatever the
- *  grid resolution: the block size is a placement snap, not a meeting length,
- *  so a 15 minute grid must not carve every new task into a 15 minute sliver.
- *  The hour clips at midnight so the block never spills into the next day. */
-export function defaultEventMinutes(startMinute: number): number {
-  return Math.min(EVENT_MINUTES, DAY_MINUTES - startMinute)
+/** How much text a card of `minutes` can carry when the hour is `hourPx`
+ *  wide. Density runs on rendered pixels, never minutes: a one block task
+ *  fills 48px on every grid (15 minutes on the 15 minute grid, an hour on
+ *  the hourly one), so every freshly clicked card reads at full size, while
+ *  15 minutes on the hourly grid is a 12px sliver that only fits the
+ *  smallest text. Below `COMPACT_CARD_PX` the time label does not fit under
+ *  the title; below `TIGHT_CARD_PX` even the title drops to the small font. */
+export const COMPACT_CARD_PX = 38
+export const TIGHT_CARD_PX = 20
+
+export type CardDensity = 'full' | 'compact' | 'tight'
+
+export function cardDensity(minutes: number, hourPx: number): CardDensity {
+  const heightPx = (minutes / 60) * hourPx
+  if (heightPx < TIGHT_CARD_PX) return 'tight'
+  if (heightPx < COMPACT_CARD_PX) return 'compact'
+  return 'full'
 }
 
 export function durationUntil(

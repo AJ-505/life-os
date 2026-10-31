@@ -37,8 +37,8 @@ import {
   blockShortLabel,
   calTaskId,
   calendarWeek,
+  cardDensity,
   dayId,
-  defaultEventMinutes,
   hourPxFor,
   importedEventIds,
   labelStep,
@@ -184,6 +184,7 @@ function ResizeHandle({
 }) {
   const updateTask = useUpdateTask()
   const drag = useRef<{ y: number; minutes: number } | null>(null)
+  const short = cardDensity(placed.minutes, hourPx) !== 'full'
 
   const minutesAt = (clientY: number) =>
     resizedMinutes(
@@ -200,7 +201,7 @@ function ResizeHandle({
       aria-label="Resize event"
       className={cn(
         'absolute inset-x-1 bottom-0 z-10 hidden cursor-ns-resize touch-none items-end justify-center [@media(pointer:fine)]:flex',
-        placed.minutes < 30 ? 'h-1' : 'h-2',
+        short ? 'h-1' : 'h-2',
       )}
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => {
@@ -233,7 +234,7 @@ function ResizeHandle({
       <span
         className={cn(
           'w-6 rounded-full bg-foreground/30',
-          placed.minutes < 30 ? 'h-px' : 'mb-0.5 h-0.5',
+          short ? 'h-px' : 'mb-0.5 h-0.5',
         )}
       />
     </div>
@@ -253,6 +254,7 @@ function TimedEntryView({
 }) {
   const [live, setLive] = useState<number | null>(null)
   const minutes = live ?? placed.minutes
+  const density = cardDensity(minutes, hourPx)
 
   if (placed.kind === 'external') {
     return (
@@ -268,6 +270,7 @@ function TimedEntryView({
         <ExternalEventCard
           event={placed.event}
           placed={placed}
+          compact={density !== 'full'}
           projects={projects}
         />
       </div>
@@ -286,8 +289,8 @@ function TimedEntryView({
     >
       <DraggableTask
         entry={placed}
-        compact={placed.minutes < 30}
-        tight={placed.minutes < 20}
+        compact={density !== 'full'}
+        tight={density === 'tight'}
         className="block size-full"
       />
       <ResizeHandle
@@ -300,13 +303,21 @@ function TimedEntryView({
   )
 }
 
-function DraftAnchor({ minute, hourPx }: { minute: number; hourPx: number }) {
+function DraftAnchor({
+  minute,
+  hourPx,
+  blockMinutes,
+}: {
+  minute: number
+  hourPx: number
+  blockMinutes: BlockMinutes
+}) {
   return (
     <PopoverAnchor
       className="pointer-events-none absolute inset-x-0 z-20 rounded-md border border-dashed border-signal/60 bg-signal/10 px-1.5 py-0.5 font-mono text-[10px] leading-none text-signal"
       style={{
         top: (minute / 60) * hourPx,
-        height: (defaultEventMinutes(minute) / 60) * hourPx,
+        height: (blockMinutes / 60) * hourPx,
       }}
     >
       {timeLabel(minute)}
@@ -454,7 +465,11 @@ function DayColumn({
       {draft !== null &&
       draft.dayStart === day.start &&
       draft.minute !== null ? (
-        <DraftAnchor minute={draft.minute} hourPx={hourPx} />
+        <DraftAnchor
+          minute={draft.minute}
+          hourPx={hourPx}
+          blockMinutes={blockMinutes}
+        />
       ) : null}
     </div>
   )
@@ -463,12 +478,14 @@ function DayColumn({
 function QuickCreate({
   board,
   draft,
+  blockMinutes,
   projectId,
   onProjectChange,
   onDone,
 }: {
   board: BoardData
   draft: Draft
+  blockMinutes: BlockMinutes
   projectId: string | null
   onProjectChange: (id: string) => void
   onDone: () => void
@@ -501,8 +518,7 @@ function QuickCreate({
       title: t,
       position: positionAfter(project.tasks.filter((x) => !x.parentId)),
       dueAt,
-      durationMinutes:
-        draft.minute === null ? null : defaultEventMinutes(draft.minute),
+      durationMinutes: draft.minute === null ? null : blockMinutes,
       createdFrom: 'calendar',
       inFocus: inFocus || undefined,
     })
@@ -816,6 +832,7 @@ export function CalendarView({
               key={`${draft.dayStart}:${draft.minute}`}
               board={board}
               draft={draft}
+              blockMinutes={blockMinutes}
               projectId={projectId}
               onProjectChange={setProjectId}
               onDone={() => setDraft(null)}
