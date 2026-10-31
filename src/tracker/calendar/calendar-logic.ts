@@ -13,14 +13,13 @@ export const SNAP_MINUTES = 15
 const DAY_MINUTES = 24 * 60
 
 /**
- * Slot sizes the calendar can draw. The hour keeps a readable height by
- * stretching when a block would otherwise be shorter than MIN_BLOCK_PX, so a
- * 10 minute grid has 16px rows instead of 8px slivers.
+ * Slot sizes the calendar can draw. A block always occupies the pixels the
+ * hourly grid gives an hour, so a finer grid stretches the hour and the whole
+ * day with it: a 15 minute grid is four times taller than the hourly one.
  */
 export const BLOCK_MINUTES = [10, 15, 20, 30, 60] as const
 export type BlockMinutes = (typeof BLOCK_MINUTES)[number]
 export const DEFAULT_BLOCK_MINUTES: BlockMinutes = 60
-const MIN_BLOCK_PX = 16
 
 export function normalizeBlockMinutes(value: number): BlockMinutes {
   return (
@@ -33,8 +32,7 @@ export function blockShortLabel(minutes: number): string {
 }
 
 export function hourPxFor(blockMinutes: number): number {
-  const perBlock = (HOUR_PX * blockMinutes) / 60
-  return perBlock >= MIN_BLOCK_PX ? HOUR_PX : (MIN_BLOCK_PX * 60) / blockMinutes
+  return (HOUR_PX * 60) / blockMinutes
 }
 
 export function labelStep(blockMinutes: number): number {

@@ -253,11 +253,11 @@ describe('calendar block size', () => {
     expect(blockShortLabel(60)).toBe('1h')
   })
 
-  it('stretches the hour only when a block would be too short', () => {
-    expect(hourPxFor(10)).toBe(96)
-    expect(hourPxFor(15)).toBe(64)
-    expect(hourPxFor(20)).toBe(HOUR_PX)
-    expect(hourPxFor(30)).toBe(HOUR_PX)
+  it('scales the hour with the block so the day grows as blocks shrink', () => {
+    expect(hourPxFor(10)).toBe(HOUR_PX * 6)
+    expect(hourPxFor(15)).toBe(HOUR_PX * 4)
+    expect(hourPxFor(20)).toBe(HOUR_PX * 3)
+    expect(hourPxFor(30)).toBe(HOUR_PX * 2)
     expect(hourPxFor(60)).toBe(HOUR_PX)
   })
 
@@ -273,7 +273,7 @@ describe('calendar block size', () => {
     expect(slotMinute(HOUR_PX * 9.5, 60)).toBe(570)
     expect(slotMinute(HOUR_PX * 9.99, 60)).toBe(570)
     expect(slotMinute(hourPxFor(10) * 9.5, 10)).toBe(570)
-    expect(slotMinute(HOUR_PX * 9.5, 20)).toBe(560)
+    expect(slotMinute(hourPxFor(20) * 9.5, 20)).toBe(560)
     expect(slotMinute(hourPxFor(10) * 23.95, 10)).toBe(1430)
   })
 
