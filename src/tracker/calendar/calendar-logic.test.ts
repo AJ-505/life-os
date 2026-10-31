@@ -7,6 +7,7 @@ import {
   atMinute,
   blockShortLabel,
   calendarWeek,
+  defaultEventMinutes,
   dropMinute,
   durationUntil,
   externalPlacement,
@@ -135,6 +136,20 @@ describe('dropMinute', () => {
   it('clamps below the end of the day to 1425 minutes', () => {
     expect(dropMinute(HOUR_PX * 24)).toBe(1425)
     expect(dropMinute(100_000)).toBe(1425)
+  })
+})
+
+describe('defaultEventMinutes', () => {
+  it('gives a slot far from midnight a full hour, not the block size', () => {
+    expect(defaultEventMinutes(0)).toBe(60)
+    expect(defaultEventMinutes(540)).toBe(60)
+    expect(defaultEventMinutes(1260)).toBe(60)
+  })
+
+  it('clips the hour at midnight', () => {
+    expect(defaultEventMinutes(23 * 60)).toBe(60)
+    expect(defaultEventMinutes(23 * 60 + 30)).toBe(30)
+    expect(defaultEventMinutes(23 * 60 + 45)).toBe(15)
   })
 })
 
