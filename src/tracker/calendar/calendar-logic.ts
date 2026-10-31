@@ -138,6 +138,14 @@ export function taskMinutes(task: Task): number {
   return task.durationMinutes ?? EVENT_MINUTES
 }
 
+/** The duration a task created from a timed slot starts with, whatever the
+ *  grid resolution: the block size is a placement snap, not a meeting length,
+ *  so a 15 minute grid must not carve every new task into a 15 minute sliver.
+ *  The hour clips at midnight so the block never spills into the next day. */
+export function defaultEventMinutes(startMinute: number): number {
+  return Math.min(EVENT_MINUTES, DAY_MINUTES - startMinute)
+}
+
 export function durationUntil(
   startMinute: number,
   endMinute: number,

@@ -38,6 +38,7 @@ import {
   calTaskId,
   calendarWeek,
   dayId,
+  defaultEventMinutes,
   hourPxFor,
   importedEventIds,
   labelStep,
@@ -299,21 +300,13 @@ function TimedEntryView({
   )
 }
 
-function DraftAnchor({
-  minute,
-  hourPx,
-  blockMinutes,
-}: {
-  minute: number
-  hourPx: number
-  blockMinutes: BlockMinutes
-}) {
+function DraftAnchor({ minute, hourPx }: { minute: number; hourPx: number }) {
   return (
     <PopoverAnchor
       className="pointer-events-none absolute inset-x-0 z-20 rounded-md border border-dashed border-signal/60 bg-signal/10 px-1.5 py-0.5 font-mono text-[10px] leading-none text-signal"
       style={{
         top: (minute / 60) * hourPx,
-        height: (blockMinutes / 60) * hourPx,
+        height: (defaultEventMinutes(minute) / 60) * hourPx,
       }}
     >
       {timeLabel(minute)}
@@ -461,11 +454,7 @@ function DayColumn({
       {draft !== null &&
       draft.dayStart === day.start &&
       draft.minute !== null ? (
-        <DraftAnchor
-          minute={draft.minute}
-          hourPx={hourPx}
-          blockMinutes={blockMinutes}
-        />
+        <DraftAnchor minute={draft.minute} hourPx={hourPx} />
       ) : null}
     </div>
   )
@@ -474,14 +463,12 @@ function DayColumn({
 function QuickCreate({
   board,
   draft,
-  blockMinutes,
   projectId,
   onProjectChange,
   onDone,
 }: {
   board: BoardData
   draft: Draft
-  blockMinutes: BlockMinutes
   projectId: string | null
   onProjectChange: (id: string) => void
   onDone: () => void
@@ -514,7 +501,8 @@ function QuickCreate({
       title: t,
       position: positionAfter(project.tasks.filter((x) => !x.parentId)),
       dueAt,
-      durationMinutes: draft.minute === null ? null : blockMinutes,
+      durationMinutes:
+        draft.minute === null ? null : defaultEventMinutes(draft.minute),
       createdFrom: 'calendar',
       inFocus: inFocus || undefined,
     })
@@ -828,7 +816,6 @@ export function CalendarView({
               key={`${draft.dayStart}:${draft.minute}`}
               board={board}
               draft={draft}
-              blockMinutes={blockMinutes}
               projectId={projectId}
               onProjectChange={setProjectId}
               onDone={() => setDraft(null)}
