@@ -3,6 +3,7 @@ import { startOfDay } from 'date-fns/startOfDay'
 import { startOfWeek } from 'date-fns/startOfWeek'
 
 import { activeProjects } from '../board/board-logic'
+import { NO_PROJECT_ID } from '../types'
 
 import type { BoardData, ProjectWithTasks, Task } from '../types'
 
@@ -39,6 +40,14 @@ export function dropMinute(offsetPx: number): number {
   const raw = (offsetPx / HOUR_PX) * 60
   const snapped = Math.round(raw / SNAP_MINUTES) * SNAP_MINUTES
   return Math.min(Math.max(snapped, SNAP_MINUTES), DAY_MINUTES - SNAP_MINUTES)
+}
+
+export function rememberedProject(
+  stored: string | null,
+  projects: Array<{ id: string }>,
+): string {
+  if (stored !== null && projects.some((p) => p.id === stored)) return stored
+  return NO_PROJECT_ID
 }
 
 export type CalendarTask = { task: Task; project: ProjectWithTasks }

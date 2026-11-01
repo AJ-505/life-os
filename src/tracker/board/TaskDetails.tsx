@@ -44,7 +44,8 @@ import { Textarea } from '#/design-system/ui/textarea'
 import { useBoardScope } from '../board-scope'
 import { useSpaceMembers } from '#/spaces/queries'
 import { AssigneeSelect } from '#/spaces/components/AssigneeSelect'
-import { POSITION_GAP, newId, positionAfter } from '../types'
+import { canvasProjects } from './board-logic'
+import { NO_PROJECT_ID, POSITION_GAP, newId, positionAfter } from '../types'
 import {
   useAddTask,
   useDeleteTask,
@@ -60,12 +61,6 @@ import { toast } from 'sonner'
 
 import type { BoardData, Task } from '../types'
 
-/**
- * Capture-now / write-later. Optimistic board patches must not run in the same
- * turn as dialog unmount — React batches them and Done waits on a full board
- * reconcile. Call the outer fn while the DOM is still up; run the thunk after
- * onClose (setTimeout 0).
- */
 type DeferredWrite = () => void
 type CaptureWrite = () => DeferredWrite | null
 type PendingWrites = {
@@ -94,8 +89,6 @@ function Subtasks({
     .filter((t) => t.parentId === parent.id && !t.archived)
     .sort((a, b) => a.position - b.position)
   const childrenRef = useRef(children)
-  // Effect, not render-time assignment: writing a ref during render opts the
-  // whole component out of React Compiler memoization.
   useEffect(() => {
     childrenRef.current = children
   })
@@ -123,9 +116,6 @@ function Subtasks({
     if (t) commitDraft(t)
   }
 
-  // Armed in an effect (not during render) for the same compiler reason as
-  // childrenRef above. The closure only reads live refs/DOM at call time, so
-  // running post-commit never serves a stale draft.
   useEffect(() => {
     draftCaptureRef.current = () => {
       const t = takeDraft()
@@ -168,8 +158,6 @@ function Subtasks({
                   return
                 }
                 if (next === c.title) return
-                // Defer so a close that arms on the same turn can suppress this
-                // write and own it after unmount (no board patch mid-dismiss).
                 const id = c.id
                 setTimeout(() => {
                   if (closingRef.current) return
@@ -226,13 +214,6 @@ function Subtasks({
   )
 }
 
-/**
- * Clerk + calendar-settings subscriptions live here, not in TaskDetails.
- * CALENDAR_ENABLED is off by default; putting the hooks in the parent meant
- * every task click still ran useUser + a Convex settings query, then threw
- * the result away for ComingSoon. A settings update also rebuilt the 225-slot
- * dialog. This child only mounts when the flag is on.
- */
 function TaskCalendarFields({
   localDueAt,
   localAddToCal,
@@ -243,7 +224,6 @@ function TaskCalendarFields({
   localDueAt: number | null
   localAddToCal: boolean
   onAddToCal: (v: boolean) => void
-  /** Null means "no explicit choice", so the stored default applies. */
   localReminder: number | null
   onReminder: (v: number) => void
 }) {
@@ -298,10 +278,6 @@ function TaskCalendarFields({
   )
 }
 
-/** The panel's frame, shared by the loading and loaded states. Rendering the
- *  real frame while loading is what stops the dialog below it from moving: the
- *  old code swapped a bare paragraph for a header plus a list, so the content
- *  underneath jumped by that height on every open. */
 function HistoryFrame({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -318,10 +294,6 @@ function HistoryFrame({ children }: { children: React.ReactNode }) {
 }
 
 function TaskHistoryPanel({ taskId }: { taskId: string }) {
-  // `isPending` (not `isLoading`): `isLoading` is `isPending && isFetching`, so
-  // an offline pause (`fetchStatus: 'paused'`) is pending but not loading, and
-  // would fall through to "No history yet." — a false claim about a read that
-  // never happened.
   const {
     data: history = [],
     isPending,
@@ -329,18 +301,12 @@ function TaskHistoryPanel({ taskId }: { taskId: string }) {
     refetch,
   } = useQuery(taskHistoryQueryOptions(taskId))
   if (isPending) {
-    // The same frame the loaded list renders in, so the dialog does not resize
-    // when the data lands. With the intent prefetch above this is the rare
-    // case — a cold click, or one before the pointer ever reached the button.
     return (
       <HistoryFrame>
         <p className="text-xs text-muted-foreground">Loading history…</p>
       </HistoryFrame>
     )
   }
-  // A failed read is not an empty task. Without this branch the error settles
-  // with no data and falls through to "No history yet." — a confident, wrong
-  // claim about a read that never landed.
   if (isError) {
     return (
       <HistoryFrame>
@@ -424,8 +390,6 @@ export function TaskDetails({
   const setFocus = useSetTaskFocus()
   const spaceId = useBoardScope()
 
-  // One toggle target for the whole row, so the switch is not the only thing
-  // you can hit. Reading it off the switch alone is what the owner reported.
   const toggleFocus = () =>
     setFocus.mutate({
       id: task.id,
@@ -434,9 +398,6 @@ export function TaskDetails({
     })
   const deleteTask = useDeleteTask()
 
-  // Title/notes are uncontrolled (committed on blur/close). Controlled state
-  // re-rendered the whole dialog on every keystroke, which made typing in the
-  // notes field visibly lag.
   const titleRef = useRef<HTMLInputElement>(null)
   const notesRef = useRef<HTMLTextAreaElement>(null)
   const closingRef = useRef(false)
@@ -446,41 +407,21 @@ export function TaskDetails({
   const [historyOpen, setHistoryOpen] = useState(false)
   const members = useSpaceMembers(spaceId)
 
-  // History used to start loading on the click, so the panel was always cold.
-  // Warm it when the pointer or the keyboard focus reaches the button, so the
-  // click usually lands on data that is already there.
-  //
-  // This is not free: a hover opens one Convex subscription, and it lives until
-  // the cache entry is collected (gcTime, 5 min). It is still the cheaper
-  // option — subscribing at board render for every task would open a watch per
-  // task for a panel most people never open, where intent opens one per task
-  // the user actually considers.
   const queryClient = useQueryClient()
   const prefetchHistory = () => {
     void queryClient.prefetchQuery(taskHistoryQueryOptions(task.id))
   }
 
   const project = board.find((p) => p.id === task.projectId)
-  const activeProjects = board.filter((p) => p.status === 'active')
-  // The trigger reads from `activeProjects`, the same list the items come from,
-  // so a task on an archived project shows "No project" rather than a name the
-  // list cannot select.
-  const projectName =
-    activeProjects.find((p) => p.id === task.projectId)?.name ?? 'No project'
-  // No calendar read here. Every calendar read lives in TaskCalendarFields,
-  // which only mounts behind the flag, so a build without the feature makes no
-  // calendar query at all. `enabled: false` was tried and still subscribed.
+  const projects = canvasProjects(board)
+  const projectName = project?.name ?? 'No project'
 
-  // Local 24h time + due state — committed only on Done (optimistic close, single toast)
   const [localDueAt, setLocalDueAt] = useState<number | null>(
     task.dueAt ?? null,
   )
   const [localReminder, setLocalReminder] = useState<number | null>(
     task.reminderMinutes,
   )
-  // The toggle reflects stored intent. It used to be derived from
-  // `!!task.calendarEventId`, which the board never returned, so it read false
-  // on every open no matter what the user had saved.
   const [localAddToCal, setLocalAddToCal] = useState<boolean>(
     task.addToCalendar,
   )
@@ -519,8 +460,6 @@ export function TaskDetails({
   const fieldsChanged = (f: { title: string; notes: string }) =>
     f.title !== task.title || f.notes !== (task.notes ?? '')
 
-  /** Returns the write so callers that need to act *after* it lands (the
-   *  calendar push reads the task back from the server) can wait on it. */
   const commitFields = (f: {
     title: string
     notes: string
@@ -534,8 +473,6 @@ export function TaskDetails({
   }
 
   const commitText = () => {
-    // Capture now (refs still live); write next tick so Done/overlay can arm
-    // closingRef first and take ownership of the write after unmount.
     const f = readFields()
     setTimeout(() => {
       if (closingRef.current) return
@@ -545,7 +482,6 @@ export function TaskDetails({
     }, 0)
   }
 
-  /** Focused subtask title edit — only needed when blur is suppressed by close. */
   const captureFocusedSubtask = (): DeferredWrite | null => {
     const el = document.activeElement
     if (!(el instanceof HTMLInputElement)) return null
@@ -563,15 +499,11 @@ export function TaskDetails({
     draft: draftCaptureRef.current?.() ?? null,
   })
 
-  // Pointerdown fires before the browser moves focus to the clicked button, so
-  // this is the last turn where document.activeElement can still be an edited
-  // subtask input. Capture here; the click handler only closes.
   const armClose = () => {
     closingRef.current = true
     pendingRef.current = collectPending()
   }
 
-  // Suppress-only variant for actions whose field writes are moot (delete).
   const armSuppress = () => {
     closingRef.current = true
   }
@@ -580,7 +512,6 @@ export function TaskDetails({
     closingRef.current = true
     const p = pendingRef.current ?? collectPending()
     pendingRef.current = null
-    // capture due state at close time for deferred commit (optimistic close)
     const dueAtToCommit = localDueAt
     const reminderToCommit = localReminder
     const addToCalToCommit = localAddToCal
@@ -600,10 +531,6 @@ export function TaskDetails({
       if (addToCalToCommit !== task.addToCalendar)
         patch.addToCalendar = addToCalToCommit
 
-      // The calendar push is not awaited here. `updateTask` schedules it for
-      // every calendar-relevant field, so one writer owns the change and the
-      // dialog closing cannot race it. Setting a reminder or a date is still
-      // visible immediately, because the task row reports the synced state.
       const written = Promise.all([
         commitFields(p.fields),
         Object.keys(patch).length > 0
@@ -624,20 +551,13 @@ export function TaskDetails({
     closeWith()
   }
 
-  // X / overlay / Escape means discard edits. No field, subtask, draft
-  // or deferred due/calendar changes are persisted.
   const cancel = () => {
     closingRef.current = true
     pendingRef.current = null
-    // Revert deferred due state so a quick reopen shows persisted values
     setLocalDueAt(task.dueAt ?? null)
     setLocalReminder(task.reminderMinutes)
     setLocalAddToCal(task.addToCalendar)
     setTimeInput(task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00')
-    // Same capture the close path uses: it reads and clears the new-subtask
-    // draft. Dropping the result (instead of committing it) is exactly what a
-    // cancel means, and it clears the input the clean way — through the ref,
-    // not a global DOM query that can hit a different task's input.
     draftCaptureRef.current?.()
     onClose()
     setTimeout(() => {
@@ -682,9 +602,6 @@ export function TaskDetails({
             onBlur={commitText}
             placeholder="Notes…"
             rows={4}
-            // field-sizing-fixed + no spellcheck: both re-run on every
-            // keystroke (intrinsic re-measure / text re-scan) and made typing
-            // long notes lag. Fixed height, scrolls inside, drag to enlarge.
             spellCheck={false}
             className="field-sizing-fixed max-h-64 resize-y"
           />
@@ -751,9 +668,7 @@ export function TaskDetails({
                   value={timeInput}
                   disabled={!localDueAt}
                   onChange={(e) => {
-                    // allow typing, keep 24h HH:MM
                     let v = e.target.value.replace(/[^0-9:]/g, '')
-                    // auto-insert colon
                     if (
                       v.length === 2 &&
                       timeInput.length === 1 &&
@@ -766,7 +681,6 @@ export function TaskDetails({
                   onBlur={() => {
                     const parsed = parseTime24(timeInput)
                     if (!parsed) {
-                      // revert to previous valid
                       setTimeInput(
                         localDueAt
                           ? format(new Date(localDueAt), 'HH:mm')
@@ -796,23 +710,21 @@ export function TaskDetails({
               <Select
                 value={task.projectId}
                 onValueChange={(projectId) => {
+                  if (projectId === task.projectId) return
                   const target = board.find((p) => p.id === projectId)
-                  if (!target || projectId === task.projectId) return
                   moveTask.mutate({
                     id: task.id,
                     projectId,
-                    position: positionAfter(target.tasks),
+                    position: positionAfter(target?.tasks ?? []),
                   })
                 }}
               >
                 <SelectTrigger size="sm" className="text-xs">
-                  {/* A bare <SelectValue /> echoes the selected item's own
-                      text, which is blank when the value has no matching item.
-                      We pass the name in so an archived project still reads. */}
                   <SelectValue>{projectName}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {activeProjects.map((p) => (
+                  <SelectItem value={NO_PROJECT_ID}>No project</SelectItem>
+                  {projects.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.name}
                     </SelectItem>
@@ -849,12 +761,7 @@ export function TaskDetails({
 
           {historyOpen ? <TaskHistoryPanel taskId={task.id} /> : null}
 
-          {/* Three states, not two. A personal task with the flag on gets the
-              controls. A personal task with the flag off is told the feature is
-              coming, which is true. A shared task is told calendar sync is
-              personal only, which is also true - the old code showed it the
-              coming-soon card, telling a collaborator to wait for a feature
-              that had already shipped to them as unavailable. */}
+          {}
           {!CALENDAR_ENABLED ? (
             <ComingSoon
               title="Calendar sync"
@@ -883,8 +790,7 @@ export function TaskDetails({
             draftCaptureRef={draftCaptureRef}
           />
 
-          {/* Focus is personal only: `inFocus` is one boolean on a row every
-              member reads, so a shared board has no focus to show. */}
+          {}
           {spaceId === null ? (
             <div
               role="switch"
@@ -971,10 +877,7 @@ export function TaskDetails({
             </Button>
           </div>
         </DialogFooter>
-        {/* Last in DOM so Radix autofocus lands on the title input, as before.
-            Visually unchanged: absolute top-right. Must keep onPointerDown
-            arming here, ahead of click, so X still discards instead of
-            committing. */}
+        {}
         <button
           type="button"
           aria-label="Close"

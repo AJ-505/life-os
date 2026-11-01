@@ -7,7 +7,6 @@ type Theme = 'light' | 'dark'
 
 const STORAGE_KEY = 'lifeos-theme'
 
-/** Inlined into <head> so the right class lands before first paint. */
 export const THEME_INIT_SCRIPT = `(function(){try{var q=new URLSearchParams(location.search).get('theme');var t=q||localStorage.getItem('${STORAGE_KEY}');var d=t? t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',d)}catch(e){}})()`
 
 const ThemeContext = createContext<{

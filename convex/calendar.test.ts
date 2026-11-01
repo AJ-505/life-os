@@ -7,13 +7,6 @@ import schema from './schema'
 
 import type { TestConvex } from 'convex-test'
 
-/**
- * Calendar regressions found by the 2026-10-03 audit.
- *
- * Google and Clerk are stubbed at `fetch`, so the assertions are on the real
- * decision logic the action runs, not on a live account.
- */
-
 const modules = import.meta.glob([
   './**/*.ts',
   '!./**/*.test.ts',
@@ -29,8 +22,6 @@ beforeEach(() => vi.useFakeTimers())
 const SCOPE = 'https://www.googleapis.com/auth/calendar.events'
 const GCAL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events'
 
-/** A real task id shape: the derived Google event id is the uuid without its
- *  hyphens, and only ids of at least five allowed characters map. */
 const TASK_ID = 'abcdef12-3456-7890-abcd-ef1234567890'
 const DERIVED = 'abcdef1234567890abcdef1234567890'
 
@@ -39,11 +30,8 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-/** The sync-off cleanup is two scheduled hops from the click, so a test that
- *  does not drain the queue is asserting on nothing. */
 const drainScheduler = (t: T) => t.finishAllScheduledFunctions(vi.runAllTimers)
 
-/** A personal task that already owns a Google event. */
 async function seedSyncedTask(
   t: T,
   overrides: {
@@ -87,9 +75,6 @@ async function seedSyncedTask(
   })
 }
 
-/** Clerk answers with a valid token; Google's per-verb status is settable, so a
- *  test can say "the delete failed" without saying anything about a live
- *  account. */
 function stubGoogle(options: {
   patchStatus?: number
   createStatus?: number
@@ -125,17 +110,12 @@ function stubGoogle(options: {
         method === 'DELETE'
           ? (options.deleteStatus ?? 204)
           : (options.patchStatus ?? 200)
-      // A 204 is what Google actually answers a delete with, and the Response
-      // constructor forbids a body on it. Sending one throws inside the stub,
-      // which the code under test correctly reports as "no reply arrived".
       return new Response(status === 204 ? null : '{}', { status })
     }
     return new Response('{}', { status: 500 })
   })
 }
 
-/** The task as stored, so assertions read the database and not the action's
- *  own return value. The id it carries is what the next sync will trust. */
 function readTask(t: T) {
   return t.run(async (ctx) =>
     ctx.db
@@ -147,7 +127,6 @@ function readTask(t: T) {
   )
 }
 
-/** How many events Google was asked to create. Two means a duplicate. */
 const creates = (google: ReturnType<typeof stubGoogle>) =>
   google.mock.calls.filter(([input, init]) => {
     const url = typeof input === 'string' ? input : String(input)
@@ -162,7 +141,6 @@ describe('calendar', () => {
   it('a single Resync recreates an event deleted in Google', async () => {
     const t = convexTest(schema, modules)
     await seedSyncedTask(t)
-    // The event is gone on Google's side: every patch is a 404.
     const google = stubGoogle({ patchStatus: 404 })
     vi.stubGlobal('fetch', google)
 
@@ -171,7 +149,6 @@ describe('calendar', () => {
     })
 
     expect(result).toMatchObject({ ok: true, action: 'created' })
-    // The id is back on the task, not just returned in the result.
     expect((await readTask(t))?.calendarEventId).toBe(DERIVED)
     expect(creates(google)).toHaveLength(1)
   })
@@ -182,8 +159,6 @@ describe('calendar', () => {
     const google = stubGoogle({ patchStatus: 404 })
     vi.stubGlobal('fetch', google)
 
-    // The background path shares every line with Resync except this entry, so
-    // this case is what proves the two really do differ.
     const result = await t.action(internal.calendar.syncTaskForUser, {
       userId: 'user_a',
       taskId: TASK_ID,
@@ -196,7 +171,6 @@ describe('calendar', () => {
 
   it('patches a stored id Google chose itself instead of duplicating it', async () => {
     const t = convexTest(schema, modules)
-    // Google assigned an id of its own, so the derived one names nothing.
     await seedSyncedTask(t, { calendarEventId: 'googleChose1' })
     const google = stubGoogle({ patchStatus: 200 })
     vi.stubGlobal('fetch', google)
@@ -212,8 +186,6 @@ describe('calendar', () => {
 
   it('deletes the event of a task that no longer wants one, instead of clearing the id', async () => {
     const t = convexTest(schema, modules)
-    // A done task whose completion-time delete failed, so the id is still the
-    // derived one. Resync must remove the event it names, not throw the id away.
     await seedSyncedTask(t, { done: true })
     const google = stubGoogle({})
     vi.stubGlobal('fetch', google)
@@ -228,8 +200,6 @@ describe('calendar', () => {
         String(input).startsWith(`${GCAL}/`) &&
         (init?.method ?? 'GET').toUpperCase() === 'DELETE',
     )
-    // The event is gone from Google, so the id is cleared as a consequence of
-    // the delete, not instead of it.
     expect(deletes).toHaveLength(1)
     expect((await readTask(t))?.calendarEventId).toBeNull()
   })
@@ -242,8 +212,6 @@ describe('calendar', () => {
     await asUser(t).mutation(api.settings.updateCalendarSettings, {
       syncEnabled: false,
     })
-    // Draining the queue is what makes the cleared id an assertion and not a
-    // hope: the cleanup is two scheduled hops away from the click.
     await drainScheduler(t)
 
     expect((await readTask(t))?.calendarEventId).toBeNull()
@@ -259,8 +227,6 @@ describe('calendar', () => {
     })
     await drainScheduler(t)
 
-    // A server error is not a confirmation. Clearing here would make the next
-    // sync create a second event, because nothing would be left to patch.
     expect((await readTask(t))?.calendarEventId).toBe(DERIVED)
   })
 
@@ -280,7 +246,6 @@ describe('calendar', () => {
   it('reports an invalid Clerk secret as a server misconfiguration', async () => {
     const t = convexTest(schema, modules)
     await seedSyncedTask(t, { calendarEventId: null })
-    // Clerk rejects the deployment's secret on every provider slug.
     vi.stubGlobal(
       'fetch',
       vi.fn(
@@ -299,8 +264,6 @@ describe('calendar', () => {
   it('still reports a missing Google account as the user’s problem', async () => {
     const t = convexTest(schema, modules)
     await seedSyncedTask(t, { calendarEventId: null })
-    // A 404 means this provider slug is simply not linked, so the other one
-    // is worth trying before giving up on the user.
     const calls: Array<string> = []
     vi.stubGlobal(
       'fetch',
@@ -317,7 +280,6 @@ describe('calendar', () => {
       taskId: TASK_ID,
     })
 
-    // Both slugs were tried, and neither produced a credential problem.
     expect(calls.filter((u) => u.includes('api.clerk.com'))).toHaveLength(2)
     expect(result.ok).toBe(false)
     if (!result.ok) expect(result.reason).toBe('not_connected')

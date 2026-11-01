@@ -77,21 +77,10 @@ function SpacesView() {
     kind: 'leave' | 'delete'
   } | null>(null)
 
-  // A board is only ever cold the first time it opens, and a full board is the
-  // most expensive read on the page. Hover or focus on a card's entry warms
-  // that space's board so the click lands on data, which is the same intent
-  // pattern the task history uses.
   const warmBoard = (spaceId: string) => {
     void queryClient.prefetchQuery(boardQueryOptions(spaceId))
   }
 
-  // The `= []` default stays: a failed request settles with no data and the
-  // header reads `spaces.length` on every render, so without it an error would
-  // crash instead of showing the error panel.
-  //
-  // `isPending`, not `isLoading`: `isLoading` is `isPending && isFetching`, so
-  // an offline pause (`fetchStatus: 'paused'`) is pending but not loading, and
-  // would fall through to "No spaces yet." — the exact false-empty this fixes.
   const {
     data: spaces = [],
     isPending,
@@ -106,9 +95,6 @@ function SpacesView() {
   const handleCreate = () => {
     const n = name.trim()
     if (!n) return
-    // The button disables itself while pending, but Enter never touched that
-    // state, so two quick presses made two spaces. The guard lives here so both
-    // paths get it rather than the one that remembered.
     if (createSpace.isPending) return
     createSpace.mutate(
       { name: n },
@@ -159,8 +145,6 @@ function SpacesView() {
       )
   }
 
-  // Gated behind SPACES_ENABLED. The query above is disabled rather than
-  // merely hidden, so a gated build makes no spaces read at all.
   if (!SPACES_ENABLED) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
@@ -184,9 +168,7 @@ function SpacesView() {
       <div className="flex shrink-0 items-center justify-between border-b px-4 py-2.5">
         <div className="flex items-baseline gap-3">
           <h1 className="text-lg font-bold tracking-tight">Spaces</h1>
-          {/* While the list is unknown, say so. "0 spaces" is a confident,
-              specific, wrong claim about a list nobody has read yet — and on
-              error there is no list at all, so it must not claim zero either. */}
+          {}
           <span className="os-label hidden sm:inline">
             {isPending || isError
               ? '… · collaborative boards'
@@ -217,7 +199,11 @@ function SpacesView() {
               <p className="text-sm text-muted-foreground">
                 Could not load your spaces. Check your connection and try again.
               </p>
-              <Button size="sm" variant="outline" onClick={() => void refetch()}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void refetch()}
+              >
                 Try again
               </Button>
             </div>

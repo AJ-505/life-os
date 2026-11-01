@@ -161,13 +161,8 @@ export function TaskRow({ node }: { node: TaskNode }) {
       ref={setNodeRef}
       style={{
         transform: CSS.Transform.toString(transform),
-        // The active row follows the cursor → no transition (it'd lag behind
-        // the overlay). Displaced siblings keep dnd-kit's transform transition
-        // so the "make room here" gap animates instead of snapping.
         transition: isDragging ? 'none' : transition,
       }}
-      // select-none + touch-callout suppression stop iOS from hijacking the
-      // long-press with its text-selection magnifier before the drag starts.
       className={cn(
         'select-none [-webkit-touch-callout:none]',
         isDragging && 'opacity-30',

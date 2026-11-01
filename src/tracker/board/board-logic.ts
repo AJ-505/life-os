@@ -1,9 +1,6 @@
-import { POSITION_GAP, positionAt } from '../types'
+import { NO_PROJECT_ID, POSITION_GAP, positionAt } from '../types'
 
 import type { BoardData, ProjectWithTasks, Task } from '../types'
-
-/* Drag ids: `proj@<id>` `task@<id>` `fitem@<id>` `cal@<id>` — droppables:
- * `col@<n>`, `list@<projectId>`, `focuszone`, `day@<ms>`, `allday@<ms>`. */
 
 export const projId = (id: string) => `proj@${id}`
 export const taskId = (id: string) => `task@${id}`
@@ -44,31 +41,25 @@ export function activeProjects(board: BoardData): Array<ProjectWithTasks> {
   return board.filter((p) => p.status === 'active')
 }
 
+export function canvasProjects(board: BoardData): Array<ProjectWithTasks> {
+  return activeProjects(board).filter((p) => p.id !== NO_PROJECT_ID)
+}
+
 export function columnProjects(
   board: BoardData,
   col: number,
 ): Array<ProjectWithTasks> {
-  return activeProjects(board)
+  return canvasProjects(board)
     .filter((p) => p.gridCol === col)
     .sort((a, b) => a.gridRow - b.gridRow)
 }
 
-/**
- * The columns that actually exist, compacted: only gridCol values that hold
- * at least one active project. Emptying a column (delete, move) makes it
- * vanish instead of leaving a stranded "+ Project" placeholder behind.
- */
 export function boardColumns(board: BoardData): Array<number> {
-  return [...new Set(activeProjects(board).map((p) => p.gridCol))].sort(
+  return [...new Set(canvasProjects(board).map((p) => p.gridCol))].sort(
     (a, b) => a - b,
   )
 }
 
-/**
- * Task id -> { task, project }, flattened once per board identity. The host
- * (keybindings) and any other repeated lookup build this once instead of
- * rescanning every project's list per press.
- */
 export function buildTaskIndex(board: BoardData) {
   const m = new Map<string, { task: Task; project: ProjectWithTasks }>()
   for (const p of board) {
@@ -77,11 +68,6 @@ export function buildTaskIndex(board: BoardData) {
   return m
 }
 
-/**
- * Done / total over a project's visible (non-archived) tasks, the numbers the
- * progress bar and the "x/y" label both show. One definition here — the same
- * arithmetic had drifted into three copies with subtly different filters.
- */
 export function projectCounts(project: ProjectWithTasks) {
   const totalCount = project.tasks.filter((t) => !t.archived).length
   const doneCount = project.tasks.filter((t) => t.done && !t.archived).length
@@ -92,18 +78,8 @@ export function projectCounts(project: ProjectWithTasks) {
   }
 }
 
-/* ------------------------------------------------------------ task nesting */
-
 export type TaskNode = { task: Task; children: Array<TaskNode> }
 
-/**
- * Visible task tree for a project card. A row stays visible while anything
- * in its subtree is (so finishing a parent never hides open subtasks).
- *
- * `build` needs no cycle guard, unlike `descendantIds`: it walks down from
- * `null`, and a task inside a cycle has a non-null `parentId`, so nothing in
- * a cycle is ever reachable from a root and the walk cannot revisit a node.
- */
 export function taskTree(
   project: ProjectWithTasks,
   showDone: boolean,
@@ -123,7 +99,6 @@ export function taskTree(
   return build(null)
 }
 
-/** Top-level visible tasks — the sortable rows position math runs against. */
 export function visibleTasks(
   project: ProjectWithTasks,
   showDone: boolean,
@@ -131,15 +106,6 @@ export function visibleTasks(
   return taskTree(project, showDone).map((n) => n.task)
 }
 
-/**
- * Every descendant task id of `id`, for cascade-style cache updates.
- *
- * The `seen` set carries the requested id too, so a `parentId` cycle - reachable
- * through a restored backup, which validates nothing - terminates instead of
- * blowing the stack inside an optimistic delete. A candidate already seen is
- * skipped rather than pushed, so asking about one half of a two-task cycle still
- * returns the other half.
- */
 export function descendantIds(tasks: Array<Task>, id: string): Array<string> {
   const out: Array<string> = []
   const seen = new Set([id])
@@ -158,21 +124,6 @@ export function descendantIds(tasks: Array<Task>, id: string): Array<string> {
 
 export type FocusEntry = { task: Task; project: ProjectWithTasks }
 
-/**
- * In-focus rows, project attached beside the task, not spread onto it.
- * `{ ...t, project }` allocated a new task-shaped object on every call, so
- * compiled FocusItemBody saw a new `task` prop on every board patch and
- * could never skip. `task` here is the board's own object.
- *
- * Finished rows sink below the open ones, and among themselves they read
- * newest-finished first: ticking done puts a row at the top of the finished pile
- * rather than burying it under work finished earlier. Open rows keep focusOrder,
- * so un-ticking returns one to its own slot instead of stranding it down there.
- *
- * `doneAt` is server-derived, but a restored backup can carry a finished row
- * with no stamp. Those fall back to 0, so they sit at the bottom of the finished
- * pile instead of pretending to be the newest thing you did.
- */
 export function focusTasks(board: BoardData): Array<FocusEntry> {
   const out: Array<FocusEntry> = []
   for (const p of activeProjects(board)) {
@@ -187,21 +138,11 @@ export function focusTasks(board: BoardData): Array<FocusEntry> {
   return out
 }
 
-/** Within one group of the focus list: finished rows newest first, open rows in
- *  the order the user gave them. */
 function compareFocus(a: Task, b: Task): number {
   if (a.done && b.done) return (b.doneAt ?? 0) - (a.doneAt ?? 0)
   return a.focusOrder - b.focusOrder
 }
 
-/**
- * Where should a dragged project land? We derive the slot from the hovered
- * project's id (not a sortable index, which is off-by-one whenever the dragged
- * item starts ahead of its target). `side` says whether the drop fell on the
- * top half ('before') or bottom half ('after') of the hovered card, so placing
- * something clearly below a project actually lands it below. Dropping on a
- * column appends to that column.
- */
 export function projectDrop(
   board: BoardData,
   activeProjectId: string,
@@ -227,8 +168,6 @@ export function projectDrop(
     (p) => p.id !== activeProjectId,
   )
   const base = rows.findIndex((p) => p.id === over.key)
-  // Dropped-on-bottom-half → insert after the hovered card (index + 1). Since
-  // `rows` already excludes the dragged project, this index is collision-free.
   const index = base === -1 ? rows.length : base + (side === 'after' ? 1 : 0)
   return {
     gridCol: col,
@@ -239,10 +178,6 @@ export function projectDrop(
   }
 }
 
-/** Where should a dragged task land? Inserts before or after the hovered task
- *  per `side` (which half it was dropped on), or at the end when dropped on the
- *  list/empty area. `showDone` is the board-wide switch; each project's own
- *  `showDone` override is OR-ed in so the math matches what the card renders. */
 export function taskDrop(
   board: BoardData,
   activeTaskId: string,
@@ -279,13 +214,6 @@ export function taskDrop(
   }
 }
 
-/** focusOrder for dropping into the focus panel; inserts before or after the
- *  hovered item per `side`, or at the end when dropped on the zone itself.
- *
- *  Only open rows are positioned. A finished row's place in the list comes from
- *  when it was finished, not from focusOrder, so moving it would either do
- *  nothing on screen or silently rewrite when you un-tick it. Finished rows
- *  therefore keep their stored order and stay where they land. */
 export function focusDrop(
   board: BoardData,
   activeTaskId: string,

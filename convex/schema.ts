@@ -1,30 +1,6 @@
 import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
 
-/**
- * Project lifecycle mirrors the original Drizzle model:
- * - active:  lives on the board
- * - shelved: temporarily out of sight & out of mind (restorable)
- * - done:    finished, shows up in the Accomplished view
- * Permanent removal is a hard delete (cascades to tasks in the mutation).
- *
- * Everything is scoped by `userId` — the Clerk identity subject (the Clerk
- * user id, `ctx.auth.getUserIdentity().subject`). Each account is a fully
- * private LifeOS. The string `id` (client-generated uuid) is kept as the
- * app-facing identity — relationships are string refs (`projectId`,
- * `parentId`) so the UI and optimistic updates never learn about Convex's
- * internal `_id`. Timestamps are epoch-ms numbers.
- *
- * `spaceId` is the one collaborative axis. It is `null` for personal rows and
- * the space's app id for shared ones. It used to be *absent* for personal
- * rows, which kept old rows out of any `spaceId` index (Convex omits a
- * document from an index when the indexed field is missing) and forced every
- * personal read to scan the user's whole index and filter in JS. The field is
- * now always present — `convex/migrations.ts` backfills old rows to `null` —
- * so personal reads are an index range. The order is enforced, not left to
- * memory: `convex:deploy` runs the backfill against production right after the
- * deploy, so no build serves personal reads before the rows are migrated.
- */
 export default defineSchema({
   projects: defineTable({
     userId: v.string(),
@@ -37,8 +13,6 @@ export default defineSchema({
       v.literal('done'),
     ),
     collapsed: v.boolean(),
-    // Per-project "show done" override; the board-wide switch still applies.
-    // Optional so pre-existing rows don't need a migration.
     showDone: v.optional(v.boolean()),
     gridCol: v.number(),
     gridRow: v.number(),
@@ -46,32 +20,18 @@ export default defineSchema({
     createdAt: v.number(),
     finishedAt: v.union(v.number(), v.null()),
     shelvedAt: v.union(v.number(), v.null()),
-    // Collaborative space association — `null` means private. Set at creation
-    // and never updated: moving a project between boards would need cascade
-    // decisions for its tasks, its focus members and its calendar events.
-    // Optional only because rows written before the backfill carry no value;
-    // once `migrations.ts` has run everywhere this can tighten back to a
-    // required union — every write since goes through `spaceId ?? null`.
     spaceId: v.optional(v.union(v.string(), v.null())),
   })
     .index('by_user', ['userId'])
-    // Personal board reads: one index range per user instead of a full
-    // by_user scan filtered in JS.
     .index('by_user_space', ['userId', 'spaceId'])
-    // The app-facing `id` is only unique *per user* (client-generated uuids,
-    // and migrations can leave the same id under an old + new userId), so
-    // ownership lookups must scope by userId — never the bare `id` alone.
     .index('by_user_id', ['userId', 'id'])
     .index('by_space', ['spaceId'])
-    // Not `by_id`: Convex reserves that name for the implicit `_id` index.
-    // Used by the authorization seam, which must find a project without
-    // knowing who owns it, then decide whether the caller may touch it.
     .index('by_app_id', ['id']),
 
   tasks: defineTable({
     userId: v.string(),
     id: v.string(),
-    projectId: v.string(),
+    projectId: v.optional(v.union(v.string(), v.null())),
     parentId: v.union(v.string(), v.null()),
     title: v.string(),
     notes: v.union(v.string(), v.null()),
@@ -81,41 +41,23 @@ export default defineSchema({
     archived: v.boolean(),
     dueAt: v.union(v.number(), v.null()),
     reminderMinutes: v.optional(v.union(v.number(), v.null())),
-    // The user's *intent* to mirror this task onto Google Calendar. Kept
-    // separate from `calendarEventId` so the intent survives a failed or
-    // pending Google call — the id is only ever a real Google event id.
     addToCalendar: v.optional(v.boolean()),
     calendarEventId: v.optional(v.union(v.string(), v.null())),
     inFocus: v.boolean(),
     focusOrder: v.number(),
     createdAt: v.number(),
     assigneeId: v.optional(v.union(v.string(), v.null())),
-    // Denormalized from the project so a board reads one index and a walk can
-    // never cross scopes. Kept equal to the project's by the same-scope rule.
-    // `null` means personal; see the projects note on the migration. Optional
-    // for the same legacy-rows reason as `projects.spaceId` above.
     spaceId: v.optional(v.union(v.string(), v.null())),
   })
     .index('by_user', ['userId'])
     .index('by_user_id', ['userId', 'id'])
     .index('by_app_id', ['id'])
     .index('by_space', ['spaceId'])
-    // Personal board reads: one index range per user instead of a full
-    // by_user scan filtered in JS.
     .index('by_user_space', ['userId', 'spaceId'])
-    // The two project-scoped reads. A single `projectId` index would be the
-    // same query for every user and would leak across accounts whose
-    // client-generated ids collide.
     .index('by_user_project', ['userId', 'projectId'])
     .index('by_space_project', ['spaceId', 'projectId'])
-    // Removing someone has to find the tasks that name them. Without this the
-    // only way in is a whole-space scan, which is the unbounded read the space
-    // delete used to do.
     .index('by_space_assignee', ['spaceId', 'assigneeId']),
 
-  /** A small, denormalized directory of the names collaborators see. It is
-   *  deliberately not the source of authorization: identity still comes from
-   *  Clerk on the server. */
   userProfiles: defineTable({
     userId: v.string(),
     displayName: v.string(),
@@ -123,12 +65,10 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index('by_user', ['userId']),
 
-  /** Append-only task history for shared work. This is a child table rather
-   *  than an array on tasks so every write does not rewrite the task document. */
   taskActivity: defineTable({
     spaceId: v.string(),
     taskId: v.string(),
-    projectId: v.string(),
+    projectId: v.optional(v.union(v.string(), v.null())),
     actorId: v.string(),
     kind: v.union(
       v.literal('created'),
@@ -169,26 +109,15 @@ export default defineSchema({
 
   userSettings: defineTable({
     userId: v.string(),
-    // Two names for one switch, kept because existing rows have both. The
-    // API surface exposes only `syncEnabled` (see convex/settings.ts) and
-    // writes both fields together.
     calendarEnabled: v.boolean(),
     calendarSyncEnabled: v.boolean(),
     defaultReminderMinutes: v.number(),
-    // Legacy. Whether Google is connected is now read from Clerk (the only
-    // place that actually knows), never from a flag we set ourselves.
     googleConnected: v.optional(v.boolean()),
-    // IANA name. Google needs an explicit zone or it reads an offset-bearing
-    // timestamp as a fixed instant and the wall clock shifts. Absent means the
-    // client has not reported one yet, which is a distinct sync outcome.
     timeZone: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index('by_user', ['userId']),
 
-  /** One row per user, holding a sliding window of failed join attempts. The
-   *  throttle exists for the live 6-character legacy codes at roughly 31 bits,
-   *  not for the 10-character codes this version generates at roughly 50. */
   inviteAttempts: defineTable({
     userId: v.string(),
     count: v.number(),

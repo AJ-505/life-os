@@ -5,51 +5,23 @@ import { convexQuery, useConvexMutation } from '@convex-dev/react-query'
 import { api } from '../../convex/_generated/api'
 import { descendantIds } from './board/board-logic'
 import { useBoardScope } from './board-scope'
+import { NO_PROJECT_ID } from './types'
 
 import type { FunctionArgs } from 'convex/server'
 import type { OptimisticLocalStore } from 'convex/browser'
-import type { BoardData, Project, Task } from './types'
+import type { BoardData, Project, ProjectWithTasks, Task } from './types'
 
-/**
- * The argument shapes live next to the mutation references that define them, so
- * a change to a mutation's args cannot leave a hand-kept copy stale. Components
- * that build a payload import the type from here.
- */
 export type CreateProjectArgs = FunctionArgs<typeof api.tracker.createProject>
 export type CreateTaskArgs = FunctionArgs<typeof api.tracker.createTask>
 
-/**
- * The board is one reactive Convex query. Convex server-renders it, then the
- * client resumes a live subscription — no manual refetching, no cache staleness
- * to manage. Writes are Convex mutations with `withOptimisticUpdate`: the patch
- * lands instantly in the local store and Convex reconciles to server truth (and
- * rolls back on error) across every device the user has open.
- *
- * The query is a function of the board, not just the user: `null` is personal
- * and a space id is shared, so the key, the optimistic key and the server read
- * all move together. Timeline and library ask for `null` explicitly.
- */
 export function boardQueryOptions(spaceId: string | null) {
   return convexQuery(api.tracker.getBoard, { spaceId })
 }
 
-/** `convexQuery` returns `staleTime: Infinity`; `ConvexQueryClient` is what
- *  makes it live, watching the cache entry on `added` and unsubscribing when it
- *  is collected at `gcTime`. So an intent prefetch stays warm: the click after
- *  a hover reads the subscribed data, and collection is what ends the watch. */
 export function taskHistoryQueryOptions(taskId: string | null) {
   return convexQuery(api.tracker.getTaskHistory, taskId ? { taskId } : 'skip')
 }
 
-/**
- * Every mutation below opened with the same getQuery/guard/setQuery preamble.
- * Collapsing it here also gives the store's board type one home: it used to be
- * ten repeated `as any` casts, and the file carried a `@ts-nocheck` because of
- * the mismatch those were papering over.
- *
- * The scope is an explicit parameter rather than read from context here,
- * because these helpers are plain functions and only the hooks run in React.
- */
 function withBoard(
   store: OptimisticLocalStore,
   spaceId: string | null,
@@ -59,11 +31,6 @@ function withBoard(
   if (!board) return
   store.setQuery(api.tracker.getBoard, { spaceId }, patch(board))
 }
-
-/* -------------------------------------------------------- optimistic patches
- * Pure helpers over BoardData, reused inside each mutation's optimistic update.
- * Patch one object in place and leave every untouched object's identity alone
- * so the compiler can skip unchanged subtrees. */
 
 const patchTask = (
   board: BoardData,
@@ -85,7 +52,27 @@ const patchProject = (
   patch: Partial<Project>,
 ): BoardData => board.map((p) => (p.id === id ? { ...p, ...patch } : p))
 
-/* ---------------------------------------------------------------- projects */
+function noProjectBucket(
+  spaceId: string | null,
+  tasks: Array<Task>,
+): ProjectWithTasks {
+  return {
+    id: NO_PROJECT_ID,
+    name: 'No project',
+    color: 'slate',
+    status: 'active',
+    collapsed: false,
+    showDone: false,
+    gridCol: -1,
+    gridRow: 0,
+    targetDate: null,
+    createdAt: 0,
+    finishedAt: null,
+    shelvedAt: null,
+    spaceId,
+    tasks,
+  }
+}
 
 export function useCreateProject() {
   const spaceId = useBoardScope()
@@ -107,8 +94,6 @@ export function useCreateProject() {
         createdAt: Date.now(),
         finishedAt: null,
         shelvedAt: null,
-        // Normalized for the same reason the server normalizes it: the field is
-        // optional on the wire, and the client type says `string | null`.
         spaceId: args.spaceId ?? null,
         tasks: [],
       },
@@ -170,45 +155,49 @@ export function useDeleteProject() {
   return useMutation({ mutationFn })
 }
 
-/* ------------------------------------------------------------------ tasks */
-
 export function useCreateTask() {
   const spaceId = useBoardScope()
   const mutationFn = useConvexMutation(
     api.tracker.createTask,
   ).withOptimisticUpdate((store, args) => {
-    withBoard(store, spaceId, (board) =>
-      board.map((p) =>
-        p.id === args.projectId
-          ? {
-              ...p,
-              tasks: [
-                ...p.tasks,
-                {
-                  id: args.id,
-                  projectId: args.projectId,
-                  parentId: args.parentId ?? null,
-                  title: args.title,
-                  notes: null,
-                  position: args.position,
-                  done: false,
-                  doneAt: null,
-                  archived: false,
-                  dueAt: args.dueAt ?? null,
-                  reminderMinutes: null,
-                  addToCalendar: false,
-                  calendarEventId: null,
-                  inFocus: false,
-                  focusOrder: 0,
-                  createdAt: Date.now(),
-                  assigneeId: args.assigneeId ?? null,
-                  spaceId: p.spaceId,
-                },
-              ].sort((a, b) => a.position - b.position),
-            }
-          : p,
-      ),
-    )
+    withBoard(store, spaceId, (board) => {
+      const projectId = args.projectId ?? NO_PROJECT_ID
+      const newTask = (taskSpaceId: string | null) => ({
+        id: args.id,
+        projectId,
+        parentId: args.parentId ?? null,
+        title: args.title,
+        notes: null,
+        position: args.position,
+        done: false,
+        doneAt: null,
+        archived: false,
+        dueAt: args.dueAt ?? null,
+        reminderMinutes: null,
+        addToCalendar: false,
+        calendarEventId: null,
+        inFocus: false,
+        focusOrder: 0,
+        createdAt: Date.now(),
+        assigneeId: args.assigneeId ?? null,
+        spaceId: taskSpaceId,
+      })
+      const target = board.find((p) => p.id === projectId)
+      if (target) {
+        return board.map((p) =>
+          p.id === target.id
+            ? {
+                ...p,
+                tasks: [...p.tasks, newTask(p.spaceId)].sort(
+                  (a, b) => a.position - b.position,
+                ),
+              }
+            : p,
+        )
+      }
+      if (projectId !== NO_PROJECT_ID) return board
+      return [...board, noProjectBucket(spaceId, [newTask(spaceId)])]
+    })
   })
   const create = useMutation({
     mutationFn,
@@ -223,7 +212,10 @@ export function useCreateTask() {
 }
 
 export function useAddTask() {
-  return useCreateTask().mutate
+  const spaceId = useBoardScope()
+  const create = useCreateTask()
+  return (args: Omit<CreateTaskArgs, 'spaceId'>) =>
+    create.mutate({ ...args, spaceId })
 }
 
 export function useUpdateTask() {
@@ -236,9 +228,6 @@ export function useUpdateTask() {
       const current = board.flatMap((p) => p.tasks).find((t) => t.id === id)
       return patchTask(board, id, {
         ...rest,
-        // Mirrors the server: re-ticking stamps now, un-ticking keeps the old
-        // stamp. The sort reads `doneAt`, so dropping it here would make the row
-        // jump the instant the server answered.
         ...(done !== undefined && {
           done,
           doneAt: done ? Date.now() : (current?.doneAt ?? null),
@@ -257,7 +246,6 @@ export function useMoveTask() {
     withBoard(store, spaceId, (board) => {
       const all = board.flatMap((p) => p.tasks)
       if (!all.some((t) => t.id === args.id)) return board
-      // The whole subtree travels with the task.
       const movingIds = new Set([args.id, ...descendantIds(all, args.id)])
       const subtree = all
         .filter((t) => movingIds.has(t.id))
@@ -266,7 +254,7 @@ export function useMoveTask() {
             ? { ...t, projectId: args.projectId, position: args.position }
             : { ...t, projectId: args.projectId },
         )
-      return board.map((p) => {
+      const next = board.map((p) => {
         const has = p.tasks.some((t) => movingIds.has(t.id))
         const gets = p.id === args.projectId
         if (!has && !gets) return p
@@ -279,6 +267,9 @@ export function useMoveTask() {
           ),
         }
       })
+      if (next.some((p) => p.id === args.projectId)) return next
+      if (args.projectId !== NO_PROJECT_ID) return next
+      return [...next, noProjectBucket(spaceId, subtree)]
     })
   })
   return useMutation({ mutationFn })

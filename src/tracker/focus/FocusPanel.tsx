@@ -42,7 +42,7 @@ export function FocusItemBody({
         dragging && 'shadow-lg ring-2 ring-signal/40',
       )}
     >
-      {/* the non-distracting project cue: a colored spine */}
+      {}
       <span className="absolute inset-y-1.5 left-1 w-0.5 rounded-full bg-proj" />
       <Checkbox
         checked={task.done}
@@ -59,9 +59,6 @@ export function FocusItemBody({
           onClick={() => openTask(task.id)}
           onPointerDown={(e) => e.stopPropagation()}
           className={cn(
-            // `[overflow-wrap:anywhere]` rather than `break-words`: only
-            // `anywhere` shrinks a long unbroken token's min-content width,
-            // which is what kept the x button outside the rail.
             'block w-full cursor-pointer whitespace-pre-wrap text-left text-sm leading-snug [overflow-wrap:anywhere]',
             task.done && 'text-muted-foreground line-through decoration-border',
           )}

@@ -8,8 +8,10 @@ import {
   isAllDay,
   minuteOfDay,
   placeInLanes,
+  rememberedProject,
   weekDays,
 } from './calendar-logic'
+import { NO_PROJECT_ID } from '../types'
 
 import type { ProjectWithTasks, Task } from '../types'
 
@@ -249,5 +251,34 @@ describe('calendarWeek', () => {
     const week = calendarWeek([launch], days, true)
     expect(week[thursday].milestones.map((p) => p.id)).toEqual(['launch'])
     expect(week[wednesday].milestones).toEqual([])
+  })
+
+  it('shows tasks from the no-project bucket and no milestone for it', () => {
+    const bucket = project(NO_PROJECT_ID, [
+      task('loose', { dueAt: at(14, 10), projectId: NO_PROJECT_ID }),
+    ])
+    const wed = calendarWeek([bucket], days, true)[wednesday]
+    expect(wed.timed.map((p) => p.task.id)).toEqual(['loose'])
+    expect(wed.milestones).toEqual([])
+  })
+})
+
+describe('rememberedProject', () => {
+  const projects = [{ id: 'p1' }, { id: 'p2' }]
+
+  it('falls back to no project when nothing is stored', () => {
+    expect(rememberedProject(null, projects)).toBe(NO_PROJECT_ID)
+  })
+
+  it('keeps a stored project that still exists', () => {
+    expect(rememberedProject('p2', projects)).toBe('p2')
+  })
+
+  it('keeps a stored no-project choice', () => {
+    expect(rememberedProject(NO_PROJECT_ID, projects)).toBe(NO_PROJECT_ID)
+  })
+
+  it('falls back to no project when the stored project is gone', () => {
+    expect(rememberedProject('deleted', projects)).toBe(NO_PROJECT_ID)
   })
 })

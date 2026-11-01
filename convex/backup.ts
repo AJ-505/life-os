@@ -10,23 +10,7 @@ import { eventsToDelete } from './calendar'
 import type { Doc } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
 
-/** Matches the tracker and spaces batch so a big restore behaves the same
- *  either way. */
 const IMPORT_BATCH = 200
-
-/* Wire format: dates travel as ISO strings inside the JSON file, matching the
- * original Drizzle-era backup (so old backups import cleanly). `parentId` is
- * carried optionally — the original export dropped it; we keep it when present
- * and tolerate its absence.
- *
- * Backup covers the *personal* board only. A space's projects are shared, so a
- * snapshot of them would be a second copy of someone else's data, and a restore
- * of it would recreate rows the other members never agreed to. Space rows are
- * skipped on export and untouched on import.
- *
- * The calendar trio rides along for personal tasks: an event that survives the
- * round trip keeps its id, and one the snapshot drops has its Google event
- * deleted rather than orphaned. */
 
 const toIso = (v: number | null) => (v ? new Date(v).toISOString() : null)
 const fromIso = (s: string | null | undefined) =>
@@ -48,7 +32,7 @@ const backupProject = v.object({
 
 const backupTask = v.object({
   id: v.string(),
-  projectId: v.string(),
+  projectId: v.union(v.string(), v.null()),
   parentId: v.optional(v.union(v.string(), v.null())),
   title: v.string(),
   notes: v.union(v.string(), v.null()),
@@ -60,7 +44,6 @@ const backupTask = v.object({
   inFocus: v.union(v.boolean(), v.null()),
   focusOrder: v.union(v.number(), v.null()),
   createdAt: v.union(v.string(), v.null()),
-  // Optional so backups written before the calendar work still import.
   reminderMinutes: v.optional(v.union(v.number(), v.null())),
   addToCalendar: v.optional(v.union(v.boolean(), v.null())),
   calendarEventId: v.optional(v.union(v.string(), v.null())),
@@ -127,15 +110,6 @@ export const exportBackup = query({
   },
 })
 
-/** Replaces the signed-in user's personal board only. Shared rows are left
- *  alone: a restore must not lift the user's tasks out of a teammate's project,
- *  and must not delete a space they belong to.
- *
- *  A snapshot can be larger than one transaction, so the import runs as bounded
- *  batches: delete-and-insert one window of rows, then re-schedule itself from
- *  where it stopped. `data.tasks` is also de-duplicated by `id` first — a
- *  hand-edited or round-tripped file can carry the same id twice, and inserting
- *  both copies is what produced duplicate rows under `by_user_id` before. */
 export const importBackup = mutation({
   args: {
     app: v.literal('lifeos'),
@@ -148,8 +122,6 @@ export const importBackup = mutation({
     const userId = await requireUserId(ctx)
     const { projects, tasks } = await personalRows(ctx, userId)
 
-    // A live event is stale when the snapshot does not carry the same id for
-    // the same task, including when the snapshot drops the task entirely.
     const snapshotById = new Map(
       data.tasks.map((task) => [task.id, task.calendarEventId ?? null]),
     )
@@ -161,8 +133,6 @@ export const importBackup = mutation({
         staleEvents.set(live, { taskId: task.id, eventId: live })
       }
     }
-    // The derived id only matters where no event was recorded, which is the
-    // case `eventsToDelete` covers for exactly these tasks.
     for (const event of eventsToDelete(
       tasks.filter((task) => !task.calendarEventId),
     ))
@@ -174,12 +144,9 @@ export const importBackup = mutation({
       })
     }
 
-    // First, the same id twice in one file: last one wins, matching how a
-    // re-import of the same backup overwrites rather than doubles.
     const projectsById = new Map(data.projects.map((p) => [p.id, p]))
     const tasksById = new Map(data.tasks.map((t) => [t.id, t]))
 
-    // One bounded step, then the scheduler takes over.
     await importBackupSide(ctx, {
       userId,
       deleteProjectIds: projects.map((p) => p._id),
@@ -196,8 +163,6 @@ export const importBackup = mutation({
   },
 })
 
-/** The queue that travels between continuation steps: validated with the same
- *  backup schemas as the import itself, so a corrupted queue fails loudly. */
 const importSide = v.object({
   userId: v.string(),
   deleteProjectIds: v.array(v.string()),
@@ -213,10 +178,6 @@ export const continueImportBackup = internalMutation({
   },
 })
 
-/** One bounded step: a window of deletes, then a window of inserts, from the
- *  front of each queue. Projects before tasks so a task never outlives its
- *  project's absence from the caller's view. Continues until every queue is
- *  empty. */
 async function importBackupSide(
   ctx: MutationCtx,
   side: {
@@ -253,7 +214,6 @@ async function importBackupSide(
       createdAt: fromIso(p.createdAt) ?? Date.now(),
       finishedAt: fromIso(p.finishedAt),
       shelvedAt: fromIso(p.shelvedAt),
-      // Backup covers the personal board only.
       spaceId: null,
     })
   }
@@ -278,7 +238,6 @@ async function importBackupSide(
       inFocus: Boolean(t.inFocus),
       focusOrder: Number(t.focusOrder ?? 0),
       createdAt: fromIso(t.createdAt) ?? Date.now(),
-      // Backup covers the personal board only.
       spaceId: null,
     })
   }

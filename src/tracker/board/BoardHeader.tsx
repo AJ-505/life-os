@@ -32,7 +32,6 @@ import { useBoardScope } from '../board-scope'
 
 import type { BoardViewMode } from './BoardView'
 
-/** Clerk ids are long; two characters is what fits in a 24px circle. */
 function MemberStack({ spaceId }: { spaceId: string }) {
   const members = useSpaceMembers(spaceId)
   const list = members ?? []
@@ -61,22 +60,12 @@ function MemberStack({ spaceId }: { spaceId: string }) {
   )
 }
 
-/** The space's own name for the title slot. Only mounted when Spaces is on, so
- *  the flag off means no spaces query at all. */
 function SpaceTitle({ spaceId }: { spaceId: string }) {
   const { data: spaces } = useQuery({ ...mySpacesQueryOptions, retry: false })
   const name = spaces?.find((s) => s.id === spaceId)?.name
   return <>{name ?? 'Shared board'}</>
 }
 
-/**
- * The space switcher, and the shared-board actions.
- *
- * A menu of links rather than a select: this is navigation between places, so
- * every entry is a real anchor with working keyboard and middle-click
- * behaviour, and a handful of items cannot produce a scrolling list. Only
- * mounted inside a space, so the personal board has no spaces chrome at all.
- */
 function SpaceChrome({ spaceId }: { spaceId: string }) {
   const navigate = useNavigate()
   const { data: spaces } = useQuery({ ...mySpacesQueryOptions, retry: false })
@@ -121,8 +110,6 @@ function SpaceChrome({ spaceId }: { spaceId: string }) {
                   to="/space/$spaceId"
                   params={{ spaceId: s.id }}
                   className="no-underline"
-                  // Radix closes on select only when the item handles the click;
-                  // a Link prevents default, so the close is explicit here.
                   onClick={() => setMenuOpen(false)}
                 >
                   <span className="min-w-0 flex-1 truncate">{s.name}</span>
@@ -199,15 +186,6 @@ function ViewSwitch({ view }: { view: BoardViewMode }) {
   )
 }
 
-/**
- * Board header. The active board is read from the route (see `useBoardScope`),
- * never from localStorage: a space that only exists in this browser would be a
- * space with no server behind it.
- *
- * The spaces chrome mounts only inside a space, and only when the build flag is
- * on, so the personal board carries none of it and a flag-off build runs no
- * spaces query from here.
- */
 export function BoardHeader({
   activeCount,
   openCount,
@@ -264,7 +242,7 @@ export function BoardHeader({
         >
           <Plus className="size-4" /> Project
         </Button>
-        {/* Focus is personal only, and the rail is hidden on a shared board. */}
+        {}
         {spaceId === null ? (
           <Button
             variant={focusOpen ? 'secondary' : 'ghost'}

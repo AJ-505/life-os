@@ -7,7 +7,7 @@ import { isToday } from 'date-fns/isToday'
 import { startOfDay } from 'date-fns/startOfDay'
 import { ChevronLeft, ChevronRight, Flag } from 'lucide-react'
 
-import { cn } from '#/design-system'
+import { cn, useLocalString } from '#/design-system'
 import { Button } from '#/design-system/ui/button'
 import { Input } from '#/design-system/ui/input'
 import {
@@ -23,9 +23,9 @@ import {
   SelectValue,
 } from '#/design-system/ui/select'
 
-import { newId, positionAfter } from '../types'
+import { NO_PROJECT_ID, newId, positionAfter } from '../types'
 import { useAddTask } from '../queries'
-import { activeProjects } from '../board/board-logic'
+import { canvasProjects } from '../board/board-logic'
 import { useBoardUI } from '../board/board-ui'
 import {
   EVENT_MINUTES,
@@ -36,6 +36,7 @@ import {
   calendarWeek,
   dayId,
   minuteOfDay,
+  rememberedProject,
   weekDays,
 } from './calendar-logic'
 
@@ -314,26 +315,24 @@ function QuickCreate({
 }) {
   const addTask = useAddTask()
   const [title, setTitle] = useState('')
-  const projects = activeProjects(board)
+  const projects = canvasProjects(board)
+  const selection = rememberedProject(projectId, projects)
   const project =
-    projects.find((p) => p.id === projectId) ?? projects.at(0) ?? null
+    selection === NO_PROJECT_ID
+      ? null
+      : (projects.find((p) => p.id === selection) ?? null)
   const dueAt = atMinute(draft.dayStart, draft.minute ?? 0)
-
-  if (!project)
-    return (
-      <p className="text-sm text-muted-foreground">
-        Make a project on the board first. Tasks need a home.
-      </p>
-    )
 
   const submit = () => {
     const t = title.trim()
     if (!t) return
     addTask({
       id: newId(),
-      projectId: project.id,
+      projectId: selection,
       title: t,
-      position: positionAfter(project.tasks.filter((x) => !x.parentId)),
+      position: positionAfter(
+        project?.tasks.filter((x) => !x.parentId) ?? [],
+      ),
       dueAt,
     })
     onDone()
@@ -359,21 +358,33 @@ function QuickCreate({
         aria-label="Task title"
       />
       <div className="flex items-center gap-2">
-        <Select value={project.id} onValueChange={onProjectChange}>
+        <Select value={selection} onValueChange={onProjectChange}>
           <SelectTrigger
             size="sm"
-            data-proj={project.color}
+            data-proj={project?.color}
             className="min-w-0 flex-1 text-xs"
             aria-label="Project"
           >
             <SelectValue>
               <span className="flex min-w-0 items-center gap-1.5">
-                <span className="size-2 shrink-0 rounded-full bg-proj" />
-                <span className="truncate">{project.name}</span>
+                {project ? (
+                  <span className="size-2 shrink-0 rounded-full bg-proj" />
+                ) : (
+                  <span className="size-2 shrink-0 rounded-full border border-border" />
+                )}
+                <span className="truncate">
+                  {project?.name ?? 'No project'}
+                </span>
               </span>
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value={NO_PROJECT_ID}>
+              <span className="flex items-center gap-1.5">
+                <span className="size-2 rounded-full border border-border" />
+                No project
+              </span>
+            </SelectItem>
             {projects.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 <span data-proj={p.color} className="flex items-center gap-1.5">
@@ -401,7 +412,10 @@ export function CalendarView({
 }) {
   const [anchor, setAnchor] = useState(() => new Date())
   const [draft, setDraft] = useState<Draft | null>(null)
-  const [projectId, setProjectId] = useState<string | null>(null)
+  const [projectId, setProjectId] = useLocalString(
+    'lifeos-cal-project',
+    NO_PROJECT_ID,
+  )
   const scrollRef = useRef<HTMLDivElement>(null)
   const now = useNow()
 

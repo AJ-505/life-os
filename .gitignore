@@ -22,3 +22,6 @@ debriefs/
 plans/
 inquiries/
 proofs/
+
+# Agent verification artifacts (session tokens land here); never commit
+.verify/

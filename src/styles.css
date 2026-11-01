@@ -7,10 +7,6 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ------------------------------------------------------------------ */
-/* LifeOS — "quiet operator": warm paper by day, deep ink by night.    */
-/* ------------------------------------------------------------------ */
-
 :root {
   --background: oklch(0.971 0.009 84);
   --foreground: oklch(0.265 0.022 55);
@@ -41,7 +37,6 @@
   --sidebar-border: oklch(0.882 0.014 78);
   --sidebar-ring: oklch(0.68 0.13 45);
 
-  /* the one loud voice in the room */
   --signal: oklch(0.635 0.185 38);
   --signal-foreground: oklch(0.985 0.01 80);
 
@@ -91,7 +86,6 @@
   --chart-5: oklch(0.76 0.16 70);
 }
 
-/* Project identity colors (light / dark tuned) */
 :root {
   --proj-flame: oklch(0.62 0.19 35);
   --proj-saffron: oklch(0.74 0.14 80);
@@ -209,7 +203,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* faint paper grain over everything */
 body::after {
   content: '';
   position: fixed;
@@ -217,45 +210,27 @@ body::after {
   pointer-events: none;
   z-index: 50;
   opacity: 0.035;
-  /* Own compositor layer. This sits above the whole app, so without it every
-     repaint anywhere (each keystroke in a field, caret blinks) also invalidates
-     and redraws the grain — a real chunk of typing latency. */
   will-change: transform;
   transform: translateZ(0);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* the board's desk surface: dotted grid that pans with scroll */
 .board-canvas {
   background-image: radial-gradient(
     color-mix(in oklab, var(--foreground) 13%, transparent) 1px,
     transparent 1px
   );
   background-size: 26px 26px;
-  /* NB: no `transform`/`will-change` here. This element is the horizontal
-     scroll container *and* an ancestor of every draggable, so a transform on it
-     becomes a containing block that throws off dnd-kit's pointer/rect math —
-     the cause of the wonky drop targeting on the leftmost cards. */
 }
 
-/* While a drag is in flight, freeze the paint-heavy hover/ring/shadow/progress
-   transitions so they can't pile repaints onto each pointer move. Deliberately
-   NOT `!important`: the sortable wrappers set their transform transition via an
-   inline style, which (without `!important` here) still wins — so the "make
-   room here" gap keeps animating while everything else holds still. Scoped to
-   the canvas → portaled menus/dialogs are unaffected. */
 .board-canvas[data-dragging] * {
   transition: none;
 }
 
-/* Mandatory snap re-snaps the container on every dnd-kit autoscroll step, so
-   dragging a card toward another column on mobile hurls the board to a column
-   edge. Snapping is a browsing affordance — suspend it while a drag is live. */
 .board-canvas[data-dragging] {
   scroll-snap-type: none;
 }
 
-/* mono micro-labels: the "OS chrome" voice */
 .os-label {
   font-family: var(--font-mono);
   font-size: 0.625rem;
@@ -264,12 +239,8 @@ body::after {
   color: var(--muted-foreground);
 }
 
-/* custom scrollbars that match the desk */
 .board-scroll {
   scrollbar-width: thin;
-  /* Reserve the scrollbar track always. Without it, a list that fits without a
-     scrollbar and then grows one when data lands reflows every card sideways by
-     the scrollbar width. */
   scrollbar-gutter: stable;
   scrollbar-color: color-mix(in oklab, var(--foreground) 22%, transparent)
     transparent;
@@ -299,16 +270,7 @@ body::after {
   }
 }
 
-/*
- * Radix wraps a ScrollArea's children in a `display: table; min-width: 100%`
- * box so tables can scroll sideways. That box sizes to its content's
- * min-content and is not capped by the viewport, so one unbreakable string
- * inside a bounded-width area grows the box past its container and clips
- * whatever sits at the right edge. Making it a block restores the cap; children
- * that need to shrink already carry `min-w-0`.
- */
 [data-slot='scroll-area-viewport'] > div {
-  /* Radix sets these inline, so the override has to win. */
   display: block !important;
   min-width: 0 !important;
 }

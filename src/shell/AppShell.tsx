@@ -88,12 +88,6 @@ function NavLinks({
   collapsed?: boolean
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
-  /**
-   * `/spaces` cannot prefix-match `/space/<id>`, so the Spaces tab needs its own
-   * rule. The first path segment covers every form: `/spaces`, `/spaces/<id>`,
-   * `/space/<id>`. `/join/<code>` is deliberately excluded, because you are not
-   * in a space until the join lands.
-   */
   const segment = pathname.split('/')[1] ?? ''
   const inSpacesArea = segment === 'spaces' || segment === 'space'
 
@@ -156,9 +150,6 @@ function ProfileSync() {
   const displayName =
     user?.fullName ?? user?.username ?? user?.primaryEmailAddress?.emailAddress
   const email = user?.primaryEmailAddress?.emailAddress
-  // Clerk hands back a fresh user object on many unrelated updates. Only
-  // re-sync when the profile fields themselves changed — the signature is
-  // the gate, not the identity of the object.
   const syncedRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -172,9 +163,6 @@ function ProfileSync() {
   return null
 }
 
-/** Writes the browser's IANA zone once, behind the flag. Google needs it or it
- *  reads our timestamp as a fixed instant and the wall clock shifts. Mounted
- *  from the shell so it happens before any task can be pushed. */
 function EnsureTimezone() {
   useEnsureTimezone()
   return null
@@ -185,16 +173,8 @@ function PrefetchRoutes() {
   return null
 }
 
-/**
- * How many calendar pushes Resync has in flight at once. Google rate limits per
- * user, so the whole board going out in one tick is what turns a resync into a
- * wall of "rate limited, try later".
- */
 const RESYNC_CONCURRENCY = 4
 
-/** Run the work with at most `limit` in flight, keeping the input order in the
- *  results. A task list is short enough that a worker pool is clearer than a
- *  batching loop that has to remember where it left off. */
 async function runBounded<T>(
   work: Array<() => Promise<T>>,
   limit: number,
@@ -212,10 +192,6 @@ async function runBounded<T>(
   return results
 }
 
-/** One toast for a whole resync, naming the reason that actually occurred most
- *  often rather than whichever failed first. A rate-limited run used to attach
- *  "Reconnect Google above" to it, telling someone whose key was fine to go and
- *  fix something that was not broken. */
 function reportResync(results: Array<SyncOutcome>) {
   const updated = results.filter((r) => r.ok && !r.silent).length
   const failures = results.filter((f): f is FailedSync => !f.ok)
@@ -233,8 +209,6 @@ function reportResync(results: Array<SyncOutcome>) {
 
 type FailedSync = Extract<SyncOutcome, { ok: false }>
 
-/** The failure most of the run shared. Falling back to the first keeps a run
- *  where every failure was different from saying nothing at all. */
 function commonReason(failures: Array<FailedSync>) {
   const counts = new Map<string, { n: number; outcome: FailedSync }>()
   for (const failure of failures) {
@@ -249,12 +223,6 @@ function commonReason(failures: Array<FailedSync>) {
     : top.outcome.message
 }
 
-/**
- * The whole calendar surface lives in this child, so a build with the flag off
- * never mounts it and never runs a settings read. That is the difference
- * between a gate and a grille: the previous version rendered ComingSoon while
- * the hooks above it still subscribed.
- */
 function CalendarSettings() {
   const { data: settings } = useQuery(calendarSettingsQueryOptions)
   const { data: board } = useQuery(boardQueryOptions(null))
@@ -284,11 +252,6 @@ function CalendarSettings() {
     updateSettings.mutate({ syncEnabled: true })
   }
 
-  /**
-   * The old version caught an OAuth failure, wrote `googleConnected: true`
-   * anyway and toasted "connected (mock)". Every later sync then ran against a
-   * permission that was never granted, and failed where nobody was looking.
-   */
   const handleConnect = async () => {
     try {
       await connect()
@@ -299,8 +262,6 @@ function CalendarSettings() {
     }
   }
 
-  // Turning sync off takes the events with it, so the confirm says so before it
-  // happens. Unlinking the Google account itself is Clerk's job.
   const handleDisconnect = () => {
     updateSettings.mutate({ syncEnabled: false })
     setConfirmOff(false)
@@ -315,9 +276,6 @@ function CalendarSettings() {
     if (resyncing) return
     setResyncing(true)
     try {
-      // Four at a time. All at once meant one Google request per synced task
-      // in the same tick, which is the shape that earns a 429 and then makes
-      // every task report the same rate-limit message.
       const results = await runBounded(
         syncedTasks.map((t) => () => syncToCalendar(t.id)),
         RESYNC_CONCURRENCY,
@@ -528,7 +486,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     false,
   )
 
-  // `[` toggles the sidebar (mirrors `]` for the focus panel).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null
@@ -552,7 +509,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-dvh flex-col overflow-hidden md:flex-row">
-        {/* Desktop sidebar */}
+        {}
         <aside
           className={cn(
             'hidden shrink-0 flex-col justify-between border-r border-sidebar-border bg-sidebar p-3 md:flex',
@@ -597,7 +554,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <SidebarFooter collapsed={collapsed} />
         </aside>
 
-        {/* Mobile top bar */}
+        {}
         <header className="flex h-14 shrink-0 items-center justify-between border-b border-sidebar-border bg-sidebar px-2 md:hidden">
           <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
             <SheetTrigger asChild>

@@ -1,7 +1,6 @@
 import 'zod/compile'
 import * as z from 'zod'
 
-/** The space row as the server shapes it. */
 export const space = z.object({
   id: z.string(),
   ownerId: z.string(),
@@ -10,11 +9,6 @@ export const space = z.object({
   createdAt: z.number(),
 })
 
-/**
- * `joinSpaceByCode` returns a discriminated result rather than throwing for the
- * cases a user can act on, so the join page can tell "that link is wrong" apart
- * from "you have tried too often" without reading an error string.
- */
 export const joinResult = z.discriminatedUnion('ok', [
   z.object({
     ok: z.literal(true),
@@ -44,7 +38,7 @@ const backupProjectSchema = z.object({
 
 const backupTaskSchema = z.object({
   id: z.string(),
-  projectId: z.string(),
+  projectId: z.string().nullable(),
   parentId: z.string().nullable().optional(),
   title: z.string(),
   notes: z.string().nullable(),
@@ -56,7 +50,6 @@ const backupTaskSchema = z.object({
   inFocus: z.boolean().nullable(),
   focusOrder: z.number().nullable(),
   createdAt: z.string().nullable(),
-  // Optional so a backup written before the calendar work still validates.
   reminderMinutes: z.number().nullable().optional(),
   addToCalendar: z.boolean().nullable().optional(),
   calendarEventId: z.string().nullable().optional(),

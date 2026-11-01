@@ -32,21 +32,6 @@ type Member = {
   isSelf: boolean
 }
 
-/** The old ID-only helpers are deliberately gone. Names come from the signed
- *  user's profile directory, so a member is never reduced to an opaque id. */
-
-/**
- * Share and membership for one space.
- *
- * The invite code is read from the live spaces query rather than passed in, so
- * a reset shows the new code here and on the card at the same time instead of
- * showing a stale one in one place.
- *
- * The owner gets two controls, and they are one behaviour each:
- * - Reset the link rotates the code for the whole space.
- * - Remove takes one person's access away and rotates the code in the same
- *   transaction, because either half alone leaves a way back in.
- */
 export function SpacesShareDialog({
   open,
   onClose,
