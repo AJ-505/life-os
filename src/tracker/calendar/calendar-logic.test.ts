@@ -9,6 +9,8 @@ import {
   calendarWeek,
   cardDensity,
   dropMinute,
+  dragSpan,
+  durationLabel,
   durationUntil,
   externalPlacement,
   hourPxFor,
@@ -275,6 +277,13 @@ describe('calendar block size', () => {
     expect(blockShortLabel(60)).toBe('1h')
   })
 
+  it('reads a dragged duration as hours and minutes', () => {
+    expect(durationLabel(45)).toBe('45m')
+    expect(durationLabel(60)).toBe('1h')
+    expect(durationLabel(105)).toBe('1h 45m')
+    expect(durationLabel(120)).toBe('2h')
+  })
+
   it('scales the hour with the block so the day grows as blocks shrink', () => {
     expect(hourPxFor(10)).toBe(HOUR_PX * 6)
     expect(hourPxFor(15)).toBe(HOUR_PX * 4)
@@ -308,6 +317,35 @@ describe('calendar block size', () => {
     const hourPx = hourPxFor(10)
     expect(resizedMinutes(540, 60, hourPx / 6, 10, hourPx)).toBe(70)
     expect(resizedMinutes(540, 60, hourPx / 2, 10, hourPx)).toBe(90)
+  })
+
+  it('selects every block the drag passes through', () => {
+    const px = (minute: number, blockMinutes: number) =>
+      (minute / 60) * hourPxFor(blockMinutes)
+    expect(dragSpan(px(840, 15), px(880, 15), 15)).toEqual({
+      minute: 840,
+      minutes: 45,
+    })
+    expect(dragSpan(px(840, 15), px(850, 15), 15)).toEqual({
+      minute: 840,
+      minutes: 15,
+    })
+    expect(dragSpan(px(840, 15), px(800, 15), 15)).toEqual({
+      minute: 795,
+      minutes: 60,
+    })
+    expect(dragSpan(px(1420, 15), px(1500, 15), 15)).toEqual({
+      minute: 1410,
+      minutes: 30,
+    })
+    expect(dragSpan(px(-20, 15), px(5, 15), 15)).toEqual({
+      minute: 0,
+      minutes: 15,
+    })
+    expect(dragSpan(px(540, 60), px(659, 60), 60)).toEqual({
+      minute: 540,
+      minutes: 120,
+    })
   })
 })
 

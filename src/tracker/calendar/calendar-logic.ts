@@ -31,6 +31,13 @@ export function blockShortLabel(minutes: number): string {
   return minutes >= 60 ? `${minutes / 60}h` : `${minutes}m`
 }
 
+export function durationLabel(minutes: number): string {
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  if (hours === 0) return `${rest}m`
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`
+}
+
 export function hourPxFor(blockMinutes: number): number {
   return (HOUR_PX * 60) / blockMinutes
 }
@@ -97,6 +104,26 @@ export function slotMinute(offsetPx: number, blockMinutes: number): number {
 }
 
 export type CalendarTask = { task: Task; project: ProjectWithTasks }
+
+/** The block range a press-drag covers: every block the pointer entered, from
+ *  the block under the press to the block under the pointer, in either
+ *  direction. Dragging through three 15 minute blocks selects 45 minutes. */
+export function dragSpan(
+  downPx: number,
+  movePx: number,
+  blockMinutes: number,
+): { minute: number; minutes: number } {
+  const blockPx = hourPxFor(blockMinutes) * (blockMinutes / 60)
+  const lastBlock = DAY_MINUTES / blockMinutes - 1
+  const blockAt = (px: number) =>
+    Math.min(Math.max(Math.floor(px / blockPx), 0), lastBlock)
+  const first = Math.min(blockAt(downPx), blockAt(movePx))
+  const last = Math.max(blockAt(downPx), blockAt(movePx))
+  return {
+    minute: first * blockMinutes,
+    minutes: (last - first + 1) * blockMinutes,
+  }
+}
 
 /** The event rows pulled back from Google Calendar (the cache behind these
  *  lives in `convex/calendarEvents`). Read-only by design: an external event
