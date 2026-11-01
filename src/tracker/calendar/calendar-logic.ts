@@ -19,7 +19,7 @@ const DAY_MINUTES = 24 * 60
  */
 export const BLOCK_MINUTES = [10, 15, 20, 30, 60] as const
 export type BlockMinutes = (typeof BLOCK_MINUTES)[number]
-export const DEFAULT_BLOCK_MINUTES: BlockMinutes = 60
+export const DEFAULT_BLOCK_MINUTES: BlockMinutes = 30
 
 export function normalizeBlockMinutes(value: number): BlockMinutes {
   return (

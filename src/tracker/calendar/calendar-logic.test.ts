@@ -265,7 +265,7 @@ describe('placeInLanes with mixed durations', () => {
 describe('calendar block size', () => {
   it('offers fine through hourly blocks and falls back to the default', () => {
     expect(BLOCK_MINUTES).toEqual([10, 15, 20, 30, 60])
-    expect(DEFAULT_BLOCK_MINUTES).toBe(60)
+    expect(DEFAULT_BLOCK_MINUTES).toBe(30)
     expect(normalizeBlockMinutes(20)).toBe(20)
     expect(normalizeBlockMinutes(17)).toBe(DEFAULT_BLOCK_MINUTES)
   })

@@ -24,7 +24,7 @@ import { minuteOfDay, timeLabel } from './calendar-logic'
 import { positionAfter } from '../types'
 import { useImportExternalEvent } from './pull'
 
-import type { ExternalEvent, PlacedTask } from './calendar-logic'
+import type { CardDensity, ExternalEvent, PlacedTask } from './calendar-logic'
 import type { ProjectWithTasks } from '../types'
 
 /**
@@ -204,31 +204,38 @@ function ExternalEventPopover({
 }
 
 /** The dashed, colourless skin every external card wears, in both grid modes. */
-export function externalCardClassName(compact?: boolean): string {
+export function externalCardClassName(density: CardDensity = 'full'): string {
   return cn(
     'flex h-full min-w-0 flex-col overflow-hidden rounded-md border border-dashed bg-accent/20 px-1.5 text-left text-foreground/75 transition-colors hover:bg-accent/30',
-    compact ? 'py-0.5' : 'py-1',
+    density === 'tight' ? 'py-0' : density === 'compact' ? 'py-0.5' : 'py-1',
   )
 }
 
 export function ExternalEventCard({
   event,
   placed,
-  compact,
+  density = 'full',
   projects,
 }: {
   event: ExternalEvent
   placed?: PlacedTask
-  compact?: boolean
+  density?: CardDensity
   projects: Array<ProjectWithTasks>
 }) {
   return (
     <ExternalEventPopover event={event} projects={projects}>
-      <div className={externalCardClassName(compact)} title={event.title}>
-        <span className="truncate text-xs font-medium leading-tight">
+      <div className={externalCardClassName(density)} title={event.title}>
+        <span
+          className={cn(
+            'truncate font-medium',
+            density === 'tight'
+              ? 'text-[10px] leading-none'
+              : 'text-xs leading-tight',
+          )}
+        >
           {event.title}
         </span>
-        {!compact ? (
+        {density === 'full' ? (
           <span className="truncate font-mono text-[10px] leading-tight text-foreground/60">
             {placed
               ? timeLabel(placed.start)
