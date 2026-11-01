@@ -491,16 +491,11 @@ function QuickCreate({
   onDone: () => void
 }) {
   const addTask = useAddTask()
-  const spaceId = useBoardScope()
   const [title, setTitle] = useState('')
   const projects = activeProjects(board)
   const project =
     projects.find((p) => p.id === projectId) ?? projects.at(0) ?? null
   const dueAt = atMinute(draft.dayStart, draft.minute ?? 0)
-  // A task dropped on today is a commitment for today, so it starts focused.
-  // Focus is personal only (the server refuses it in a space), hence the scope
-  // gate.
-  const inFocus = spaceId === null && isToday(draft.dayStart)
 
   if (!project)
     return (
@@ -520,7 +515,6 @@ function QuickCreate({
       dueAt,
       durationMinutes: draft.minute === null ? null : blockMinutes,
       createdFrom: 'calendar',
-      inFocus: inFocus || undefined,
     })
     onDone()
   }
@@ -536,7 +530,6 @@ function QuickCreate({
       <span className="os-label">
         {format(dueAt, 'EEE d MMM')}
         {draft.minute === null ? ' · all day' : ` · ${timeLabel(draft.minute)}`}
-        {inFocus ? ' · will start focused' : ''}
       </span>
       <Input
         autoFocus
