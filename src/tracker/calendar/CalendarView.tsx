@@ -39,6 +39,7 @@ import {
   calendarWeek,
   cardDensity,
   dayId,
+  dragSpan,
   hourPxFor,
   importedEventIds,
   labelStep,
@@ -58,7 +59,12 @@ import type {
 } from './calendar-logic'
 import type { BoardData, Project, ProjectWithTasks, Task } from '../types'
 
-type Draft = { dayStart: number; minute: number | null }
+type Draft = { dayStart: number; minute: number | null; minutes?: number }
+
+const DRAG_THRESHOLD_PX = 8
+
+const DRAFT_BOX_CLASSES =
+  'pointer-events-none absolute inset-x-0 z-20 rounded-md border border-dashed border-signal/60 bg-signal/10 px-1.5 py-0.5 font-mono text-[10px] leading-none text-signal'
 
 export function calendarSlotAt(point: { x: number; y: number }) {
   const hit = document.elementFromPoint(point.x, point.y)
@@ -305,22 +311,22 @@ function TimedEntryView({
 
 function DraftAnchor({
   minute,
+  minutes,
   hourPx,
-  blockMinutes,
 }: {
   minute: number
+  minutes: number
   hourPx: number
-  blockMinutes: BlockMinutes
 }) {
   return (
     <PopoverAnchor
-      className="pointer-events-none absolute inset-x-0 z-20 rounded-md border border-dashed border-signal/60 bg-signal/10 px-1.5 py-0.5 font-mono text-[10px] leading-none text-signal"
+      className={DRAFT_BOX_CLASSES}
       style={{
         top: (minute / 60) * hourPx,
-        height: (blockMinutes / 60) * hourPx,
+        height: (minutes / 60) * hourPx,
       }}
     >
-      {timeLabel(minute)}
+      {`${timeLabel(minute)} – ${timeLabel(minute + minutes)}`}
     </PopoverAnchor>
   )
 }
@@ -413,6 +419,54 @@ function DayColumn({
   })
   const today = isToday(day.start)
   const blockPx = (blockMinutes / 60) * hourPx
+  const [span, setSpan] = useState<{ minute: number; minutes: number } | null>(
+    null,
+  )
+  const drag = useRef<{ downPx: number; moved: boolean } | null>(null)
+  const dragged = useRef(false)
+
+  const offsetOf = (clientY: number, el: HTMLElement) =>
+    clientY - el.getBoundingClientRect().top
+
+  // Touch skips the press-drag so the column keeps scrolling; taps fall
+  // through to the click handler below.
+  const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === 'touch' || e.button !== 0) return
+    if (e.target !== e.currentTarget) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragged.current = false
+    drag.current = {
+      downPx: offsetOf(e.clientY, e.currentTarget),
+      moved: false,
+    }
+  }
+
+  const moveDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const state = drag.current
+    if (!state) return
+    const px = offsetOf(e.clientY, e.currentTarget)
+    if (!state.moved) {
+      if (Math.abs(px - state.downPx) < DRAG_THRESHOLD_PX) return
+      state.moved = true
+    }
+    setSpan(dragSpan(state.downPx, px, blockMinutes))
+  }
+
+  const endDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const state = drag.current
+    drag.current = null
+    setSpan(null)
+    if (!state?.moved) return
+    dragged.current = true
+    onDraft({
+      dayStart: day.start,
+      ...dragSpan(
+        state.downPx,
+        offsetOf(e.clientY, e.currentTarget),
+        blockMinutes,
+      ),
+    })
+  }
 
   return (
     <div
@@ -420,12 +474,23 @@ function DayColumn({
       data-cal-day={day.start}
       data-cal-drop={dayId(day.start)}
       onClick={(e) => {
+        if (dragged.current) {
+          dragged.current = false
+          return
+        }
         if (e.target !== e.currentTarget) return
         const offset = e.clientY - e.currentTarget.getBoundingClientRect().top
         onDraft({
           dayStart: day.start,
           minute: slotMinute(offset, blockMinutes),
         })
+      }}
+      onPointerDown={startDrag}
+      onPointerMove={moveDrag}
+      onPointerUp={endDrag}
+      onPointerCancel={() => {
+        drag.current = null
+        setSpan(null)
       }}
       className={cn(
         'relative min-w-0 cursor-pointer border-l transition-colors',
@@ -462,13 +527,24 @@ function DayColumn({
           <span className="h-px flex-1 bg-signal" />
         </div>
       ) : null}
+      {span ? (
+        <div
+          className={DRAFT_BOX_CLASSES}
+          style={{
+            top: (span.minute / 60) * hourPx,
+            height: (span.minutes / 60) * hourPx,
+          }}
+        >
+          {`${timeLabel(span.minute)} – ${timeLabel(span.minute + span.minutes)}`}
+        </div>
+      ) : null}
       {draft !== null &&
       draft.dayStart === day.start &&
       draft.minute !== null ? (
         <DraftAnchor
           minute={draft.minute}
+          minutes={draft.minutes ?? blockMinutes}
           hourPx={hourPx}
-          blockMinutes={blockMinutes}
         />
       ) : null}
     </div>
@@ -497,6 +573,7 @@ function QuickCreate({
   const project =
     projects.find((p) => p.id === projectId) ?? projects.at(0) ?? null
   const dueAt = atMinute(draft.dayStart, draft.minute ?? 0)
+  const minutes = draft.minute === null ? null : (draft.minutes ?? blockMinutes)
   // A task dropped on today is a commitment for today, so it starts focused.
   // Focus is personal only (the server refuses it in a space), hence the scope
   // gate.
@@ -518,7 +595,7 @@ function QuickCreate({
       title: t,
       position: positionAfter(project.tasks.filter((x) => !x.parentId)),
       dueAt,
-      durationMinutes: draft.minute === null ? null : blockMinutes,
+      durationMinutes: minutes,
       createdFrom: 'calendar',
       inFocus: inFocus || undefined,
     })
@@ -535,7 +612,9 @@ function QuickCreate({
     >
       <span className="os-label">
         {format(dueAt, 'EEE d MMM')}
-        {draft.minute === null ? ' · all day' : ` · ${timeLabel(draft.minute)}`}
+        {draft.minute === null || minutes === null
+          ? ' · all day'
+          : ` · ${timeLabel(draft.minute)} – ${timeLabel(draft.minute + minutes)} · ${blockShortLabel(minutes)}`}
         {inFocus ? ' · will start focused' : ''}
       </span>
       <Input
@@ -829,7 +908,7 @@ export function CalendarView({
         >
           {draft ? (
             <QuickCreate
-              key={`${draft.dayStart}:${draft.minute}`}
+              key={`${draft.dayStart}:${draft.minute}:${draft.minutes ?? ''}`}
               board={board}
               draft={draft}
               blockMinutes={blockMinutes}

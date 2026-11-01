@@ -9,6 +9,7 @@ import {
   calendarWeek,
   cardDensity,
   dropMinute,
+  dragSpan,
   durationUntil,
   externalPlacement,
   hourPxFor,
@@ -308,6 +309,35 @@ describe('calendar block size', () => {
     const hourPx = hourPxFor(10)
     expect(resizedMinutes(540, 60, hourPx / 6, 10, hourPx)).toBe(70)
     expect(resizedMinutes(540, 60, hourPx / 2, 10, hourPx)).toBe(90)
+  })
+
+  it('selects every block the drag passes through', () => {
+    const px = (minute: number, blockMinutes: number) =>
+      (minute / 60) * hourPxFor(blockMinutes)
+    expect(dragSpan(px(840, 15), px(880, 15), 15)).toEqual({
+      minute: 840,
+      minutes: 45,
+    })
+    expect(dragSpan(px(840, 15), px(850, 15), 15)).toEqual({
+      minute: 840,
+      minutes: 15,
+    })
+    expect(dragSpan(px(840, 15), px(800, 15), 15)).toEqual({
+      minute: 780,
+      minutes: 60,
+    })
+    expect(dragSpan(px(1420, 15), px(1500, 15), 15)).toEqual({
+      minute: 1410,
+      minutes: 30,
+    })
+    expect(dragSpan(px(-20, 15), px(5, 15), 15)).toEqual({
+      minute: 0,
+      minutes: 15,
+    })
+    expect(dragSpan(px(540, 60), px(659, 60), 60)).toEqual({
+      minute: 540,
+      minutes: 120,
+    })
   })
 })
 
