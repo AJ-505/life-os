@@ -19,7 +19,7 @@ const DAY_MINUTES = 24 * 60
  */
 export const BLOCK_MINUTES = [10, 15, 20, 30, 60] as const
 export type BlockMinutes = (typeof BLOCK_MINUTES)[number]
-export const DEFAULT_BLOCK_MINUTES: BlockMinutes = 60
+export const DEFAULT_BLOCK_MINUTES: BlockMinutes = 30
 
 export function normalizeBlockMinutes(value: number): BlockMinutes {
   return (
@@ -32,9 +32,9 @@ export function blockShortLabel(minutes: number): string {
 }
 
 export function durationLabel(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`
   const hours = Math.floor(minutes / 60)
   const rest = minutes % 60
-  if (hours === 0) return `${rest}m`
   return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`
 }
 

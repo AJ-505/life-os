@@ -43,10 +43,12 @@ import {
   durationLabel,
   hourPxFor,
   importedEventIds,
+  isAllDay,
   labelStep,
   minuteOfDay,
   resizedMinutes,
   slotMinute,
+  taskMinutes,
   timeLabel,
   visibleDays,
 } from './calendar-logic'
@@ -131,6 +133,59 @@ export function CalendarEventCard({
   )
 }
 
+function overviewWhen(task: Task): string {
+  if (task.dueAt === null) return 'No date'
+  if (isAllDay(task.dueAt))
+    return `All day · ${format(task.dueAt, 'EEE d MMM')}`
+  return `${format(task.dueAt, 'EEE d MMM')} · ${timeLabel(minuteOfDay(task.dueAt))} – ${timeLabel(minuteOfDay(task.dueAt + taskMinutes(task) * 60_000))}`
+}
+
+function TaskOverview({ task, project }: { task: Task; project: Project }) {
+  return (
+    <div data-proj={project.color} className="flex min-w-0 flex-col gap-2">
+      <p
+        className={cn(
+          'break-words text-sm font-medium leading-snug',
+          task.done && 'text-muted-foreground line-through',
+        )}
+      >
+        {task.title}
+      </p>
+      <p className="font-mono text-[11px] text-muted-foreground">
+        {overviewWhen(task)}
+      </p>
+      {task.notes ? (
+        <p className="line-clamp-4 whitespace-pre-line break-words text-xs leading-snug text-muted-foreground">
+          {task.notes}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+        <span className="flex items-center gap-1.5 rounded-full bg-proj/15 px-2 py-0.5 text-[11px] font-medium text-proj">
+          <span className="size-1.5 rounded-full bg-proj" />
+          {project.name}
+        </span>
+        {task.dueAt !== null && !isAllDay(task.dueAt) ? (
+          <span className="rounded-full border px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
+            {durationLabel(taskMinutes(task))}
+          </span>
+        ) : null}
+        {task.inFocus ? (
+          <span className="rounded-full border px-2 py-0.5 text-[11px] font-medium text-signal">
+            In focus
+          </span>
+        ) : null}
+        {task.done ? (
+          <span className="rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">
+            Done
+          </span>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+const HOVER_CARD_MS = 300
+
 function DraggableTask({
   entry,
   compact,
@@ -149,30 +204,84 @@ function DraggableTask({
     id: calTaskId(entry.task.id),
     data: { type: 'cal', taskId: entry.task.id },
   })
+  const [hoverOpen, setHoverOpen] = useState(false)
+  const hoverTimer = useRef<number | null>(null)
+
+  const closeHover = () => {
+    if (hoverTimer.current !== null) window.clearTimeout(hoverTimer.current)
+    hoverTimer.current = null
+    setHoverOpen(false)
+  }
+  const startHover = () => {
+    setHovered(entry.task.id)
+    if (hoverTimer.current === null)
+      hoverTimer.current = window.setTimeout(
+        () => setHoverOpen(true),
+        HOVER_CARD_MS,
+      )
+  }
+  // The card must never outlive the pointer: scrolling can move the grid out
+  // from under the cursor without a mouseleave, so any scroll while the card
+  // is open closes it.
+  useEffect(() => {
+    if (!hoverOpen) return
+    const close = () => {
+      if (hoverTimer.current !== null) window.clearTimeout(hoverTimer.current)
+      hoverTimer.current = null
+      setHovered(null)
+      setHoverOpen(false)
+    }
+    window.addEventListener('scroll', close, { passive: true, capture: true })
+    window.addEventListener('blur', close)
+    return () => {
+      window.removeEventListener('scroll', close, { capture: true })
+      window.removeEventListener('blur', close)
+    }
+  }, [hoverOpen])
 
   return (
-    <button
-      ref={setNodeRef}
-      type="button"
-      style={style}
-      onClick={() => openTask(entry.task.id)}
-      onMouseEnter={() => setHovered(entry.task.id)}
-      onMouseLeave={() => setHovered(null)}
-      className={cn(
-        'cursor-pointer select-none [-webkit-touch-callout:none]',
-        isDragging && 'opacity-30',
-        className,
-      )}
-      {...attributes}
-      {...listeners}
-    >
-      <CalendarEventCard
-        task={entry.task}
-        project={entry.project}
-        compact={compact}
-        tight={tight}
-      />
-    </button>
+    <Popover open={hoverOpen && !isDragging}>
+      <PopoverAnchor asChild>
+        <button
+          ref={setNodeRef}
+          type="button"
+          style={style}
+          onClick={() => {
+            closeHover()
+            openTask(entry.task.id)
+          }}
+          onMouseEnter={startHover}
+          onMouseLeave={() => {
+            closeHover()
+            setHovered(null)
+          }}
+          className={cn(
+            'cursor-pointer select-none [-webkit-touch-callout:none]',
+            isDragging && 'opacity-30',
+            className,
+          )}
+          {...attributes}
+          {...listeners}
+        >
+          <CalendarEventCard
+            task={entry.task}
+            project={entry.project}
+            compact={compact}
+            tight={tight}
+          />
+        </button>
+      </PopoverAnchor>
+      <PopoverContent
+        side="right"
+        align="start"
+        sideOffset={8}
+        collisionPadding={12}
+        className="pointer-events-none w-64 data-[state=closed]:animate-none!"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        <TaskOverview task={entry.task} project={entry.project} />
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -277,7 +386,7 @@ function TimedEntryView({
         <ExternalEventCard
           event={placed.event}
           placed={placed}
-          compact={density !== 'full'}
+          density={density}
           projects={projects}
         />
       </div>
@@ -384,7 +493,7 @@ function AllDayCell({
         <ExternalEventCard
           key={event.eventId}
           event={event}
-          compact
+          density="compact"
           projects={projects}
         />
       ))}
@@ -573,17 +682,12 @@ function QuickCreate({
   onDone: () => void
 }) {
   const addTask = useAddTask()
-  const spaceId = useBoardScope()
   const [title, setTitle] = useState('')
   const projects = activeProjects(board)
   const project =
     projects.find((p) => p.id === projectId) ?? projects.at(0) ?? null
   const dueAt = atMinute(draft.dayStart, draft.minute ?? 0)
   const minutes = draft.minute === null ? null : (draft.minutes ?? blockMinutes)
-  // A task dropped on today is a commitment for today, so it starts focused.
-  // Focus is personal only (the server refuses it in a space), hence the scope
-  // gate.
-  const inFocus = spaceId === null && isToday(draft.dayStart)
 
   if (!project)
     return (
@@ -603,7 +707,6 @@ function QuickCreate({
       dueAt,
       durationMinutes: minutes,
       createdFrom: 'calendar',
-      inFocus: inFocus || undefined,
     })
     onDone()
   }
@@ -621,7 +724,6 @@ function QuickCreate({
         {draft.minute === null || minutes === null
           ? ' · all day'
           : ` · ${timeLabel(draft.minute)} – ${timeLabel(draft.minute + minutes)} · ${durationLabel(minutes)}`}
-        {inFocus ? ' · will start focused' : ''}
       </span>
       <Input
         autoFocus

@@ -267,7 +267,7 @@ describe('placeInLanes with mixed durations', () => {
 describe('calendar block size', () => {
   it('offers fine through hourly blocks and falls back to the default', () => {
     expect(BLOCK_MINUTES).toEqual([10, 15, 20, 30, 60])
-    expect(DEFAULT_BLOCK_MINUTES).toBe(60)
+    expect(DEFAULT_BLOCK_MINUTES).toBe(30)
     expect(normalizeBlockMinutes(20)).toBe(20)
     expect(normalizeBlockMinutes(17)).toBe(DEFAULT_BLOCK_MINUTES)
   })
@@ -278,7 +278,7 @@ describe('calendar block size', () => {
   })
 
   it('reads a dragged duration as hours and minutes', () => {
-    expect(durationLabel(45)).toBe('45m')
+    expect(durationLabel(45)).toBe('45 min')
     expect(durationLabel(60)).toBe('1h')
     expect(durationLabel(105)).toBe('1h 45m')
     expect(durationLabel(120)).toBe('2h')
