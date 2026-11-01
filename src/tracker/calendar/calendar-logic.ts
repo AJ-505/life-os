@@ -96,6 +96,23 @@ export function slotMinute(offsetPx: number, blockMinutes: number): number {
   return Math.min(Math.max(snapped, 0), DAY_MINUTES - blockMinutes)
 }
 
+/** The block range a press-drag covers: every block the pointer entered, from
+ *  the block under the press to the block under the pointer, in either
+ *  direction. Dragging through three 15 minute blocks selects 45 minutes. */
+export function dragSpan(
+  downPx: number,
+  movePx: number,
+  blockMinutes: number,
+): { minute: number; minutes: number } {
+  const blockPx = hourPxFor(blockMinutes) * (blockMinutes / 60)
+  const lastBlock = DAY_MINUTES / blockMinutes - 1
+  const blockAt = (px: number) =>
+    Math.min(Math.max(Math.floor(px / blockPx), 0), lastBlock)
+  const first = Math.min(blockAt(downPx), blockAt(movePx))
+  const last = Math.max(blockAt(downPx), blockAt(movePx))
+  return { minute: first * blockMinutes, minutes: (last - first + 1) * blockMinutes }
+}
+
 export type CalendarTask = { task: Task; project: ProjectWithTasks }
 
 /** The event rows pulled back from Google Calendar (the cache behind these

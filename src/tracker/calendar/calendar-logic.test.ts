@@ -9,6 +9,7 @@ import {
   calendarWeek,
   defaultEventMinutes,
   dropMinute,
+  dragSpan,
   durationUntil,
   externalPlacement,
   hourPxFor,
@@ -301,6 +302,50 @@ describe('calendar block size', () => {
     const hourPx = hourPxFor(10)
     expect(resizedMinutes(540, 60, hourPx / 6, 10, hourPx)).toBe(70)
     expect(resizedMinutes(540, 60, hourPx / 2, 10, hourPx)).toBe(90)
+  })
+})
+
+describe('dragSpan', () => {
+  const px = (minute: number, blockMinutes: number) =>
+    (minute / 60) * hourPxFor(blockMinutes)
+
+  it('selects every block the drag passes through', () => {
+    expect(dragSpan(px(840, 15), px(880, 15), 15)).toEqual({
+      minute: 840,
+      minutes: 45,
+    })
+  })
+
+  it('selects one block when the pointer stays inside the pressed block', () => {
+    expect(dragSpan(px(840, 15), px(850, 15), 15)).toEqual({
+      minute: 840,
+      minutes: 15,
+    })
+  })
+
+  it('selects upward drags from the earlier block', () => {
+    expect(dragSpan(px(840, 15), px(800, 15), 15)).toEqual({
+      minute: 780,
+      minutes: 60,
+    })
+  })
+
+  it('clamps the selection at midnight', () => {
+    expect(dragSpan(px(1420, 15), px(1500, 15), 15)).toEqual({
+      minute: 1410,
+      minutes: 30,
+    })
+    expect(dragSpan(px(-20, 15), px(5, 15), 15)).toEqual({
+      minute: 0,
+      minutes: 15,
+    })
+  })
+
+  it('spans whole hourly blocks on the hourly grid', () => {
+    expect(dragSpan(px(540, 60), px(659, 60), 60)).toEqual({
+      minute: 540,
+      minutes: 120,
+    })
   })
 })
 
