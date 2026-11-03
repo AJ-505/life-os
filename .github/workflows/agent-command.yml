@@ -62,7 +62,7 @@ jobs:
               if [ "${#v}" -ge 8 ]; then mask "$v"; fi
             done < "$f"
           done
-          grep -rhoIE '(gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{22,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35})' . --exclude-dir=.git --exclude-dir=node_modules 2>/dev/null | sort -u | while IFS= read -r v; do mask "$v"; done
+          (grep -rhoIE '(gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{22,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35})' . --exclude-dir=.git --exclude-dir=node_modules 2>/dev/null || true) | sort -u | while IFS= read -r v; do mask "$v"; done
 
       - name: Detect package manager
         id: pm
