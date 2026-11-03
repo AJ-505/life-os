@@ -41,6 +41,29 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Mask secrets
+        shell: bash
+        run: |
+          set -uo pipefail
+          mask() {
+            if [ -n "$1" ]; then printf '::add-mask::%s\n' "$1"; fi
+          }
+          shopt -s globstar nullglob
+          for f in .env .env.* **/.env **/.env.*; do
+            if [ ! -f "$f" ]; then continue; fi
+            case "$f" in *.example|*.sample|*.template) continue ;; esac
+            while IFS= read -r line || [ -n "$line" ]; do
+              line="${line%$'\r'}"
+              case "$line" in '#'*) continue ;; esac
+              case "$line" in *=*) ;; *) continue ;; esac
+              v="${line#*=}"
+              v="${v%\"}"; v="${v#\"}"
+              v="${v%\'}"; v="${v#\'}"
+              if [ "${#v}" -ge 8 ]; then mask "$v"; fi
+            done < "$f"
+          done
+          grep -rhoIE '(gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{22,}|sk-ant-[A-Za-z0-9_-]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35})' . --exclude-dir=.git --exclude-dir=node_modules 2>/dev/null | sort -u | while IFS= read -r v; do mask "$v"; done
+
       - name: Detect package manager
         id: pm
         shell: bash
