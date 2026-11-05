@@ -21,6 +21,7 @@ import {
   getWritableProject,
   getUserSettings,
   requireUserId,
+  storedProjectId,
 } from './lib'
 
 import type { SyncFailure } from './calendar'
@@ -517,8 +518,11 @@ export const importEvent = mutation({
       throw new Error(
         'That event is no longer in the calendar. Refresh Calendar view and try again.',
       )
-    const project = await getWritableProject(ctx, userId, args.projectId)
-    if (project.spaceId) throw new Error('Calendar import is personal only')
+    const projectId = storedProjectId(args.projectId)
+    if (projectId !== null) {
+      const project = await getWritableProject(ctx, userId, projectId)
+      if (project.spaceId) throw new Error('Calendar import is personal only')
+    }
     const existing = await ctx.db
       .query('tasks')
       .withIndex('by_user_id', (q) =>
@@ -529,7 +533,7 @@ export const importEvent = mutation({
     await ctx.db.insert('tasks', {
       userId,
       id: args.taskId,
-      projectId: args.projectId,
+      projectId,
       parentId: null,
       title: row.title,
       notes: row.notes,

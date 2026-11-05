@@ -12,15 +12,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '#/design-system/ui/popover'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '#/design-system/ui/select'
 
-import { minuteOfDay, timeLabel } from './calendar-logic'
+import { minuteOfDay, pickProject, timeLabel } from './calendar-logic'
+import { ProjectPicker } from './ProjectPicker'
+import { canvasProjects } from '../board/board-logic'
 import { positionAfter } from '../types'
 import { useImportExternalEvent } from './pull'
 
@@ -63,31 +58,23 @@ function ImportPopover({
   onDone: () => void
 }) {
   const importEvent = useImportExternalEvent()
-  const [chosen, setChosen] = useState<string | null>(
-    projects.at(0)?.id ?? null,
-  )
-  const project =
-    projects.find((p) => p.id === chosen) ?? projects.at(0) ?? null
+  const [chosen, setChosen] = useState<string | null>(null)
+  const homes = canvasProjects(projects)
+  const home = pickProject(chosen, homes)
+  const siblings = projects.find((p) => p.id === home)?.tasks ?? []
 
   useEffect(() => {
     if (!importEvent.isSuccess) return
     onDone()
   }, [importEvent.isSuccess, onDone])
 
-  if (!project)
-    return (
-      <p className="text-sm text-muted-foreground">
-        Make a project on the board first. Tasks need a home.
-      </p>
-    )
-
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     importEvent.mutate({
       event,
       taskId: globalThis.crypto.randomUUID(),
-      projectId: project.id,
-      position: positionAfter(project.tasks.filter((x) => !x.parentId)),
+      projectId: home,
+      position: positionAfter(siblings.filter((x) => !x.parentId)),
     })
   }
 
@@ -113,31 +100,11 @@ function ImportPopover({
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <Select value={project.id} onValueChange={setChosen}>
-          <SelectTrigger
-            size="sm"
-            data-proj={project.color}
-            className="min-w-0 flex-1 text-xs"
-            aria-label="Project"
-          >
-            <SelectValue>
-              <span className="flex min-w-0 items-center gap-1.5">
-                <span className="size-2 shrink-0 rounded-full bg-proj" />
-                <span className="truncate">{project.name}</span>
-              </span>
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {projects.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                <span data-proj={p.color} className="flex items-center gap-1.5">
-                  <span className="size-2 rounded-full bg-proj" />
-                  {p.name}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <ProjectPicker
+          projects={homes}
+          chosen={chosen}
+          onChange={setChosen}
+        />
         <Button type="submit" size="sm" disabled={importEvent.isPending}>
           <Plus className="size-3.5" />
           Add as task

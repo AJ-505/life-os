@@ -62,6 +62,8 @@ export type CalendarSyncIssue = NonNullable<Doc<'tasks'>['calendarSyncIssue']>
 
 export type ProjectStatus = 'active' | 'shelved' | 'done'
 
+export { NO_PROJECT_ID } from '../../convex/lib'
+
 export type ProjectWithTasks = Project & { tasks: Array<Task> }
 
 export type BoardData = Array<ProjectWithTasks>

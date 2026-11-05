@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
-import { descendantIds, focusDrop, focusTasks } from './board-logic'
+import {
+  boardColumns,
+  canvasProjects,
+  columnProjects,
+  descendantIds,
+  focusDrop,
+  focusTasks,
+  withTasksIn,
+} from './board-logic'
+import { NO_PROJECT_ID } from '../types'
 
 import type { ProjectWithTasks, Task } from '../types'
 
@@ -206,5 +215,43 @@ describe('focusDrop', () => {
       ]),
     ]
     expect(focusDrop(board, 'c', { kind: 'fitem', key: 'a' }, 'before')).toBe(0)
+  })
+})
+
+describe('the no-project bucket', () => {
+  const at = (id: string, position: number) => ({ ...task(id, null), position })
+  const bucket = { ...project(NO_PROJECT_ID, []), gridCol: -1 }
+
+  it('stays off the board canvas while real projects remain', () => {
+    const board = [project('p1', []), bucket]
+    expect(canvasProjects(board).map((p) => p.id)).toEqual(['p1'])
+    expect(boardColumns(board)).toEqual([0])
+    expect(columnProjects(board, -1)).toEqual([])
+  })
+
+  it('appends a bucket when the first loose task arrives', () => {
+    const board = [project('p1', [])]
+    const next = withTasksIn(board, NO_PROJECT_ID, null, [
+      at('b', 2048),
+      at('a', 1024),
+    ])
+    expect(next.map((p) => p.id)).toEqual(['p1', NO_PROJECT_ID])
+    expect(next[0]).toBe(board[0])
+    expect(next[1].tasks.map((t) => t.id)).toEqual(['a', 'b'])
+  })
+
+  it('adds to an existing bucket or project in position order', () => {
+    const board = [project('p1', [at('x', 2048)]), { ...bucket, tasks: [] }]
+    const intoProject = withTasksIn(board, 'p1', null, [at('w', 1024)])
+    expect(intoProject[0].tasks.map((t) => t.id)).toEqual(['w', 'x'])
+    expect(intoProject).toHaveLength(2)
+    const intoBucket = withTasksIn(board, NO_PROJECT_ID, null, [at('l', 1)])
+    expect(intoBucket[1].tasks.map((t) => t.id)).toEqual(['l'])
+    expect(intoBucket).toHaveLength(2)
+  })
+
+  it('drops tasks aimed at a project the board does not have', () => {
+    const board = [project('p1', [])]
+    expect(withTasksIn(board, 'gone', null, [at('a', 1)])).toEqual(board)
   })
 })

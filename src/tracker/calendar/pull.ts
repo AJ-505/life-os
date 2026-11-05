@@ -7,6 +7,7 @@ import * as z from 'zod'
 
 import { api } from '../../../convex/_generated/api'
 import { boardQueryOptions } from '../queries'
+import { withTasksIn } from '../board/board-logic'
 import { useBoardScope } from '../board-scope'
 import { useGoogleCalendar } from '#/settings/googleCalendar'
 
@@ -278,11 +279,7 @@ export function useImportExternalEvent() {
         const task = importedTask(vars.event, vars)
         queryClient.setQueryData<BoardData>(
           options.queryKey,
-          board.map((project) =>
-            project.id === vars.projectId
-              ? { ...project, tasks: [...project.tasks, task] }
-              : project,
-          ),
+          withTasksIn(board, vars.projectId, null, [task]),
         )
         return { board }
       },
