@@ -44,7 +44,8 @@ import { Textarea } from '#/design-system/ui/textarea'
 import { useBoardScope } from '../board-scope'
 import { useSpaceMembers } from '#/spaces/queries'
 import { AssigneeSelect } from '#/spaces/components/AssigneeSelect'
-import { POSITION_GAP, newId, positionAfter } from '../types'
+import { canvasProjects } from './board-logic'
+import { NO_PROJECT_ID, POSITION_GAP, newId, positionAfter } from '../types'
 import {
   EVENT_MINUTES,
   durationUntil,
@@ -485,12 +486,14 @@ export function TaskDetails({
   }
 
   const project = board.find((p) => p.id === task.projectId)
-  const activeProjects = board.filter((p) => p.status === 'active')
-  // The trigger reads from `activeProjects`, the same list the items come from,
+  const homes = canvasProjects(board)
+  // The trigger reads from `homes`, the same list the items come from,
   // so a task on an archived project shows "No project" rather than a name the
   // list cannot select.
   const projectName =
-    activeProjects.find((p) => p.id === task.projectId)?.name ?? 'No project'
+    homes.find((p) => p.id === task.projectId)?.name ?? 'No project'
+  const canLeaveProject =
+    task.dueAt !== null || task.projectId === NO_PROJECT_ID
   // No calendar read here. Every calendar read lives in TaskCalendarFields,
   // which only mounts behind the flag, so a build without the feature makes no
   // calendar query at all. `enabled: false` was tried and still subscribed.
@@ -914,12 +917,12 @@ export function TaskDetails({
               <Select
                 value={task.projectId}
                 onValueChange={(projectId) => {
+                  if (projectId === task.projectId) return
                   const target = board.find((p) => p.id === projectId)
-                  if (!target || projectId === task.projectId) return
                   moveTask.mutate({
                     id: task.id,
                     projectId,
-                    position: positionAfter(target.tasks),
+                    position: positionAfter(target?.tasks ?? []),
                   })
                 }}
               >
@@ -930,7 +933,10 @@ export function TaskDetails({
                   <SelectValue>{projectName}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {activeProjects.map((p) => (
+                  {canLeaveProject ? (
+                    <SelectItem value={NO_PROJECT_ID}>No project</SelectItem>
+                  ) : null}
+                  {homes.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.name}
                     </SelectItem>

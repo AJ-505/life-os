@@ -17,7 +17,7 @@ export interface BackupProject {
 
 export interface BackupTask {
   id: string
-  projectId: string
+  projectId: string | null
   parentId?: string | null
   title: string
   notes: string | null

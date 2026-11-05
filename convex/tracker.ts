@@ -10,10 +10,12 @@ import {
   getWritableProject,
   getWritableTask,
   isSpaceMember,
+  noProjectBucket,
   requireUserId,
   scopeProjects,
   scopeTasks,
   shapeProject,
+  storedProjectId,
   shapeTask,
   clampDuration,
   taskByAppId,
@@ -109,22 +111,25 @@ export const getBoard = query({
 
     const tasks = await scopeTasks(ctx, userId, spaceId)
 
-    const tasksByProject = new Map<string, Array<Doc<'tasks'>>>()
+    const tasksByProject = new Map<string | null, Array<Doc<'tasks'>>>()
     for (const task of tasks) {
       const list = tasksByProject.get(task.projectId) ?? []
       list.push(task)
       tasksByProject.set(task.projectId, list)
     }
+    const ordered = (list: Array<Doc<'tasks'>> | undefined) =>
+      (list ?? []).sort((a, b) => a.position - b.position).map(shapeTask)
 
-    return projects
+    const board = projects
       .slice()
       .sort((a, b) => a.gridCol - b.gridCol || a.gridRow - b.gridRow)
       .map((p) => ({
         ...shapeProject(p),
-        tasks: (tasksByProject.get(p.id) ?? [])
-          .sort((a, b) => a.position - b.position)
-          .map(shapeTask),
+        tasks: ordered(tasksByProject.get(p.id)),
       }))
+    const loose = tasksByProject.get(null)
+    if (!loose) return board
+    return [...board, noProjectBucket(spaceId, ordered(loose))]
   },
 })
 
@@ -295,7 +300,7 @@ export const setProjectStatus = mutation({
 async function projectTasks(
   ctx: MutationCtx,
   userId: string,
-  project: Pick<Doc<'projects'>, 'id' | 'spaceId'>,
+  project: { id: string | null; spaceId?: Scope },
 ): Promise<Array<Doc<'tasks'>>> {
   if (project.spaceId) {
     return await ctx.db
@@ -330,10 +335,25 @@ export const deleteProject = mutation({
 
 /* ---------------------------------------------------------------- tasks */
 
+async function taskScope(
+  ctx: MutationCtx,
+  userId: string,
+  projectId: string | null,
+  looseScope: Scope,
+): Promise<Scope> {
+  if (projectId !== null) {
+    const project = await getWritableProject(ctx, userId, projectId)
+    return project.spaceId ?? null
+  }
+  if (looseScope !== null) await getMemberSpace(ctx, userId, looseScope)
+  return looseScope
+}
+
 export const createTask = mutation({
   args: {
     id: v.string(),
     projectId: v.string(),
+    spaceId: v.optional(v.union(v.string(), v.null())),
     parentId: v.optional(v.union(v.string(), v.null())),
     title: v.string(),
     position: v.number(),
@@ -347,12 +367,18 @@ export const createTask = mutation({
     const title = args.title.trim()
     if (!title) throw new Error('Task title is required')
     // Writing to the destination project is what gates creation.
-    const project = await getWritableProject(ctx, userId, args.projectId)
+    const projectId = storedProjectId(args.projectId)
+    const spaceId = await taskScope(
+      ctx,
+      userId,
+      projectId,
+      args.spaceId ?? null,
+    )
     const assigneeId = args.assigneeId ?? null
     if (assigneeId !== null) {
-      if (!project.spaceId)
+      if (!spaceId)
         throw new Error('Tasks on a personal board cannot be assigned')
-      await requireMember(ctx, assigneeId, project.spaceId)
+      await requireMember(ctx, assigneeId, spaceId)
     }
     // A parent must exist on the same board and differ from the child. Without
     // the self-check the row registers as its own child and every subtree walk
@@ -363,24 +389,15 @@ export const createTask = mutation({
       if (parentId === args.id)
         throw new Error('A task cannot be its own subtask')
       const parent = await getWritableTask(ctx, userId, parentId)
-      if ((parent.spaceId ?? null) !== (project.spaceId ?? null))
+      if ((parent.spaceId ?? null) !== spaceId)
         throw new Error('A subtask must live on the same board as its parent')
     }
-    if (
-      await assertScopeIdFree(
-        ctx,
-        userId,
-        args.id,
-        project.spaceId ?? null,
-        'tasks',
-        'task',
-      )
-    )
+    if (await assertScopeIdFree(ctx, userId, args.id, spaceId, 'tasks', 'task'))
       return
     await ctx.db.insert('tasks', {
       userId,
       id: args.id,
-      projectId: args.projectId,
+      projectId,
       parentId: args.parentId ?? null,
       title,
       notes: null,
@@ -395,16 +412,12 @@ export const createTask = mutation({
       createdAt: Date.now(),
       ...(args.createdFrom && { createdFrom: args.createdFrom }),
       assigneeId,
-      spaceId: project.spaceId ?? null,
+      spaceId,
     })
-    if (args.dueAt != null && !project.spaceId) {
+    if (args.dueAt != null && !spaceId) {
       await scheduleNewTaskSync(ctx, userId, args.id)
     }
-    const activityTask = {
-      id: args.id,
-      projectId: project.id,
-      spaceId: project.spaceId,
-    }
+    const activityTask = { id: args.id, projectId, spaceId }
     await recordTaskActivity(ctx, activityTask, userId, 'created')
     if (assigneeId !== null) {
       await recordTaskActivity(ctx, activityTask, userId, 'assigned', {
@@ -759,22 +772,24 @@ export const moveTask = mutation({
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
     const task = await getWritableTask(ctx, userId, args.id)
-    const destination = await getWritableProject(ctx, userId, args.projectId)
+    const projectId = storedProjectId(args.projectId)
     const source = task.spaceId ?? null
-    if ((destination.spaceId ?? null) !== source)
+    if ((await taskScope(ctx, userId, projectId, source)) !== source)
       throw new Error('Tasks cannot move between a personal board and a space')
 
-    await ctx.db.patch(task._id, {
-      projectId: args.projectId,
-      position: args.position,
-    })
+    await ctx.db.patch(task._id, { projectId, position: args.position })
     if (source) {
       await recordTaskActivity(
         ctx,
-        { id: task.id, projectId: args.projectId, spaceId: source },
+        { id: task.id, projectId, spaceId: source },
         userId,
         'moved',
-        { detail: 'Moved to another project' },
+        {
+          detail:
+            projectId === null
+              ? 'Removed from its project'
+              : 'Moved to another project',
+        },
       )
     }
 
@@ -797,9 +812,7 @@ export const moveTask = mutation({
         patching.push(child)
         next.push(...(childrenOf.get(child.id) ?? []))
       }
-      await Promise.all(
-        patching.map((c) => ctx.db.patch(c._id, { projectId: args.projectId })),
-      )
+      await Promise.all(patching.map((c) => ctx.db.patch(c._id, { projectId })))
       level = next
     }
   },

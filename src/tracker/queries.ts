@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { convexQuery, useConvexMutation } from '@convex-dev/react-query'
 
 import { api } from '../../convex/_generated/api'
-import { descendantIds } from './board/board-logic'
+import { descendantIds, withTasksIn } from './board/board-logic'
 import { useBoardScope } from './board-scope'
 
 import type { FunctionArgs } from 'convex/server'
@@ -178,39 +178,31 @@ export function useCreateTask() {
     api.tracker.createTask,
   ).withOptimisticUpdate((store, args) => {
     withBoard(store, spaceId, (board) =>
-      board.map((p) =>
-        p.id === args.projectId
-          ? {
-              ...p,
-              tasks: [
-                ...p.tasks,
-                {
-                  id: args.id,
-                  projectId: args.projectId,
-                  parentId: args.parentId ?? null,
-                  title: args.title,
-                  notes: null,
-                  position: args.position,
-                  done: false,
-                  doneAt: null,
-                  archived: false,
-                  dueAt: args.dueAt ?? null,
-                  reminderMinutes: null,
-                  durationMinutes: args.durationMinutes ?? null,
-                  addToCalendar: false,
-                  calendarEventId: null,
-                  calendarSyncIssue: null,
-                  importedFromEventId: null,
-                  inFocus: false,
-                  focusOrder: 0,
-                  createdAt: Date.now(),
-                  assigneeId: args.assigneeId ?? null,
-                  spaceId: p.spaceId,
-                },
-              ].sort((a, b) => a.position - b.position),
-            }
-          : p,
-      ),
+      withTasksIn(board, args.projectId, spaceId, [
+        {
+          id: args.id,
+          projectId: args.projectId,
+          parentId: args.parentId ?? null,
+          title: args.title,
+          notes: null,
+          position: args.position,
+          done: false,
+          doneAt: null,
+          archived: false,
+          dueAt: args.dueAt ?? null,
+          reminderMinutes: null,
+          durationMinutes: args.durationMinutes ?? null,
+          addToCalendar: false,
+          calendarEventId: null,
+          calendarSyncIssue: null,
+          importedFromEventId: null,
+          inFocus: false,
+          focusOrder: 0,
+          createdAt: Date.now(),
+          assigneeId: args.assigneeId ?? null,
+          spaceId,
+        },
+      ]),
     )
   })
   const create = useMutation({
@@ -226,7 +218,10 @@ export function useCreateTask() {
 }
 
 export function useAddTask() {
-  return useCreateTask().mutate
+  const spaceId = useBoardScope()
+  const create = useCreateTask()
+  return (args: Omit<CreateTaskArgs, 'spaceId'>) =>
+    create.mutate({ ...args, spaceId })
 }
 
 export function useUpdateTask() {
@@ -269,19 +264,12 @@ export function useMoveTask() {
             ? { ...t, projectId: args.projectId, position: args.position }
             : { ...t, projectId: args.projectId },
         )
-      return board.map((p) => {
-        const has = p.tasks.some((t) => movingIds.has(t.id))
-        const gets = p.id === args.projectId
-        if (!has && !gets) return p
-        const without = p.tasks.filter((t) => !movingIds.has(t.id))
-        if (!gets) return { ...p, tasks: without }
-        return {
-          ...p,
-          tasks: [...without, ...subtree].sort(
-            (a, b) => a.position - b.position,
-          ),
-        }
-      })
+      const without = board.map((p) =>
+        p.tasks.some((t) => movingIds.has(t.id))
+          ? { ...p, tasks: p.tasks.filter((t) => !movingIds.has(t.id)) }
+          : p,
+      )
+      return withTasksIn(without, args.projectId, spaceId, subtree)
     })
   })
   return useMutation({ mutationFn })

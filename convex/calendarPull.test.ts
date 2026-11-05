@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api, internal } from './_generated/api'
 import { externalRows, zonedDayStart } from './calendarPull'
 import { taskWantsEvent } from './calendar'
+import { NO_PROJECT_ID } from './lib'
 import schema from './schema'
 
 import type { TestConvex } from 'convex-test'
@@ -393,6 +394,31 @@ describe('importEvent', () => {
         autoAdd: true,
       }),
     ).toBe(false)
+  })
+
+  it('imports into no project when the caller picks none', async () => {
+    const t = convexTest(schema, modules)
+    await seedProjectAndEvent(t)
+    await asUser(t).mutation(api.calendarPull.importEvent, {
+      eventId: 'evt1',
+      taskId: 'loose-1',
+      projectId: NO_PROJECT_ID,
+      position: 1024,
+    })
+    const board = await asUser(t).query(api.tracker.getBoard, {})
+    const bucket = board.find((p) => p.id === NO_PROJECT_ID)
+    expect(bucket?.tasks.map((x) => [x.id, x.projectId])).toEqual([
+      ['loose-1', NO_PROJECT_ID],
+    ])
+    const stored = await t.run((ctx) =>
+      ctx.db
+        .query('tasks')
+        .withIndex('by_user_id', (q) =>
+          q.eq('userId', 'user_a').eq('id', 'loose-1'),
+        )
+        .first(),
+    )
+    expect(stored?.projectId).toBeNull()
   })
 
   it('is a no-op when the same task id is sent again', async () => {

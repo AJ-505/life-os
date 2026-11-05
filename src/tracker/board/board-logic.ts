@@ -1,4 +1,5 @@
-import { POSITION_GAP, positionAt } from '../types'
+import { noProjectBucket } from '../../../convex/lib'
+import { NO_PROJECT_ID, POSITION_GAP, positionAt } from '../types'
 
 import type { BoardData, ProjectWithTasks, Task } from '../types'
 
@@ -44,11 +45,31 @@ export function activeProjects(board: BoardData): Array<ProjectWithTasks> {
   return board.filter((p) => p.status === 'active')
 }
 
+export function canvasProjects(board: BoardData): Array<ProjectWithTasks> {
+  return activeProjects(board).filter((p) => p.id !== NO_PROJECT_ID)
+}
+
+export function withTasksIn(
+  board: BoardData,
+  projectId: string,
+  spaceId: string | null,
+  tasks: Array<Task>,
+): BoardData {
+  const byPosition = (a: Task, b: Task) => a.position - b.position
+  if (projectId === NO_PROJECT_ID && !board.some((p) => p.id === projectId))
+    return [...board, noProjectBucket(spaceId, [...tasks].sort(byPosition))]
+  return board.map((p) =>
+    p.id === projectId
+      ? { ...p, tasks: [...p.tasks, ...tasks].sort(byPosition) }
+      : p,
+  )
+}
+
 export function columnProjects(
   board: BoardData,
   col: number,
 ): Array<ProjectWithTasks> {
-  return activeProjects(board)
+  return canvasProjects(board)
     .filter((p) => p.gridCol === col)
     .sort((a, b) => a.gridRow - b.gridRow)
 }
@@ -59,7 +80,7 @@ export function columnProjects(
  * vanish instead of leaving a stranded "+ Project" placeholder behind.
  */
 export function boardColumns(board: BoardData): Array<number> {
-  return [...new Set(activeProjects(board).map((p) => p.gridCol))].sort(
+  return [...new Set(canvasProjects(board).map((p) => p.gridCol))].sort(
     (a, b) => a - b,
   )
 }

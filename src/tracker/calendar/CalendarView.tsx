@@ -25,10 +25,11 @@ import {
 import { newId, positionAfter } from '../types'
 import { CalendarSyncButton } from './CalendarSyncButton'
 import { ExternalEventCard } from './ExternalEventCard'
+import { ProjectPicker } from './ProjectPicker'
 import { useBackwardSync } from './pull'
 import { useAddTask, useUpdateTask } from '../queries'
 import { useBoardScope } from '../board-scope'
-import { activeProjects } from '../board/board-logic'
+import { activeProjects, canvasProjects } from '../board/board-logic'
 import { useBoardUI } from '../board/board-ui'
 import {
   BLOCK_MINUTES,
@@ -46,6 +47,7 @@ import {
   isAllDay,
   labelStep,
   minuteOfDay,
+  pickProject,
   resizedMinutes,
   slotMinute,
   taskMinutes,
@@ -683,27 +685,20 @@ function QuickCreate({
 }) {
   const addTask = useAddTask()
   const [title, setTitle] = useState('')
-  const projects = activeProjects(board)
-  const project =
-    projects.find((p) => p.id === projectId) ?? projects.at(0) ?? null
+  const projects = canvasProjects(board)
+  const home = pickProject(projectId, projects)
+  const siblings = board.find((p) => p.id === home)?.tasks ?? []
   const dueAt = atMinute(draft.dayStart, draft.minute ?? 0)
   const minutes = draft.minute === null ? null : (draft.minutes ?? blockMinutes)
-
-  if (!project)
-    return (
-      <p className="text-sm text-muted-foreground">
-        Make a project on the board first. Tasks need a home.
-      </p>
-    )
 
   const submit = () => {
     const t = title.trim()
     if (!t) return
     addTask({
       id: newId(),
-      projectId: project.id,
+      projectId: home,
       title: t,
-      position: positionAfter(project.tasks.filter((x) => !x.parentId)),
+      position: positionAfter(siblings.filter((x) => !x.parentId)),
       dueAt,
       durationMinutes: minutes,
       createdFrom: 'calendar',
@@ -733,31 +728,11 @@ function QuickCreate({
         aria-label="Task title"
       />
       <div className="flex items-center gap-2">
-        <Select value={project.id} onValueChange={onProjectChange}>
-          <SelectTrigger
-            size="sm"
-            data-proj={project.color}
-            className="min-w-0 flex-1 text-xs"
-            aria-label="Project"
-          >
-            <SelectValue>
-              <span className="flex min-w-0 items-center gap-1.5">
-                <span className="size-2 shrink-0 rounded-full bg-proj" />
-                <span className="truncate">{project.name}</span>
-              </span>
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {projects.map((p) => (
-              <SelectItem key={p.id} value={p.id}>
-                <span data-proj={p.color} className="flex items-center gap-1.5">
-                  <span className="size-2 rounded-full bg-proj" />
-                  {p.name}
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <ProjectPicker
+          projects={projects}
+          chosen={projectId}
+          onChange={onProjectChange}
+        />
         <Button type="submit" size="sm" disabled={!title.trim()}>
           Add
         </Button>

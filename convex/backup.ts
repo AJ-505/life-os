@@ -48,7 +48,7 @@ const backupProject = v.object({
 
 const backupTask = v.object({
   id: v.string(),
-  projectId: v.string(),
+  projectId: v.union(v.string(), v.null()),
   parentId: v.optional(v.union(v.string(), v.null())),
   title: v.string(),
   notes: v.union(v.string(), v.null()),

@@ -44,6 +44,7 @@ import {
 import { FocusPanel } from '../focus/FocusPanel'
 import {
   activeProjects,
+  canvasProjects,
   boardColumns,
   colId,
   columnProjects,
@@ -237,7 +238,7 @@ function NewProjectDialog({
   const [name, setName] = useState('')
   const nextColor = (offset: number) =>
     PROJECT_COLORS[
-      (activeProjects(board).length + offset) % PROJECT_COLORS.length
+      (canvasProjects(board).length + offset) % PROJECT_COLORS.length
     ]
   const [color, setColor] = useState<string>(nextColor(0))
 
@@ -834,7 +835,7 @@ export function BoardView({
         <div className="flex min-h-0 flex-1">
           <div className="flex min-w-0 flex-1 flex-col">
             <BoardHeader
-              activeCount={active.length}
+              activeCount={canvasProjects(board).length}
               openCount={openCount}
               showDone={showDone}
               onShowDoneChange={setShowDone}

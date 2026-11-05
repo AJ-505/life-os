@@ -4,6 +4,7 @@ import { startOfDay } from 'date-fns/startOfDay'
 import { startOfWeek } from 'date-fns/startOfWeek'
 
 import { activeProjects } from '../board/board-logic'
+import { NO_PROJECT_ID } from '../types'
 
 import type { BoardData, ProjectWithTasks, Task } from '../types'
 
@@ -44,6 +45,15 @@ export function hourPxFor(blockMinutes: number): number {
 
 export function labelStep(blockMinutes: number): number {
   return [30, 60].find((step) => step % blockMinutes === 0) ?? 60
+}
+
+export function pickProject(
+  chosen: string | null,
+  projects: Array<{ id: string }>,
+): string {
+  const valid = [NO_PROJECT_ID, ...projects.map((p) => p.id)]
+  if (chosen !== null && valid.includes(chosen)) return chosen
+  return projects.at(0)?.id ?? NO_PROJECT_ID
 }
 
 export const dayId = (dayStart: number) => `day@${dayStart}`

@@ -71,7 +71,7 @@ export default defineSchema({
   tasks: defineTable({
     userId: v.string(),
     id: v.string(),
-    projectId: v.string(),
+    projectId: v.union(v.string(), v.null()),
     parentId: v.union(v.string(), v.null()),
     title: v.string(),
     notes: v.union(v.string(), v.null()),
@@ -153,7 +153,7 @@ export default defineSchema({
   taskActivity: defineTable({
     spaceId: v.string(),
     taskId: v.string(),
-    projectId: v.string(),
+    projectId: v.union(v.string(), v.null()),
     actorId: v.string(),
     kind: v.union(
       v.literal('created'),

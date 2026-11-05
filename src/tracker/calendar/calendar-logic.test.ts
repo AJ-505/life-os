@@ -19,6 +19,7 @@ import {
   labelStep,
   minuteOfDay,
   normalizeBlockMinutes,
+  pickProject,
   placeInLanes,
   resizedMinutes,
   slotMinute,
@@ -26,6 +27,8 @@ import {
   visibleDays,
   weekDays,
 } from './calendar-logic'
+
+import { NO_PROJECT_ID } from '../types'
 
 import type { ProjectWithTasks, Task } from '../types'
 import type { CalendarDay, ExternalEvent } from './calendar-logic'
@@ -591,5 +594,44 @@ describe('importedEventIds', () => {
     expect(importedEventIds([project('p1', [task('plain')])])).toEqual(
       new Set(),
     )
+  })
+})
+
+describe('pickProject', () => {
+  const projects = [{ id: 'p1' }, { id: 'p2' }]
+
+  it('defaults to the first project', () => {
+    expect(pickProject(null, projects)).toBe('p1')
+  })
+
+  it('keeps a chosen project that still exists', () => {
+    expect(pickProject('p2', projects)).toBe('p2')
+  })
+
+  it('keeps a chosen no-project', () => {
+    expect(pickProject(NO_PROJECT_ID, projects)).toBe(NO_PROJECT_ID)
+  })
+
+  it('falls back to the first project when the chosen one is gone', () => {
+    expect(pickProject('deleted', projects)).toBe('p1')
+  })
+
+  it('falls back to no project when the board has none', () => {
+    expect(pickProject(null, [])).toBe(NO_PROJECT_ID)
+    expect(pickProject('deleted', [])).toBe(NO_PROJECT_ID)
+  })
+})
+
+describe('calendarWeek with the no-project bucket', () => {
+  it('shows loose tasks and never a milestone for the bucket', () => {
+    const days = weekDays(new Date(2026, 9, 14, 12, 0))
+    const bucket = project(NO_PROJECT_ID, [
+      task('loose', { dueAt: at(14, 10), projectId: NO_PROJECT_ID }),
+    ])
+    const wed = calendarWeek([bucket], days, true)[2]
+    expect(
+      wed.timed.map((p) => (p.kind === 'task' ? p.task.id : p.kind)),
+    ).toEqual(['loose'])
+    expect(wed.milestones).toEqual([])
   })
 })
