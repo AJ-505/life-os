@@ -13,23 +13,22 @@ export const DevSignInBody = z.object({
   password: z.string().min(1),
 })
 
-function siteHost() {
+function onDevHost() {
   const site = process.env.CONVEX_SITE_URL
-  if (!site) return null
-  return new URL(site).hostname
+  return !!site && new URL(site).hostname === DEV_SITE_HOST
 }
 
 export function devAuthAllowed() {
   return (
+    onDevHost() &&
     process.env.DEV_AUTH_ENABLED === '1' &&
     !!process.env.DEV_AUTH_PRIVATE_JWK &&
-    !!process.env.DEV_AUTH_PASSWORD &&
-    siteHost() === DEV_SITE_HOST
+    !!process.env.DEV_AUTH_PASSWORD
   )
 }
 
 export function devAuthProviders() {
-  if (!devAuthAllowed()) return []
+  if (!onDevHost() || !devAuthAllowed()) return []
   const issuer = process.env.CONVEX_SITE_URL!
   return [
     {

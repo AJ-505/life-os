@@ -83,6 +83,24 @@ describe('dev auth allowlist', () => {
     expect(devAuthProviders()).toEqual([])
   })
 
+  it('never reads the dev variables off the dev host', () => {
+    process.env.CONVEX_SITE_URL = PROD_LIKE_SITE
+    const real = process.env
+    process.env = new Proxy(real, {
+      get(target, key) {
+        if (typeof key === 'string' && key.startsWith('DEV_AUTH_')) {
+          throw new Error(`${key} read off the dev host`)
+        }
+        return Reflect.get(target, key)
+      },
+    })
+    try {
+      expect(devAuthProviders()).toEqual([])
+    } finally {
+      process.env = real
+    }
+  })
+
   it('offers no provider when the flag is off', () => {
     enableDevAuth(DEV_SITE)
     process.env.DEV_AUTH_ENABLED = '0'
