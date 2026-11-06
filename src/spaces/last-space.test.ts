@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   readLastSpaces,
+  subscribeLastSpaces,
   resolveSpacesHref,
   spacesEntryFor,
   writeLastSpaces,
@@ -102,6 +103,18 @@ describe('readLastSpaces and writeLastSpaces', () => {
   it('returns null for a value with the wrong shape', () => {
     stubLocalStorage({ 'lifeos.spaces.last': '{"spaceId":5}' })
     expect(readLastSpaces()).toBeNull()
+  })
+
+  it('notifies a subscribed listener once per changed value', () => {
+    stubLocalStorage()
+    const listener = vi.fn()
+    const unsubscribe = subscribeLastSpaces(listener)
+    writeLastSpaces({ spaceId: 'abc' })
+    writeLastSpaces({ spaceId: 'abc' })
+    writeLastSpaces({ spaceId: null })
+    unsubscribe()
+    writeLastSpaces({ spaceId: 'other' })
+    expect(listener).toHaveBeenCalledTimes(2)
   })
 
   it('does not throw when storage refuses the write', () => {
