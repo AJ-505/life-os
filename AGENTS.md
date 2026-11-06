@@ -12,7 +12,18 @@ Convex agent skills for common tasks can be installed by running
 
 <!-- convex-ai-end -->
 
+## Signing in when testing (dev only)
+
+Google sign-in cannot run in an agent browser. The dev deployment accepts an
+email and password instead. Use any email you like, and the password from
+`DEV_AUTH_PASSWORD` in `.env.local`. The dev sign-in form appears under the
+Google button on the login screen whenever `VITE_ENABLE_DEV_AUTH=1` is set in
+`.env.local` and the server runs in dev (`pnpm dev`). Production builds never
+include it, and the Convex side refuses it on any host except the dev
+deployment.
+
 ## How to build UIs
+
 Always prioritise optimistic updates, and then immediate feedback. In that order. If you can make an action feel instant while the query runs in the background, do it. If you cannot, ensure that the user notices something when they click or take an action.
 
 Before you change popovers, selects, dialogs, drag and drop, view switches,
@@ -48,4 +59,3 @@ One `import 'zod/compile'` at the app entry auto-compiles every schema on
 first parse, so no per-schema compile calls.
 
 This is not the Zod you know. Check the documentation at https://zod.dev/blog/zod-4-5
-

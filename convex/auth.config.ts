@@ -1,5 +1,7 @@
 import type { AuthConfig } from 'convex/server'
 
+import { devAuthProviders } from './devAuth'
+
 /**
  * Convex trusts Clerk as the JWT issuer. With Clerk's native Convex integration
  * (Clerk dashboard → Configure → Integrations → Convex → Activate), every Clerk
@@ -18,5 +20,6 @@ export default {
       domain: process.env.CLERK_JWT_ISSUER_DOMAIN!,
       applicationID: 'convex',
     },
+    ...devAuthProviders(),
   ],
 } satisfies AuthConfig

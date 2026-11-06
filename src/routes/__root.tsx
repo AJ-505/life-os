@@ -8,7 +8,7 @@ import {
 import { TanStackRouterDevtoolsPanel } from '@tanstack/react-router-devtools'
 import { TanStackDevtools } from '@tanstack/react-devtools'
 import { createServerFn } from '@tanstack/react-start'
-import { ClerkProvider, useAuth } from '@clerk/tanstack-react-start'
+import { ClerkProvider } from '@clerk/tanstack-react-start'
 import { auth } from '@clerk/tanstack-react-start/server'
 import { ConvexProviderWithClerk } from 'convex/react-clerk'
 import { Toaster } from 'sonner'
@@ -17,7 +17,7 @@ import TanStackQueryDevtools from '../integrations/tanstack-query/devtools'
 
 import { THEME_INIT_SCRIPT, ThemeProvider } from '#/design-system'
 import { AppShell } from '#/shell'
-import { AuthGate } from '#/auth'
+import { AuthGate, useAppAuth } from '#/auth'
 import { UpdateNotifier } from '#/release'
 import { linksFor, metaFor, seoForRouteId } from '#/seo'
 
@@ -102,7 +102,7 @@ function RootComponent() {
   })
   return (
     <ClerkProvider>
-      <ConvexProviderWithClerk client={convexClient} useAuth={useAuth}>
+      <ConvexProviderWithClerk client={convexClient} useAuth={useAppAuth}>
         <UpdateNotifier />
         {isPublic ? (
           <Outlet />
