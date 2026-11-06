@@ -222,6 +222,7 @@ export function importedTask(
     durationMinutes: event.allDay
       ? null
       : clampTaskDuration((event.end - event.start) / 60_000),
+    repeat: null,
     addToCalendar: false,
     calendarEventId: null,
     calendarSyncIssue: null,

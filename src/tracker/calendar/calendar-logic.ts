@@ -3,6 +3,7 @@ import { format } from 'date-fns/format'
 import { startOfDay } from 'date-fns/startOfDay'
 import { startOfWeek } from 'date-fns/startOfWeek'
 
+import { localTimeZone, occurrencesBetween } from '../../../convex/recurrence'
 import { activeProjects } from '../board/board-logic'
 import { NO_PROJECT_ID } from '../types'
 
@@ -58,7 +59,8 @@ export function pickProject(
 
 export const dayId = (dayStart: number) => `day@${dayStart}`
 export const allDayId = (dayStart: number) => `allday@${dayStart}`
-export const calTaskId = (id: string) => `cal@${id}`
+export const calTaskId = (id: string, occurrence?: number) =>
+  occurrence === undefined ? `cal@${id}` : `cal@${id}@${occurrence}`
 
 export function weekDays(anchor: Date): Array<Date> {
   const first = startOfWeek(anchor, { weekStartsOn: 1 })
@@ -113,7 +115,11 @@ export function slotMinute(offsetPx: number, blockMinutes: number): number {
   return Math.min(Math.max(snapped, 0), DAY_MINUTES - blockMinutes)
 }
 
-export type CalendarTask = { task: Task; project: ProjectWithTasks }
+export type CalendarTask = {
+  task: Task
+  project: ProjectWithTasks
+  occurrence: number
+}
 
 /** The block range a press-drag covers: every block the pointer entered, from
  *  the block under the press to the block under the pointer, in either
@@ -153,7 +159,12 @@ export type ExternalEvent = {
 /** One timed grid entry: an owned task or a pulled-back external event. The
  *  two live in the same lane placement so one column reads as one timeline. */
 export type TimedEntry =
-  | { kind: 'task'; task: Task; project: ProjectWithTasks }
+  | {
+      kind: 'task'
+      task: Task
+      project: ProjectWithTasks
+      occurrence: number
+    }
   | { kind: 'external'; event: ExternalEvent }
 
 export type PlacedTask = TimedEntry & {
@@ -301,6 +312,10 @@ export function calendarWeek(
       },
     ]),
   )
+  const from = starts[0] ?? 0
+  const last = days.at(-1)
+  const to = last ? addDays(last, 1).getTime() : 0
+  const timeZone = localTimeZone()
 
   for (const project of activeProjects(board)) {
     if (project.targetDate !== null) {
@@ -311,17 +326,25 @@ export function calendarWeek(
     for (const task of project.tasks) {
       if (task.dueAt === null || task.archived) continue
       if (task.done && !showDone) continue
-      const bucket = buckets.get(startOfDay(task.dueAt).getTime())
-      if (!bucket) continue
-      if (isAllDay(task.dueAt)) bucket.allDay.push({ task, project })
-      else
-        bucket.timed.push({
-          kind: 'task',
-          task,
-          project,
-          start: minuteOfDay(task.dueAt),
-          minutes: taskMinutes(task),
-        })
+      const occurrences =
+        task.repeat === null
+          ? [task.dueAt]
+          : occurrencesBetween(task.dueAt, task.repeat, from, to, timeZone)
+      for (const occurrence of occurrences) {
+        const bucket = buckets.get(startOfDay(occurrence).getTime())
+        if (!bucket) continue
+        if (isAllDay(occurrence))
+          bucket.allDay.push({ task, project, occurrence })
+        else
+          bucket.timed.push({
+            kind: 'task',
+            task,
+            project,
+            occurrence,
+            start: minuteOfDay(occurrence),
+            minutes: taskMinutes(task),
+          })
+      }
     }
   }
 
