@@ -58,6 +58,8 @@ import {
 } from '#/settings/googleCalendar'
 import { boardQueryOptions } from '#/tracker/queries'
 import { useSyncUserProfile } from '#/spaces/queries'
+import { useSpacesNavTarget } from '#/spaces/last-space'
+import type { SpacesNavTarget } from '#/spaces/last-space'
 import { usePrefetchRoutes } from '#/prefetch/prefetch-routes'
 
 const NAV = [
@@ -84,9 +86,11 @@ function Wordmark({ collapsed }: { collapsed?: boolean }) {
 function NavLinks({
   onNavigate,
   collapsed,
+  spacesTarget,
 }: {
   onNavigate?: () => void
   collapsed?: boolean
+  spacesTarget: SpacesNavTarget
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   /**
@@ -99,18 +103,18 @@ function NavLinks({
   const inSpacesArea = segment === 'spaces' || segment === 'space'
 
   const item = (
-    to: string,
+    target: SpacesNavTarget | { to: (typeof NAV)[number]['to'] },
     label: string,
     Icon: typeof Users,
     alsoActive = false,
   ) => {
     const link = (
       <Link
-        key={to}
-        to={to}
+        key={label}
+        {...target}
         onClick={onNavigate}
         className="no-underline"
-        activeOptions={{ exact: to === '/', includeSearch: false }}
+        activeOptions={{ exact: target.to === '/', includeSearch: false }}
       >
         {({ isActive }) => {
           const active = isActive || alsoActive
@@ -135,7 +139,7 @@ function NavLinks({
       </Link>
     )
     return collapsed ? (
-      <Tooltip key={to}>
+      <Tooltip key={label}>
         <TooltipTrigger asChild>{link}</TooltipTrigger>
         <TooltipContent side="right">{label}</TooltipContent>
       </Tooltip>
@@ -145,8 +149,13 @@ function NavLinks({
   }
   return (
     <nav className="flex flex-col gap-1" aria-label="Main navigation">
-      {NAV.map(({ to, label, icon: Icon }) => item(to, label, Icon))}
-      {item('/spaces', 'Spaces', Users, inSpacesArea)}
+      {NAV.map(({ to, label, icon: Icon }) => item({ to }, label, Icon))}
+      {item(
+        inSpacesArea ? { to: '/spaces' } : spacesTarget,
+        'Spaces',
+        Users,
+        inSpacesArea,
+      )}
     </nav>
   )
 }
@@ -571,6 +580,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     'lifeos-sidebar-collapsed',
     false,
   )
+  const spacesTarget = useSpacesNavTarget()
 
   // `[` toggles the sidebar (mirrors `]` for the focus panel).
   useEffect(() => {
@@ -636,7 +646,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <PanelLeftOpen className="size-4" />
               </Button>
             ) : null}
-            <NavLinks collapsed={collapsed} />
+            <NavLinks collapsed={collapsed} spacesTarget={spacesTarget} />
           </div>
           <SidebarFooter collapsed={collapsed} />
         </aside>
@@ -654,7 +664,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               noAnimation
               className="flex w-64 flex-col justify-between bg-sidebar p-3 pt-12"
             >
-              <NavLinks onNavigate={() => setMobileNavOpen(false)} />
+              <NavLinks
+                onNavigate={() => setMobileNavOpen(false)}
+                spacesTarget={spacesTarget}
+              />
               <SidebarFooter />
             </SheetContent>
           </Sheet>
