@@ -12,6 +12,8 @@ import {
   CardHeader,
   CardTitle,
 } from '#/design-system/ui/card'
+import { DEV_AUTH_ENABLED } from '#/feature-flags'
+import { DevSignIn } from './DevSignIn'
 import { RETURN_PATH } from './return-path'
 
 /**
@@ -68,8 +70,7 @@ export function LoginScreen() {
         }
 
         toast.error('Could not start Google sign-in.', {
-          description:
-            error instanceof Error ? error.message : String(error),
+          description: error instanceof Error ? error.message : String(error),
         })
       }
     } catch (error) {
@@ -89,7 +90,11 @@ export function LoginScreen() {
           <CardDescription>Sign in to your board</CardDescription>
         </CardHeader>
         <CardContent>
-          <Button className="w-full" disabled={busy || isLoading} onClick={google}>
+          <Button
+            className="w-full"
+            disabled={busy || isLoading}
+            onClick={google}
+          >
             {busy
               ? 'Redirecting…'
               : isLoading
@@ -100,6 +105,7 @@ export function LoginScreen() {
               the custom sign-in flow. Without this element Clerk warns and falls
               back to an invisible widget. */}
           <div id="clerk-captcha" />
+          {DEV_AUTH_ENABLED ? <DevSignIn /> : null}
         </CardContent>
       </Card>
     </div>

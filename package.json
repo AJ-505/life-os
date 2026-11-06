@@ -10,7 +10,7 @@
     "convex": "convex dev",
     "generate-routes": "tsr generate",
     "build": "vite build",
-    "build:vercel": "convex deploy --cmd 'pnpm run build' && node scripts/publish-release.mjs",
+    "build:vercel": "node scripts/check-dev-auth-off-in-prod.mjs && convex deploy --cmd 'pnpm run build' && node scripts/publish-release.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p convex/tsconfig.json",
     "test": "vitest run",
@@ -18,7 +18,8 @@
     "format": "prettier --write . && oxlint --fix",
     "check": "prettier --check .",
     "check:contract": "node scripts/check-convex-contract.mjs",
-    "convex:deploy": "convex deploy && convex run --prod internal.migrations.backfillSpaceId '{\"phase\":\"tasks\"}'",
+    "check:dev-auth-off-in-prod": "node scripts/check-dev-auth-off-in-prod.mjs",
+    "convex:deploy": "node scripts/check-dev-auth-off-in-prod.mjs --require && convex deploy && convex run --prod internal.migrations.backfillSpaceId '{\"phase\":\"tasks\"}'",
     "school:sync": "tsx scripts/school-sync.ts"
   },
   "dependencies": {
