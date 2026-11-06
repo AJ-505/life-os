@@ -35,7 +35,13 @@ import {
   SelectValue,
 } from '#/design-system/ui/select'
 import { Separator } from '#/design-system/ui/separator'
-import { Sheet, SheetContent, SheetTrigger } from '#/design-system/ui/sheet'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetTitle,
+  SheetTrigger,
+} from '#/design-system/ui/sheet'
 import { Switch } from '#/design-system/ui/switch'
 import {
   Tooltip,
@@ -113,6 +119,8 @@ function NavLinks({
         key={label}
         {...target}
         onClick={onNavigate}
+        aria-current={alsoActive ? 'page' : undefined}
+        aria-label={collapsed ? label : undefined}
         className="no-underline"
         activeOptions={{ exact: target.to === '/', includeSearch: false }}
       >
@@ -664,6 +672,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               noAnimation
               className="flex w-64 flex-col justify-between bg-sidebar p-3 pt-12"
             >
+              <SheetTitle className="sr-only">Navigation</SheetTitle>
+              <SheetDescription className="sr-only">
+                Move between sections of Life OS
+              </SheetDescription>
               <NavLinks
                 onNavigate={() => setMobileNavOpen(false)}
                 spacesTarget={spacesTarget}
