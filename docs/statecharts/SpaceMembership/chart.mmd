@@ -1,0 +1,50 @@
+---
+title: "Life OS: one person in a shared space"
+---
+stateDiagram-v2
+  direction LR
+  state "Legend" as legend {
+    lg0: inside
+    lg1: outside
+    lg2: none
+  }
+  class lg0 teal
+  class lg1 blue
+  class lg2 tan
+  state "At the same time" as all {
+    state "Membership" as r0 {
+      s0: No space
+      s1: You are outside
+      s2: You own it
+      s3: You are a member
+      [*] --> s0
+      s0 --> s1: a teammate creates the space
+      s0 --> s2: you create a space
+      s2 --> s0: you delete the space
+      s1 --> s3: you open the invite link [when Throttle is Free to try a code]
+      s3 --> s1: the owner removes you or you leave
+      s3 --> s2: the owner leaves
+    }
+    --
+    state "Throttle" as r1 {
+      s4: Free to try a code
+      s5: Locked out
+      [*] --> s4
+      s4 --> s5: you paste a wrong code [the third one]
+      s5 --> s4: the lockout ends
+    }
+    --
+    state "Work" as r2 {
+      s6: No task in your name
+      s7: A task in your name
+      [*] --> s6
+      s6 --> s7: a teammate assigns you a task [when Membership is one of You are a member, You own it]
+      s7 --> s6: you delete the space [when Membership is You own it]
+      s7 --> s6: the owner removes you or you leave [when Membership is You are a member]
+    }
+  }
+  class s0 tan
+  class s1 blue
+  class s2 teal
+  class s3 teal
+  class s7 teal

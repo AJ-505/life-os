@@ -1,0 +1,45 @@
+---
+title: "Life OS: the Calendar view reading Google"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: settled
+    lg1: reading
+    lg2: waiting
+    lg3: stuck
+    lg4: Breaks ACoveredWindowWasFetched
+    lg5: Path to the ACoveredWindowWasFetched bug
+  }
+  class lg0 teal
+  class lg1 blue
+  class lg2 blue
+  class lg3 orange
+  class lg4 breaks
+  class lg5 bugPath
+  s0: This week was never fetched
+  s1: Reading Google
+  s2: Fetch failed, blocked for five minutes
+  s3: This week is fetched
+  s4: Waiting out the navigation gap
+  [*] --> s0
+  s0 --> s1: the view asks Google [the gate is open]
+  s1 --> s2: the first read fails
+  s1 --> s3: Google answers or the refresh fails, the week keeps its old events
+  s2 --> s4: you open another week
+  s3 --> s4: you open another week
+  s2 --> s0: you open another week
+  s2 --> s1: the view asks Google [the gate is open]
+  s3 --> s0: you open another week
+  s3 --> s1: the view asks Google [the gate is open]
+  s4 --> s0: time passes
+  s4 --> s1: the view asks Google [the gate is open]
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  class s0 blue
+  class s0 bugPath
+  class s1 blue
+  class s1 bugPath
+  class s2 orange
+  class s2 breaks
+  class s2 bugPath
+  class s3 teal
+  class s4 blue

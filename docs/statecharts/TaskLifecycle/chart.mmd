@@ -1,0 +1,35 @@
+---
+title: "Life OS: one task, on the board or in the Library"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: board
+    lg1: library
+    lg2: gone
+  }
+  class lg0 teal
+  class lg1 blue
+  class lg2 tan
+  s0: On the board
+  s1: Deleted
+  s2: On the board, ticked off
+  s3: In the Library
+  s4: In the Library, ticked off
+  [*] --> s0
+  s0 --> s1: you delete it
+  s0 --> s2: you tick it off
+  s0 --> s3: you archive it
+  s2 --> s0: you untick it
+  s2 --> s1: you delete it
+  s2 --> s4: you archive it
+  s3 --> s0: you restore it from the Library
+  s3 --> s1: you delete it
+  s3 --> s4: you tick it off
+  s4 --> s2: you restore it from the Library
+  s4 --> s3: you untick it
+  s4 --> s1: you delete it
+  class s0 teal
+  class s1 tan
+  class s2 teal
+  class s3 blue
+  class s4 blue
