@@ -8,25 +8,25 @@ The shortest path has 4 steps:
 0. Not on the calendar
 1. you turn auto-add on: Not on the calendar
 2. you turn sync on: Not on the calendar
-3. you date the task or turn its switch on: Waiting to be added
-4. Google rate limits the push: Rate limited, nothing retries
+3. you give it a date: Waiting to be added
+4. Google rate-limits: Rate limited, nothing retries
 
 ## UnwantedEventLeaves breaks
 The shortest path has 6 steps:
 0. Not on the calendar
-1. you date the task or turn its switch on: Not on the calendar
+1. you give it a date: Not on the calendar
 2. you turn auto-add on: Not on the calendar
 3. you turn sync on: Waiting to be added
 4. the push runs: On the calendar
 5. you turn sync off: Waiting to be removed
-6. Google refuses the cleanup: Left behind in Google
+6. Google refuses: Left behind in Google
 
 ## WantedEventArrives breaks
 The shortest path has 6 steps:
 0. Not on the calendar
-1. you date the task or turn its switch on: Not on the calendar
+1. you give it a date: Not on the calendar
 2. you turn sync on: Not on the calendar
-3. you date the task or turn its switch on: Waiting to be added
+3. you give it a date: Waiting to be added
 4. you turn sync off: Not on the calendar
 5. the push runs: Not on the calendar
 6. you turn sync on: Missing, nothing adds it

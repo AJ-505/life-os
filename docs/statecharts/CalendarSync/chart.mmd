@@ -25,35 +25,35 @@ stateDiagram-v2
   s6: Left behind in Google
   s7: Missing, nothing adds it
   [*] --> s0
-  s0 --> s0: you date the task or turn its switch on or you turn auto-add on or you turn sync on or the push runs
-  s0 --> s1: you turn sync on or you date the task or turn its switch on or you turn auto-add on
-  s1 --> s0: you turn sync off or you clear the date, finish the task, or turn its switch off or you turn auto-add off
-  s1 --> s2: Google rate limits the push
+  s0 --> s0: you give it a date or you turn auto-add on or you turn sync on or the push runs
+  s0 --> s1: you turn sync on or you give it a date or you turn auto-add on
+  s1 --> s0: you turn sync off or you take the date away or you turn auto-add off
+  s1 --> s2: Google rate-limits
   s1 --> s3: the push runs or you press Repair
-  s2 --> s3: you press Repair or you date the task or turn its switch on
-  s2 --> s1: you turn auto-add on or you turn sync on or you date the task or turn its switch on
-  s3 --> s4: you turn sync off or you clear the date, finish the task, or turn its switch off or you turn auto-add off
-  s3 --> s5: the push finds it deleted in Google
-  s3 --> s2: Google rate limits the push
-  s4 --> s0: the cleanup deletes the event or you press Repair or the push runs
-  s4 --> s6: Google refuses the cleanup
+  s2 --> s3: you press Repair or you give it a date
+  s2 --> s1: you turn auto-add on or you turn sync on or you give it a date
+  s3 --> s4: you turn sync off or you take the date away or you turn auto-add off
+  s3 --> s5: it is gone in Google
+  s3 --> s2: Google rate-limits
+  s4 --> s0: the cleanup runs or you press Repair or the push runs
+  s4 --> s6: Google refuses
   s0 --> s7: you turn sync on
   s5 --> s3: you press Repair
-  s2 --> s4: you turn sync off or you clear the date, finish the task, or turn its switch off or you turn auto-add off or you date the task or turn its switch on
+  s2 --> s4: you turn sync off or you take the date away or you turn auto-add off or you give it a date
   s5 --> s0: you turn auto-add off or the push runs
-  s4 --> s3: you date the task or turn its switch on or you turn auto-add on or Google refuses the cleanup or you turn sync on
-  s4 --> s2: Google rate limits the push or the cleanup deletes the event or Google refuses the cleanup
-  s6 --> s3: you turn sync on or you turn auto-add on or you date the task or turn its switch on
-  s6 --> s4: you clear the date, finish the task, or turn its switch off or you turn sync off or you date the task or turn its switch on or you turn auto-add off
-  s4 --> s1: the cleanup deletes the event
-  s7 --> s0: you clear the date, finish the task, or turn its switch off or you turn sync off or you turn auto-add off
+  s4 --> s3: you give it a date or you turn auto-add on or Google refuses or you turn sync on
+  s4 --> s2: Google rate-limits or the cleanup runs or Google refuses
+  s6 --> s3: you turn sync on or you turn auto-add on or you give it a date
+  s6 --> s4: you take the date away or you turn sync off or you give it a date or you turn auto-add off
+  s4 --> s1: the cleanup runs
+  s7 --> s0: you take the date away or you turn sync off or you turn auto-add off
   s7 --> s3: you press Repair
   s7 --> s1: you turn auto-add on
-  s5 --> s1: you date the task or turn its switch on
+  s5 --> s1: you give it a date
   s2 --> s0: you press Repair
   s6 --> s0: you press Repair
   s1 --> s4: you press Repair
-  s1 --> s7: Google refuses the cleanup
+  s1 --> s7: Google refuses
   classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
   classDef mayBreak fill:#fff3e6,stroke:#e8730c,stroke-width:2.5px,color:#b85a06
   class s0 teal
