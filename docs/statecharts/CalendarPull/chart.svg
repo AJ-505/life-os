@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="pele pele-state" viewBox="0 0 1673 886" width="1673" height="886" style="max-width:100%;height:auto;--_bg:var(--pele-bg,#fff);--_fg:var(--pele-fg,#1f1f1f);--_m:var(--pele-muted,#6e6e6e);--_l:var(--pele-line,#1f1f1f);--_s:var(--pele-surface,#f3f3f3);--_a:var(--pele-surface-alt,#e6e6e6);--_b:var(--pele-border,#8a8a8a);--_c:var(--pele-accent,#5b7bd5);color:var(--_fg);--_tw:var(--pele-title-weight,bold);--_fm:var(--pele-font-mono,monospace);font:16px sans-serif;letter-spacing:normal;word-spacing:normal;text-transform:none;direction:ltr;font-family:var(--pele-font,sans-serif)" fill="var(--_fg)" role="graphics-document document" aria-roledescription="state"><style>.pele {
+  --pele-bg: #ffffff;
+  --pele-fg: #1c1c1c;
+  --pele-muted: #656565;
+  --pele-line: #808080;
+  --pele-surface: #fcfcfc;
+  --pele-surface-alt: #f1f1f1;
+  --pele-border: #c9c9c9;
+}
+.pele .blue rect { fill: #c3e0ff; }
+.pele .orange rect { fill: #f0d3bf; }
+.pele .purple rect { fill: #e3d5ff; }
+.pele .yellow rect { fill: #f0dcbf; }
+.pele .teal rect { fill: #bfe3df; }
+.pele .tan rect { fill: #e5d9ce; }
+.pele .pink rect { fill: #ffcbe6; }
+.pele .breaks rect {
+  fill: #ffecee !important;
+  stroke: #e72e3b !important;
+  stroke-width: 2.5px !important;
+}
+.pele .breaks text {
+  fill: #cd2834 !important;
+}
+.pele .mayBreak rect {
+  fill: #fff3e6 !important;
+  stroke: #e8730c !important;
+  stroke-width: 2.5px !important;
+}
+.pele .mayBreak text {
+  fill: #b85a06 !important;
+}
+.pele .bugPath rect {
+  stroke: #1680f3 !important;
+  stroke-width: 2.5px !important;
+}
+.pele .repeats rect {
+  stroke: #9b35d6 !important;
+  stroke-width: 2.5px !important;
+  stroke-dasharray: 6 3;
+}
+@media (prefers-color-scheme: dark) {
+  .pele {
+    --pele-bg: #1f1f1f;
+    --pele-fg: #f5f5f5;
+    --pele-muted: #acacac;
+    --pele-line: #939393;
+    --pele-surface: #121212;
+    --pele-surface-alt: #2c2c2c;
+    --pele-border: #4e4e4e;
+  }
+  .pele .blue rect { fill: #1b3857; }
+  .pele .orange rect { fill: #573117; }
+  .pele .purple rect { fill: #3c2e57; }
+  .pele .yellow rect { fill: #573d17; }
+  .pele .teal rect { fill: #174641; }
+  .pele .tan rect { fill: #3d3127; }
+  .pele .pink rect { fill: #57233e; }
+  .pele .breaks rect {
+    fill: #2e2021 !important;
+    stroke: #cf2b35 !important;
+  }
+  .pele .breaks text {
+    fill: #ff6463 !important;
+  }
+  .pele .mayBreak rect {
+    fill: #2e2619 !important;
+    stroke: #d0700f !important;
+  }
+  .pele .mayBreak text {
+    fill: #ffa257 !important;
+  }
+  .pele .bugPath rect {
+    stroke: #116dd2 !important;
+  }
+  .pele .repeats rect {
+    stroke: #9a3fcf !important;
+  }
+}
+</style><text class="pele-title" font-weight="var(--_tw)" text-anchor="middle" xml:space="preserve"><tspan x="836.5" y="25.6">Life OS: the Calendar view reading Google</tspan></text><g transform="translate(0,36)"><g class="pele-clusters"><g class="pele-cluster pele-state-composite" data-id="legend"><rect x="617.27" y="8" width="1047.31" height="151" rx="10" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"/><path d="M617.27,44H1664.59" fill="none" stroke="var(--_b)"/><text class="pele-cluster-label" x="1140.93" y="31.6" text-anchor="middle">Legend</text></g></g><g class="pele-edges" fill="none" stroke="var(--_l)" stroke-linecap="round"><g class="pele-edge pele-transition" data-id="edge0"><path d="M570.27,159L570.27,196"/><path class="pele-marker" d="M570.27,203L566.91,195L573.63,195Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge1"><path d="M539.59,265L539.59,278C539.59,294.74 530.18,305 514.84,305C499.49,305 490.09,315.64 490.09,333L490.09,391.5"/><path class="pele-marker" d="M490.09,398.5L486.73,390.5L493.45,390.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge2"><path d="M460.28,442.5L460.28,455.5C460.28,468.52 402.1,476.5 307.17,476.5C212.24,476.5 154.06,493.98 154.06,522.5L154.06,641.5"/><path class="pele-marker" d="M154.06,648.5L150.7,640.5L157.42,640.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge3"><path d="M508.24,442.5L508.24,482.5C508.24,502.5 548.95,502.5 548.95,522.5L548.95,580.5C548.95,612.5 629.41,612.5 629.41,644.5L629.41,650.5"/><path class="pele-marker" d="M629.41,657.5L626.05,649.5L632.77,649.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge4"><path d="M203.29,710.5L203.29,754C203.29,757.47 573.31,764.41 573.31,767.88L573.31,772.5"/><path class="pele-marker" d="M573.31,779.5L569.95,771.5L576.67,771.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge5"><path d="M665.88,701.5L665.88,772.5"/><path class="pele-marker" d="M665.88,779.5L662.52,771.5L669.24,771.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge6"><path d="M138.06,648.5L138.06,635.5C138.06,600.75 86.76,600.75 86.76,566L86.76,343C86.76,312 169.76,293 305.18,293C440.59,293 523.59,287.02 523.59,277.25L523.59,272"/><path class="pele-marker" d="M523.59,265L526.95,273L520.23,273Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge7"><path d="M266.89,648.5L266.89,635.5C266.89,608 331.08,608 331.08,580.5L331.08,522.5C331.08,501.42 358.67,488.5 403.68,488.5C448.69,488.5 476.28,475.96 476.28,455.5L476.28,449.5"/><path class="pele-marker" d="M476.28,442.5L479.64,450.5L472.92,450.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge8"><path d="M710.35,657.5L710.35,644.5C710.35,629.62 756.03,620.5 830.56,620.5C905.09,620.5 950.77,599.79 950.77,566L950.77,343C950.77,310.5 600.96,310.5 600.96,278L600.96,272"/><path class="pele-marker" d="M600.96,265L604.32,273L597.6,273Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge9"><path d="M694.35,657.5L694.35,644.5C694.35,622.18 708.12,608.5 730.58,608.5C753.05,608.5 766.82,597.86 766.82,580.5L766.82,522.5C766.82,497.7 720.73,482.5 645.53,482.5C570.33,482.5 524.24,472.24 524.24,455.5L524.24,449.5"/><path class="pele-marker" d="M524.24,442.5L527.6,450.5L520.88,450.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge10"><path d="M697.88,779.5L697.88,766.5C697.88,761.81 1095.83,752.44 1095.83,747.75L1095.83,398.5C1095.83,338.25 616.96,338.25 616.96,278L616.96,272"/><path class="pele-marker" d="M616.96,265L620.32,273L613.6,273Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge11"><path d="M681.88,779.5L681.88,766.5C681.88,759.54 884.07,754.71 884.07,747.75L884.07,537C884.07,495.77 818.74,470.5 712.16,470.5C605.57,470.5 540.24,464.52 540.24,454.75L540.24,449.5"/><path class="pele-marker" d="M540.24,442.5L543.6,450.5L536.88,450.5Z" fill="var(--_l)" stroke="none"/></g></g><g class="pele-edge-labels" font-size="14"><g class="pele-edge-label" data-id="edge1"><rect x="390.37" y="335" width="199.44" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="490.09" y="348.9">the view asks Google [the gate</tspan><tspan x="490.09" y="366.9">is open]</tspan></text></g><g class="pele-edge-label" data-id="edge2"><rect x="96.76" y="541" width="114.6" height="21" rx="3" fill="var(--_bg)"/><text x="154.06" y="556.4" text-anchor="middle">the first read fails</text></g><g class="pele-edge-label" data-id="edge3"><rect x="450.8" y="524.5" width="196.3" height="54" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="548.95" y="538.4">Google answers or the refresh</tspan><tspan x="548.95" y="556.4">fails, the week keeps its old</tspan><tspan x="548.95" y="574.4">events</tspan></text></g><g class="pele-edge-label" data-id="edge4"><rect x="126.53" y="731" width="153.53" height="21" rx="3" fill="var(--_bg)"/><text x="203.29" y="746.4" text-anchor="middle">you open another week</text></g><g class="pele-edge-label" data-id="edge5"><rect x="589.12" y="731" width="153.53" height="21" rx="3" fill="var(--_bg)"/><text x="665.88" y="746.4" text-anchor="middle">you open another week</text></g><g class="pele-edge-label" data-id="edge6"><rect x="10" y="410" width="153.53" height="21" rx="3" fill="var(--_bg)"/><text x="86.76" y="425.4" text-anchor="middle">you open another week</text></g><g class="pele-edge-label" data-id="edge7"><rect x="231.36" y="533.5" width="199.44" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="331.08" y="547.4">the view asks Google [the gate</tspan><tspan x="331.08" y="565.4">is open]</tspan></text></g><g class="pele-edge-label" data-id="edge8"><rect x="874" y="410" width="153.53" height="21" rx="3" fill="var(--_bg)"/><text x="950.77" y="425.4" text-anchor="middle">you open another week</text></g><g class="pele-edge-label" data-id="edge9"><rect x="667.1" y="533.5" width="199.44" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="766.82" y="547.4">the view asks Google [the gate</tspan><tspan x="766.82" y="565.4">is open]</tspan></text></g><g class="pele-edge-label" data-id="edge10"><rect x="1054.49" y="669" width="82.69" height="21" rx="3" fill="var(--_bg)"/><text x="1095.83" y="684.4" text-anchor="middle">time passes</text></g><g class="pele-edge-label" data-id="edge11"><rect x="784.35" y="661.5" width="199.44" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="884.07" y="675.4">the view asks Google [the gate</tspan><tspan x="884.07" y="693.4">is open]</tspan></text></g></g><g class="pele-nodes"><g class="pele-node pele-state blue bugPath" data-id="s0" transform="translate(570.27,234)"><rect x="-90.69" y="-31" width="181.38" height="62" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" text-anchor="middle" xml:space="preserve"><tspan x="0" y="-4.9">This week was never</tspan><tspan x="0" y="16.1">fetched</tspan></text></g><g class="pele-node pele-state blue bugPath" data-id="s1" transform="translate(490.09,420.5)"><rect x="-73.81" y="-22" width="147.62" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Reading Google</text></g><g class="pele-node pele-state orange breaks bugPath" data-id="s2" transform="translate(203.29,679.5)"><rect x="-115.6" y="-31" width="231.2" height="62" rx="10" fill="var(--_s)" stroke="var(--_b)" style="fill:#ffecee;stroke:#e72e3b;stroke-width:2.5px;"/><text class="pele-label" style="fill:#cd2834;" text-anchor="middle" xml:space="preserve"><tspan x="0" y="-4.9">Fetch failed, blocked for five</tspan><tspan x="0" y="16.1">minutes</tspan></text></g><g class="pele-node pele-state teal" data-id="s3" transform="translate(665.88,679.5)"><rect x="-88.47" y="-22" width="176.94" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">This week is fetched</text></g><g class="pele-node pele-state blue" data-id="s4" transform="translate(629.36,810.5)"><rect x="-108.05" y="-31" width="216.1" height="62" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" text-anchor="middle" xml:space="preserve"><tspan x="0" y="-4.9">Waiting out the navigation</tspan><tspan x="0" y="16.1">gap</tspan></text></g><g class="pele-node pele-state-start" data-id="root_start" transform="translate(570.27,152)"><circle r="7" fill="var(--_l)"/></g><g class="pele-node pele-state teal" data-id="lg0" transform="translate(672.84,101.5)"><rect x="-39.57" y="-22" width="79.14" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">settled</text></g><g class="pele-node pele-state blue" data-id="lg1" transform="translate(795.09,101.5)"><rect x="-42.68" y="-22" width="85.36" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">reading</text></g><g class="pele-node pele-state blue" data-id="lg2" transform="translate(918.67,101.5)"><rect x="-40.9" y="-22" width="81.79" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">waiting</text></g><g class="pele-node pele-state orange" data-id="lg3" transform="translate(1034.23,101.5)"><rect x="-34.67" y="-22" width="69.34" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">stuck</text></g><g class="pele-node pele-state breaks" data-id="lg4" transform="translate(1233.83,101.5)"><rect x="-124.92" y="-31" width="249.84" height="62" rx="10" fill="var(--_s)" stroke="var(--_b)" style="fill:#ffecee;stroke:#e72e3b;stroke-width:2.5px;"/><text class="pele-label" style="fill:#cd2834;" text-anchor="middle" xml:space="preserve"><tspan x="0" y="-4.9">Breaks</tspan><tspan x="0" y="16.1">ACoveredWindowWasFetched</tspan></text></g><g class="pele-node pele-state bugPath" data-id="lg5" transform="translate(1523.67,101.5)"><rect x="-124.92" y="-41.5" width="249.84" height="83" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" text-anchor="middle" xml:space="preserve"><tspan x="0" y="-15.4">Path to the</tspan><tspan x="0" y="5.6">ACoveredWindowWasFetched</tspan><tspan x="0" y="26.6">bug</tspan></text></g></g></g></svg>

@@ -1,0 +1,80 @@
+---
+title: "Life OS: one task's Google Calendar event"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: settled
+    lg1: waiting
+    lg2: stuck
+    lg3: Breaks RateLimitIsRetried or UnwantedEventLeaves or WantedEventArrives
+    lg4: Breaks RateLimitIsRetried in some cases
+    lg5: Path to the RateLimitIsRetried or UnwantedEventLeaves or WantedEventArrives bug
+  }
+  class lg0 teal
+  class lg1 blue
+  class lg2 orange
+  class lg3 breaks
+  class lg4 mayBreak
+  class lg5 bugPath
+  s0: Not on the calendar
+  s1: Waiting to be added
+  s2: Rate limited, nothing retries
+  s3: On the calendar
+  s4: Waiting to be removed
+  s5: Marked deleted in Google
+  s6: Left behind in Google
+  s7: Missing, nothing adds it
+  [*] --> s0
+  s0 --> s0: you give it a date or you turn auto-add on or you turn sync on or the push runs
+  s0 --> s1: you turn sync on or you give it a date or you turn auto-add on
+  s1 --> s0: you turn sync off or you take the date away or you turn auto-add off
+  s1 --> s2: Google rate-limits
+  s1 --> s3: the push runs or you press Repair
+  s2 --> s3: you press Repair or you give it a date
+  s2 --> s1: you turn auto-add on or you turn sync on or you give it a date
+  s3 --> s4: you turn sync off or you take the date away or you turn auto-add off
+  s3 --> s5: it is gone in Google
+  s3 --> s2: Google rate-limits
+  s4 --> s0: the cleanup runs or you press Repair or the push runs
+  s4 --> s6: Google refuses
+  s0 --> s7: you turn sync on
+  s5 --> s3: you press Repair
+  s2 --> s4: you turn sync off or you take the date away or you turn auto-add off or you give it a date
+  s5 --> s0: you turn auto-add off or the push runs
+  s4 --> s3: you give it a date or you turn auto-add on or Google refuses or you turn sync on
+  s4 --> s2: Google rate-limits or the cleanup runs or Google refuses
+  s6 --> s3: you turn sync on or you turn auto-add on or you give it a date
+  s6 --> s4: you take the date away or you turn sync off or you give it a date or you turn auto-add off
+  s4 --> s1: the cleanup runs
+  s7 --> s0: you take the date away or you turn sync off or you turn auto-add off
+  s7 --> s3: you press Repair
+  s7 --> s1: you turn auto-add on
+  s5 --> s1: you give it a date
+  s2 --> s0: you press Repair
+  s6 --> s0: you press Repair
+  s1 --> s4: you press Repair
+  s1 --> s7: Google refuses
+  classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2.5px,color:#cd2834
+  classDef mayBreak fill:#fff3e6,stroke:#e8730c,stroke-width:2.5px,color:#b85a06
+  class s0 teal
+  class s0 mayBreak
+  class s0 bugPath
+  class s1 blue
+  class s1 mayBreak
+  class s1 bugPath
+  class s2 orange
+  class s2 breaks
+  class s2 bugPath
+  class s3 teal
+  class s3 mayBreak
+  class s3 bugPath
+  class s4 blue
+  class s4 mayBreak
+  class s4 bugPath
+  class s5 orange
+  class s6 orange
+  class s6 breaks
+  class s6 bugPath
+  class s7 orange
+  class s7 breaks
+  class s7 bugPath

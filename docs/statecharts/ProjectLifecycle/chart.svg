@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="pele pele-state" viewBox="0 0 679 591" width="679" height="591" style="max-width:100%;height:auto;--_bg:var(--pele-bg,#fff);--_fg:var(--pele-fg,#1f1f1f);--_m:var(--pele-muted,#6e6e6e);--_l:var(--pele-line,#1f1f1f);--_s:var(--pele-surface,#f3f3f3);--_a:var(--pele-surface-alt,#e6e6e6);--_b:var(--pele-border,#8a8a8a);--_c:var(--pele-accent,#5b7bd5);color:var(--_fg);--_tw:var(--pele-title-weight,bold);--_fm:var(--pele-font-mono,monospace);font:16px sans-serif;letter-spacing:normal;word-spacing:normal;text-transform:none;direction:ltr;font-family:var(--pele-font,sans-serif)" fill="var(--_fg)" role="graphics-document document" aria-roledescription="state"><style>.pele {
+  --pele-bg: #ffffff;
+  --pele-fg: #1c1c1c;
+  --pele-muted: #656565;
+  --pele-line: #808080;
+  --pele-surface: #fcfcfc;
+  --pele-surface-alt: #f1f1f1;
+  --pele-border: #c9c9c9;
+}
+.pele .blue rect { fill: #c3e0ff; }
+.pele .orange rect { fill: #f0d3bf; }
+.pele .purple rect { fill: #e3d5ff; }
+.pele .yellow rect { fill: #f0dcbf; }
+.pele .teal rect { fill: #bfe3df; }
+.pele .tan rect { fill: #e5d9ce; }
+.pele .pink rect { fill: #ffcbe6; }
+.pele .breaks rect {
+  fill: #ffecee !important;
+  stroke: #e72e3b !important;
+  stroke-width: 2.5px !important;
+}
+.pele .breaks text {
+  fill: #cd2834 !important;
+}
+.pele .mayBreak rect {
+  fill: #fff3e6 !important;
+  stroke: #e8730c !important;
+  stroke-width: 2.5px !important;
+}
+.pele .mayBreak text {
+  fill: #b85a06 !important;
+}
+.pele .bugPath rect {
+  stroke: #1680f3 !important;
+  stroke-width: 2.5px !important;
+}
+.pele .repeats rect {
+  stroke: #9b35d6 !important;
+  stroke-width: 2.5px !important;
+  stroke-dasharray: 6 3;
+}
+@media (prefers-color-scheme: dark) {
+  .pele {
+    --pele-bg: #1f1f1f;
+    --pele-fg: #f5f5f5;
+    --pele-muted: #acacac;
+    --pele-line: #939393;
+    --pele-surface: #121212;
+    --pele-surface-alt: #2c2c2c;
+    --pele-border: #4e4e4e;
+  }
+  .pele .blue rect { fill: #1b3857; }
+  .pele .orange rect { fill: #573117; }
+  .pele .purple rect { fill: #3c2e57; }
+  .pele .yellow rect { fill: #573d17; }
+  .pele .teal rect { fill: #174641; }
+  .pele .tan rect { fill: #3d3127; }
+  .pele .pink rect { fill: #57233e; }
+  .pele .breaks rect {
+    fill: #2e2021 !important;
+    stroke: #cf2b35 !important;
+  }
+  .pele .breaks text {
+    fill: #ff6463 !important;
+  }
+  .pele .mayBreak rect {
+    fill: #2e2619 !important;
+    stroke: #d0700f !important;
+  }
+  .pele .mayBreak text {
+    fill: #ffa257 !important;
+  }
+  .pele .bugPath rect {
+    stroke: #116dd2 !important;
+  }
+  .pele .repeats rect {
+    stroke: #9a3fcf !important;
+  }
+}
+</style><text class="pele-title" font-weight="var(--_tw)" text-anchor="middle" xml:space="preserve"><tspan x="339.5" y="25.6">Life OS: one project, on the board or in the Library</tspan></text><g transform="translate(0,36)"><g class="pele-clusters"><g class="pele-cluster pele-state-composite" data-id="legend"><rect x="342.79" y="8" width="328.05" height="112" rx="10" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"/><path d="M342.79,44H670.84" fill="none" stroke="var(--_b)"/><text class="pele-cluster-label" x="506.82" y="31.6" text-anchor="middle">Legend</text></g></g><g class="pele-edges" fill="none" stroke="var(--_l)" stroke-linecap="round"><g class="pele-edge pele-transition" data-id="edge0"><path d="M295.79,120L295.79,157"/><path class="pele-marker" d="M295.79,164L292.43,156L299.15,156Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge1"><path d="M258.1,208L258.1,220.31C258.1,226.45 92.6,230.11 92.6,236.25L92.6,434C92.6,462 197.68,462 197.68,490L197.68,496"/><path class="pele-marker" d="M197.68,503L194.32,495L201.04,495Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge2"><path d="M274.1,208L274.1,217.63C274.1,223.81 247.1,223.81 247.1,230L247.1,270"/><path class="pele-marker" d="M247.1,277L243.74,269L250.46,269Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge3"><path d="M306.49,208L306.49,220.31C306.49,225.95 486.65,230.61 486.65,236.25L486.65,383"/><path class="pele-marker" d="M486.65,390L483.29,382L490.01,382Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge4"><path d="M354.47,277L354.47,230C354.47,224.38 290.49,224.38 290.49,218.75L290.49,215"/><path class="pele-marker" d="M290.49,208L293.85,216L287.13,216Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge5"><path d="M358.53,321L358.53,364.5C358.53,371.39 470.37,371.49 470.37,378.38L470.37,383"/><path class="pele-marker" d="M470.37,390L467.01,382L473.73,382Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge6"><path d="M292.78,321L292.78,434C292.78,462 213.68,462 213.68,490L213.68,496"/><path class="pele-marker" d="M213.68,503L210.32,495L217.04,495Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge7"><path d="M537.99,390L537.99,377C537.99,349 606.86,349 606.86,321L606.86,236.25C606.86,232.27 322.49,224.3 322.49,220.31L322.49,215"/><path class="pele-marker" d="M322.49,208L325.85,216L319.13,216Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge8"><path d="M504.18,434L504.18,477.5C504.18,480.97 229.68,487.91 229.68,491.38L229.68,496"/><path class="pele-marker" d="M229.68,503L226.32,495L233.04,495Z" fill="var(--_l)" stroke="none"/></g></g><g class="pele-edge-labels" font-size="14"><g class="pele-edge-label" data-id="edge1"><rect x="10" y="288.5" width="165.19" height="21" rx="3" fill="var(--_bg)"/><text x="92.6" y="303.9" text-anchor="middle">you delete it and its tasks</text></g><g class="pele-edge-label" data-id="edge2"><rect x="204.2" y="232" width="85.81" height="21" rx="3" fill="var(--_bg)"/><text x="247.1" y="247.4" text-anchor="middle">you shelve it</text></g><g class="pele-edge-label" data-id="edge3"><rect x="430.91" y="288.5" width="111.49" height="21" rx="3" fill="var(--_bg)"/><text x="486.65" y="303.9" text-anchor="middle">you mark it done</text></g><g class="pele-edge-label" data-id="edge4"><rect x="310.01" y="232" width="88.92" height="21" rx="3" fill="var(--_bg)"/><text x="354.47" y="247.4" text-anchor="middle">you restore it</text></g><g class="pele-edge-label" data-id="edge5"><rect x="302.78" y="341.5" width="111.49" height="21" rx="3" fill="var(--_bg)"/><text x="358.53" y="356.9" text-anchor="middle">you mark it done</text></g><g class="pele-edge-label" data-id="edge6"><rect x="210.19" y="401.5" width="165.19" height="21" rx="3" fill="var(--_bg)"/><text x="292.78" y="416.9" text-anchor="middle">you delete it and its tasks</text></g><g class="pele-edge-label" data-id="edge7"><rect x="562.4" y="288.5" width="88.92" height="21" rx="3" fill="var(--_bg)"/><text x="606.86" y="303.9" text-anchor="middle">you restore it</text></g><g class="pele-edge-label" data-id="edge8"><rect x="421.58" y="454.5" width="165.19" height="21" rx="3" fill="var(--_bg)"/><text x="504.18" y="469.9" text-anchor="middle">you delete it and its tasks</text></g></g><g class="pele-nodes"><g class="pele-node pele-state teal" data-id="s0" transform="translate(295.79,186)"><rect x="-62.7" y="-22" width="125.39" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">On the board</text></g><g class="pele-node pele-state tan" data-id="s1" transform="translate(213.68,525)"><rect x="-43.57" y="-22" width="87.14" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Deleted</text></g><g class="pele-node pele-state blue" data-id="s2" transform="translate(300.78,299)"><rect x="-95.59" y="-22" width="191.18" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Shelved, in the Library</text></g><g class="pele-node pele-state blue" data-id="s3" transform="translate(504.18,412)"><rect x="-85.81" y="-22" width="171.62" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Done, in the Library</text></g><g class="pele-node pele-state-start" data-id="root_start" transform="translate(295.79,113)"><circle r="7" fill="var(--_l)"/></g><g class="pele-node pele-state teal" data-id="lg0" transform="translate(395.25,82)"><rect x="-36.46" y="-22" width="72.91" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">board</text></g><g class="pele-node pele-state blue" data-id="lg1" transform="translate(509.48,82)"><rect x="-37.78" y="-22" width="75.55" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">library</text></g><g class="pele-node pele-state tan" data-id="lg2" transform="translate(621.05,82)"><rect x="-33.79" y="-22" width="67.58" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">gone</text></g></g></g></svg>

@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="pele pele-state" viewBox="0 0 746 839" width="746" height="839" style="max-width:100%;height:auto;--_bg:var(--pele-bg,#fff);--_fg:var(--pele-fg,#1f1f1f);--_m:var(--pele-muted,#6e6e6e);--_l:var(--pele-line,#1f1f1f);--_s:var(--pele-surface,#f3f3f3);--_a:var(--pele-surface-alt,#e6e6e6);--_b:var(--pele-border,#8a8a8a);--_c:var(--pele-accent,#5b7bd5);color:var(--_fg);--_tw:var(--pele-title-weight,bold);--_fm:var(--pele-font-mono,monospace);font:16px sans-serif;letter-spacing:normal;word-spacing:normal;text-transform:none;direction:ltr;font-family:var(--pele-font,sans-serif)" fill="var(--_fg)" role="graphics-document document" aria-roledescription="state"><style>.pele {
+  --pele-bg: #ffffff;
+  --pele-fg: #1c1c1c;
+  --pele-muted: #656565;
+  --pele-line: #808080;
+  --pele-surface: #fcfcfc;
+  --pele-surface-alt: #f1f1f1;
+  --pele-border: #c9c9c9;
+}
+.pele .blue rect { fill: #c3e0ff; }
+.pele .orange rect { fill: #f0d3bf; }
+.pele .purple rect { fill: #e3d5ff; }
+.pele .yellow rect { fill: #f0dcbf; }
+.pele .teal rect { fill: #bfe3df; }
+.pele .tan rect { fill: #e5d9ce; }
+.pele .pink rect { fill: #ffcbe6; }
+.pele .breaks rect {
+  fill: #ffecee !important;
+  stroke: #e72e3b !important;
+  stroke-width: 2.5px !important;
+}
+.pele .breaks text {
+  fill: #cd2834 !important;
+}
+.pele .mayBreak rect {
+  fill: #fff3e6 !important;
+  stroke: #e8730c !important;
+  stroke-width: 2.5px !important;
+}
+.pele .mayBreak text {
+  fill: #b85a06 !important;
+}
+.pele .bugPath rect {
+  stroke: #1680f3 !important;
+  stroke-width: 2.5px !important;
+}
+.pele .repeats rect {
+  stroke: #9b35d6 !important;
+  stroke-width: 2.5px !important;
+  stroke-dasharray: 6 3;
+}
+@media (prefers-color-scheme: dark) {
+  .pele {
+    --pele-bg: #1f1f1f;
+    --pele-fg: #f5f5f5;
+    --pele-muted: #acacac;
+    --pele-line: #939393;
+    --pele-surface: #121212;
+    --pele-surface-alt: #2c2c2c;
+    --pele-border: #4e4e4e;
+  }
+  .pele .blue rect { fill: #1b3857; }
+  .pele .orange rect { fill: #573117; }
+  .pele .purple rect { fill: #3c2e57; }
+  .pele .yellow rect { fill: #573d17; }
+  .pele .teal rect { fill: #174641; }
+  .pele .tan rect { fill: #3d3127; }
+  .pele .pink rect { fill: #57233e; }
+  .pele .breaks rect {
+    fill: #2e2021 !important;
+    stroke: #cf2b35 !important;
+  }
+  .pele .breaks text {
+    fill: #ff6463 !important;
+  }
+  .pele .mayBreak rect {
+    fill: #2e2619 !important;
+    stroke: #d0700f !important;
+  }
+  .pele .mayBreak text {
+    fill: #ffa257 !important;
+  }
+  .pele .bugPath rect {
+    stroke: #116dd2 !important;
+  }
+  .pele .repeats rect {
+    stroke: #9a3fcf !important;
+  }
+}
+</style><text class="pele-title" font-weight="var(--_tw)" text-anchor="middle" xml:space="preserve"><tspan x="373" y="25.6">Life OS: one task, on the board or in the Library</tspan></text><g transform="translate(0,36)"><g class="pele-clusters"><g class="pele-cluster pele-state-composite" data-id="legend"><rect x="355.65" y="8" width="328.05" height="112" rx="10" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"/><path d="M355.65,44H683.7" fill="none" stroke="var(--_b)"/><text class="pele-cluster-label" x="519.67" y="31.6" text-anchor="middle">Legend</text></g></g><g class="pele-edges" fill="none" stroke="var(--_l)" stroke-linecap="round"><g class="pele-edge pele-transition" data-id="edge0"><path d="M308.65,120L308.65,157"/><path class="pele-marker" d="M308.65,164L305.29,156L312.01,156Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge1"><path d="M276.65,208L276.65,220.31C276.65,224.83 51.74,231.73 51.74,236.25L51.74,639C51.74,688.25 208.15,688.25 208.15,737.5L208.15,743.5"/><path class="pele-marker" d="M208.15,750.5L204.79,742.5L211.52,742.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge2"><path d="M292.65,208L292.65,217.63C292.65,223.63 190.69,223.99 190.69,230L190.69,270"/><path class="pele-marker" d="M190.69,277L187.33,269L194.05,269Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge3"><path d="M324.65,208L324.65,220.31C324.65,225.16 534.38,231.41 534.38,236.25L534.38,566.75C534.38,574.72 433.83,574.72 433.83,582.69L433.83,588"/><path class="pele-marker" d="M433.83,595L430.47,587L437.19,587Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge4"><path d="M245.85,277L245.85,267.38C245.85,261.19 308.65,261.19 308.65,255L308.65,215"/><path class="pele-marker" d="M308.65,208L312.01,216L305.29,216Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge5"><path d="M159.07,321L159.07,639C159.07,688.25 224.15,688.25 224.15,737.5L224.15,743.5"/><path class="pele-marker" d="M224.15,750.5L220.79,742.5L227.52,742.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge6"><path d="M249.07,321L249.07,349C249.07,369 268.3,369 268.3,389L268.3,429"/><path class="pele-marker" d="M268.3,436L264.94,428L271.66,428Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge7"><path d="M449.83,595L449.83,582.69C449.83,577.34 639.8,572.1 639.8,566.75L639.8,236.25C639.8,232.27 340.65,224.3 340.65,220.31L340.65,215"/><path class="pele-marker" d="M340.65,208L344.01,216L337.29,216Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge8"><path d="M425.16,639L425.16,682.5C425.16,699.86 390.01,710.5 332.66,710.5C275.31,710.5 240.15,720.76 240.15,737.5L240.15,743.5"/><path class="pele-marker" d="M240.15,750.5L236.79,742.5L243.52,742.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge9"><path d="M401.83,595L401.83,585.38C401.83,581.48 244.76,576.9 244.76,573L244.76,487"/><path class="pele-marker" d="M244.76,480L248.12,488L241.4,488Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge10"><path d="M377.12,436L377.12,426.38C377.12,420.19 428.96,420.19 428.96,414L428.96,389C428.96,364.2 397.82,349 347.01,349C296.21,349 265.07,343.02 265.07,333.25L265.07,328"/><path class="pele-marker" d="M265.07,321L268.43,329L261.71,329Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge11"><path d="M389.12,480L389.12,508C389.12,528 417.83,528 417.83,548L417.83,588"/><path class="pele-marker" d="M417.83,595L414.47,587L421.19,587Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge12"><path d="M405.12,480L405.12,492.25C405.12,502.02 452.75,508 530.46,508C608.17,508 655.8,525.58 655.8,554.25L655.8,676.25C655.8,704.93 579.86,722.5 455.98,722.5C332.09,722.5 256.15,728.49 256.15,738.25L256.15,743.5"/><path class="pele-marker" d="M256.15,750.5L252.79,742.5L259.52,742.5Z" fill="var(--_l)" stroke="none"/></g></g><g class="pele-edge-labels" font-size="14"><g class="pele-edge-label" data-id="edge1"><rect x="10" y="447.5" width="83.49" height="21" rx="3" fill="var(--_bg)"/><text x="51.74" y="462.9" text-anchor="middle">you delete it</text></g><g class="pele-edge-label" data-id="edge2"><rect x="147.78" y="232" width="85.81" height="21" rx="3" fill="var(--_bg)"/><text x="190.69" y="247.4" text-anchor="middle">you tick it off</text></g><g class="pele-edge-label" data-id="edge3"><rect x="489.14" y="288.5" width="90.47" height="21" rx="3" fill="var(--_bg)"/><text x="534.38" y="303.9" text-anchor="middle">you archive it</text></g><g class="pele-edge-label" data-id="edge4"><rect x="267.69" y="232" width="81.92" height="21" rx="3" fill="var(--_bg)"/><text x="308.65" y="247.4" text-anchor="middle">you untick it</text></g><g class="pele-edge-label" data-id="edge5"><rect x="117.32" y="447.5" width="83.49" height="21" rx="3" fill="var(--_bg)"/><text x="159.07" y="462.9" text-anchor="middle">you delete it</text></g><g class="pele-edge-label" data-id="edge6"><rect x="223.06" y="391" width="90.47" height="21" rx="3" fill="var(--_bg)"/><text x="268.3" y="406.4" text-anchor="middle">you archive it</text></g><g class="pele-edge-label" data-id="edge7"><rect x="544.38" y="447.5" width="190.84" height="21" rx="3" fill="var(--_bg)"/><text x="639.8" y="462.9" text-anchor="middle">you restore it from the Library</text></g><g class="pele-edge-label" data-id="edge8"><rect x="383.42" y="659.5" width="83.49" height="21" rx="3" fill="var(--_bg)"/><text x="425.16" y="674.9" text-anchor="middle">you delete it</text></g><g class="pele-edge-label" data-id="edge9"><rect x="201.86" y="550" width="85.81" height="21" rx="3" fill="var(--_bg)"/><text x="244.76" y="565.4" text-anchor="middle">you tick it off</text></g><g class="pele-edge-label" data-id="edge10"><rect x="333.54" y="391" width="190.84" height="21" rx="3" fill="var(--_bg)"/><text x="428.96" y="406.4" text-anchor="middle">you restore it from the Library</text></g><g class="pele-edge-label" data-id="edge11"><rect x="376.87" y="550" width="81.92" height="21" rx="3" fill="var(--_bg)"/><text x="417.83" y="565.4" text-anchor="middle">you untick it</text></g><g class="pele-edge-label" data-id="edge12"><rect x="614.05" y="606.5" width="83.49" height="21" rx="3" fill="var(--_bg)"/><text x="655.8" y="621.9" text-anchor="middle">you delete it</text></g></g><g class="pele-nodes"><g class="pele-node pele-state teal" data-id="s0" transform="translate(308.65,186)"><rect x="-62.7" y="-22" width="125.39" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">On the board</text></g><g class="pele-node pele-state tan" data-id="s1" transform="translate(232.15,772.5)"><rect x="-43.57" y="-22" width="87.14" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">Deleted</text></g><g class="pele-node pele-state teal" data-id="s2" transform="translate(198.69,299)"><rect x="-99.16" y="-22" width="198.32" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">On the board, ticked off</text></g><g class="pele-node pele-state blue" data-id="s3" transform="translate(425.16,617)"><rect x="-62.69" y="-22" width="125.38" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">In the Library</text></g><g class="pele-node pele-state blue" data-id="s4" transform="translate(329.96,458)"><rect x="-99.15" y="-22" width="198.3" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">In the Library, ticked off</text></g><g class="pele-node pele-state-start" data-id="root_start" transform="translate(308.65,113)"><circle r="7" fill="var(--_l)"/></g><g class="pele-node pele-state teal" data-id="lg0" transform="translate(408.1,82)"><rect x="-36.46" y="-22" width="72.91" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">board</text></g><g class="pele-node pele-state blue" data-id="lg1" transform="translate(522.34,82)"><rect x="-37.78" y="-22" width="75.55" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">library</text></g><g class="pele-node pele-state tan" data-id="lg2" transform="translate(633.9,82)"><rect x="-33.79" y="-22" width="67.58" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">gone</text></g></g></g></svg>
