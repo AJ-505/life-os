@@ -1,9 +1,5 @@
 import { useEffect, useState } from 'react'
 
-/**
- * Boolean UI preference persisted in localStorage (layout chrome only —
- * real data lives in the DB). Reads after mount to stay SSR-safe.
- */
 export function useLocalFlag(key: string, initial: boolean) {
   const [value, setValue] = useState(initial)
   useEffect(() => {

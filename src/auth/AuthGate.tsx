@@ -13,12 +13,6 @@ function LoadingScreen({ label = 'Loading your board…' }: { label?: string }) 
   )
 }
 
-/**
- * Gates the whole app on a Convex-validated Clerk identity. The provider
- * (ConvexProviderWithClerk) lives in the root route; these helpers read its
- * auth state. <AuthLoading> covers both Clerk loading and the Convex token
- * handshake, so there's no SSR/hydration flicker.
- */
 export function AuthGate({ children }: { children: ReactNode }) {
   return (
     <>

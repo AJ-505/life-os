@@ -1,24 +1,3 @@
-/**
- * school-sync — pull every file from your PAU elearning (Moodle) courses
- * into one local vault folder you can point an AI at.
- *
- * Uses Moodle's mobile web-service API (the same channel the official
- * mobile app uses), so no browser, no captcha:
- *   1. login/token.php            -> wstoken
- *   2. core_webservice_get_site_info
- *   3. core_enrol_get_users_courses
- *   4. core_course_get_contents   -> module files
- *   5. download fileurl?token=...
- *
- * Usage:
- *   pnpm school:sync             # sync enrolled courses
- *   pnpm school:sync -- --dry    # list what would be downloaded
- *
- * Env (in .env.local):
- *   ELEARNING_USERNAME=you@pau.edu.ng
- *   ELEARNING_PASSWORD=...
- *   SCHOOL_VAULT_DIR=~/SchoolVault   (optional)
- */
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
@@ -41,7 +20,7 @@ function expandHome(p: string) {
 function sanitize(name: string) {
   return name
     .replace(/[\\/:*?"<>|]/g, '-')
-    .replace(/\.+/g, '-') // dots-only names would walk out of VAULT
+    .replace(/\.+/g, '-')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 140)
@@ -127,7 +106,10 @@ function loadManifest(): Manifest {
 }
 
 function saveManifest(m: Manifest) {
-  fs.writeFileSync(path.join(VAULT, '.manifest.json'), JSON.stringify(m, null, 2))
+  fs.writeFileSync(
+    path.join(VAULT, '.manifest.json'),
+    JSON.stringify(m, null, 2),
+  )
 }
 
 async function downloadFile(fileurl: string, dest: string): Promise<boolean> {

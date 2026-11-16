@@ -22,14 +22,6 @@ import { useImportExternalEvent } from './pull'
 import type { CardDensity, ExternalEvent, PlacedTask } from './calendar-logic'
 import type { ProjectWithTasks } from '../types'
 
-/**
- * Google's event, drawn in Life OS's own visual language. Everything is
- * deliberately the inverse of a task card: no drag, no resize, no project
- * color, dashed border and neutral fill where a task gets its color. It is
- * your calendar, shown here, not a plan yet. The one action it offers is the
- * explicit import, plus a link out to Google.
- */
-
 const DAY_MS = 86_400_000
 
 function dayTimeLabel(event: ExternalEvent): string {
@@ -100,11 +92,7 @@ function ImportPopover({
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <ProjectPicker
-          projects={homes}
-          chosen={chosen}
-          onChange={setChosen}
-        />
+        <ProjectPicker projects={homes} chosen={chosen} onChange={setChosen} />
         <Button type="submit" size="sm" disabled={importEvent.isPending}>
           <Plus className="size-3.5" />
           Add as task
@@ -125,11 +113,6 @@ function ImportPopover({
   )
 }
 
-/** One popover per card, triggered by the card itself, as the sync control
- *  does — never one shared popover with a moving anchor, the pattern that
- *  makes floating UI jump (see docs/ui-guidelines.md). The content closes
- *  with no exit animation because the trigger unmounts when an import
- *  removes the card from the grid. */
 function ExternalEventPopover({
   event,
   projects,
@@ -170,7 +153,6 @@ function ExternalEventPopover({
   )
 }
 
-/** The dashed, colourless skin every external card wears, in both grid modes. */
 export function externalCardClassName(density: CardDensity = 'full'): string {
   return cn(
     'flex h-full min-w-0 flex-col overflow-hidden rounded-md border border-dashed bg-accent/20 px-1.5 text-left text-foreground/75 transition-colors hover:bg-accent/30',

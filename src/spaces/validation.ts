@@ -3,7 +3,6 @@ import * as z from 'zod'
 
 import { REPEAT_RULES } from '../../convex/recurrence'
 
-/** The space row as the server shapes it. */
 export const space = z.object({
   id: z.string(),
   ownerId: z.string(),
@@ -12,11 +11,6 @@ export const space = z.object({
   createdAt: z.number(),
 })
 
-/**
- * `joinSpaceByCode` returns a discriminated result rather than throwing for the
- * cases a user can act on, so the join page can tell "that link is wrong" apart
- * from "you have tried too often" without reading an error string.
- */
 export const joinResult = z.discriminatedUnion('ok', [
   z.object({
     ok: z.literal(true),
@@ -58,12 +52,10 @@ const backupTaskSchema = z.object({
   inFocus: z.boolean().nullable(),
   focusOrder: z.number().nullable(),
   createdAt: z.string().nullable(),
-  // Optional so a backup written before the calendar work still validates.
   reminderMinutes: z.number().nullable().optional(),
   durationMinutes: z.number().int().min(5).max(1440).nullable().optional(),
   addToCalendar: z.boolean().nullable().optional(),
   calendarEventId: z.string().nullable().optional(),
-  // Same reason as above: backups written before imports existed restore fine.
   importedFromEventId: z.string().nullable().optional(),
   repeat: z.enum(REPEAT_RULES).nullable().optional(),
 })

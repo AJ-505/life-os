@@ -62,14 +62,6 @@ function SelectContent({
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(
-          // Radix only sets `--radix-select-content-available-height` when the
-          // content is positioned `popper`, and this component defaults to
-          // `item-aligned`, so that variable is empty by default and the cap was
-          // dead. The fallback gives the item-aligned case a real cap.
-          //
-          // Motion is a 100ms enter fade and no exit animation. An exit fade
-          // kept the list visible while item-aligned positioning re-aligned
-          // it over the newly chosen value, so the list jumped as it closed.
           'relative z-50 max-h-[min(20rem,var(--radix-select-content-available-height,20rem))] min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-md border bg-popover text-popover-foreground shadow-md duration-100 ease-out data-[state=open]:animate-in data-[state=open]:fade-in-0',
           position === 'popper' &&
             'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',

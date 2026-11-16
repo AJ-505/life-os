@@ -8,18 +8,6 @@ import { TaskDetails } from './TaskDetails'
 
 import type { BoardData, Task } from '../types'
 
-/**
- * Owns the board-level UI that rows need but the board layout must not
- * re-render for: which task dialog is open, and which task the cursor hovers
- * (for Trello-style `e`/`f` keybindings).
- *
- * Why here and not in BoardView: opening a dialog or moving the mouse used to
- * setState at the board root, re-rendering every column on each hover-key
- * press. State lives here so typing in the dialog or hitting `e`/`f` only
- * re-renders this host + the dialog. BoardView keeps its own drag-only task
- * lookup; duplicating that tiny loop is intentional to keep the two concerns
- * separate.
- */
 export function TaskDetailsHost({
   board,
   onToggleFocus,
@@ -30,23 +18,13 @@ export function TaskDetailsHost({
   children: React.ReactNode
 }) {
   const [openTaskId, setOpenTaskId] = useState<string | null>(null)
-  // Last-seen task for the transient-loss fallback below. Declared up here
-  // (not beside its reader) so no function captures it before its
-  // declaration, which the compiler rejects.
   const [lastOpenTask, setLastOpenTask] = useState<Task | null>(null)
   const hoveredRef = useRef<string | null>(null)
   const setFocus = useSetTaskFocus()
   const spaceId = useBoardScope()
 
-  // Task id -> { task, project }, flattened once per board identity, so the
-  // keybinding lookup is O(1) per press instead of O(projects x tasks).
   const index = buildTaskIndex(board)
 
-  // Must not read `board` / `index`. The compiler caches this function
-  // forever (sentinel), then caches `boardUI` forever. Capturing `index`
-  // made `boardUI` a new object on every board patch, so every context
-  // consumer (every task row) re-rendered on F. The dialog still gets the
-  // task on the same click render via `foundOpenTask` below.
   const openTask = (id: string) => {
     setOpenTaskId(id)
   }
@@ -55,7 +33,6 @@ export function TaskDetailsHost({
   }
   const boardUI = { openTask, setHovered }
 
-  // Trello-style keybindings: hover a task, hit a key.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null
@@ -95,16 +72,6 @@ export function TaskDetailsHost({
     return () => window.removeEventListener('keydown', onKey)
   }, [index, onToggleFocus, setFocus, spaceId])
 
-  // Hold the last-seen task across renders: a transient board state (an
-  // optimistic update rolling back a beat before the server value arrives) can
-  // momentarily lose the task, and letting `openTask` flip null would unmount
-  // and remount the dialog — the backdrop blinks and in-progress edits are
-  // wiped. The dialog only truly closes via onClose.
-  //
-  // Kept in state (synced in an effect) rather than a ref written during
-  // render: ref access during render opts this whole host out of React
-  // Compiler memoization. Same-id snapshots are kept as-is so a board patch
-  // while the dialog is open doesn't cost an extra host render.
   const foundOpenTask = openTaskId
     ? (index.get(openTaskId)?.task ?? null)
     : null

@@ -239,9 +239,6 @@ function DraggableTask({
         HOVER_CARD_MS,
       )
   }
-  // The card must never outlive the pointer: scrolling can move the grid out
-  // from under the cursor without a mouseleave, so any scroll while the card
-  // is open closes it.
   useEffect(() => {
     if (!hoverOpen) return
     const close = () => {
@@ -562,17 +559,12 @@ function DayColumn({
   const offsetOf = (clientY: number, el: HTMLElement) =>
     clientY - el.getBoundingClientRect().top
 
-  // Touch skips the press-drag so the column keeps scrolling; taps fall
-  // through to the click handler below.
   const startDrag = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.pointerType === 'touch' || e.button !== 0) return
     if (e.target !== e.currentTarget) return
-    // Throws when the pointer went away between the event and this call.
     try {
       e.currentTarget.setPointerCapture(e.pointerId)
-    } catch {
-      // Keep the press-drag alive; moves still reach the column without it.
-    }
+    } catch {}
     dragged.current = false
     drag.current = {
       downPx: offsetOf(e.clientY, e.currentTarget),
@@ -788,8 +780,6 @@ function useSwipe(onSwipe: (direction: 1 | -1) => void) {
   }
 }
 
-/** A stable React key across the two entry kinds: a task id and a Google event
- *  id never collide by construction. */
 function entryKey(entry: TimedEntry): string {
   return entry.kind === 'task'
     ? `${entry.task.id}@${entry.occurrence}`
@@ -827,8 +817,6 @@ export function CalendarView({
 
   const days = visibleDays(anchor, span)
   const projects = activeProjects(board)
-  // The backward feed is personal only: a space calendar renders the shared
-  // board's tasks, and one member's Google calendar must not appear there.
   const spaceId = useBoardScope()
   const personal = spaceId === null
   const { events } = useBackwardSync(days, active && personal)
@@ -849,9 +837,6 @@ export function CalendarView({
     el.scrollTop = Math.max(0, new Date().getHours() - 2) * hourPx
   }, [active, hourPx])
 
-  // Keep the same time of day in view when the grid resolution changes. The
-  // scroll offset is captured before the new height lands, because the browser
-  // clamps a shrinking scroll area to its new maximum on layout.
   const pendingScrollHour = useRef<number | null>(null)
   const changeBlock = (minutes: number) => {
     if (minutes === blockMinutes) return

@@ -9,12 +9,6 @@ import schema from './schema'
 
 import type { TestConvex } from 'convex-test'
 
-/**
- * Backward integration regressions. Google and Clerk are stubbed at `fetch`,
- * so the assertions run the real decision logic against a live account's
- * *shape*, never a live account.
- */
-
 const modules = import.meta.glob([
   './**/*.ts',
   '!./**/*.test.ts',
@@ -50,9 +44,6 @@ async function seedSettings(t: T, timeZone = 'UTC') {
   })
 }
 
-/** Clerk answers with a valid token; Google's list reply is the test's handle
- *  onto the calendar contents. `tokenPages` leading listings carry a page
- *  token, so a two-page pull is expressible without mutating stub internals. */
 function stubCalendar(options: {
   items?: Array<unknown>
   status?: number
@@ -227,7 +218,6 @@ describe('pullExternalEvents', () => {
   it('caches the fetched window and prunes what it did not fetch', async () => {
     const t = convexTest(schema, modules)
     await seedSettings(t)
-    // A row from an earlier pull that the fresh reply will not contain.
     await t.run(async (ctx) => {
       await ctx.db.insert('calendarEvents', {
         userId: 'user_a',
@@ -301,7 +291,6 @@ describe('pullExternalEvents', () => {
 
   it('refuses to guess when the timezone is unknown yet', async () => {
     const t = convexTest(schema, modules)
-    // A settings row without a timezone, the state the first app open creates.
     await t.run(async (ctx) => {
       await ctx.db.insert('userSettings', {
         userId: 'user_a',
@@ -387,7 +376,6 @@ describe('importEvent', () => {
       done: false,
       spaceId: null,
     })
-    // An imported copy must never be pushed back for the same slot.
     expect(
       taskWantsEvent(task!, {
         syncEnabled: true,
@@ -523,7 +511,6 @@ describe('purgeStaleCache', () => {
     })
 
     await t.mutation(internal.calendarPull.purgeStaleCache, {})
-    // The purge self-continues over pages; drain the scheduler.
     await t.finishAllScheduledFunctions(vi.runAllTimers)
 
     const rows = await t.run(async (ctx) =>

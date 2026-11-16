@@ -58,8 +58,6 @@ export function BackupControls() {
     if (!pendingImport) return
     setBusy(true)
     try {
-      // Convex reactivity pushes the restored board to every open tab — no
-      // manual cache invalidation needed.
       await importBackup(pendingImport)
       setPendingImport(null)
     } catch (e) {

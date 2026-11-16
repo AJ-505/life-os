@@ -28,13 +28,6 @@ export function getRouter() {
   })
   convexQueryClient.connect(queryClient)
 
-  // The root route mounts ClerkProvider → ConvexProviderWithClerk (which wires
-  // Clerk's token into Convex). The `Wrap` ConvexProvider here makes the same
-  // Convex client available at the router level (loaders, pending/error
-  // components) before that component renders; both share the one client, so
-  // there's a single WebSocket and the auth set by ConvexProviderWithClerk
-  // applies everywhere. `convexQueryClient` is threaded through context so the
-  // root `beforeLoad` can set the Clerk token on the SSR HTTP client.
   const router = createTanStackRouter({
     routeTree,
     context: {

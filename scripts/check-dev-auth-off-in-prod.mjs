@@ -1,24 +1,4 @@
 #!/usr/bin/env node
-/**
- * Fails a production build when any DEV_AUTH_ variable is set on the production
- * Convex deployment.
- *
- * Dev sign-in mints tokens from a shared password, so its variables must exist
- * only on the dev deployment. Runs only when VERCEL_ENV is production. Previews
- * and local runs print a note and pass, because they do not deploy to prod.
- *
- * `--require` runs the check outside Vercel production too. `convex:deploy` uses
- * it, because that script always targets production.
- *
- * The env listing targets the deployment that CONVEX_DEPLOY_KEY selects. Without
- * that key the listing falls back to `--prod`. Only variable names are printed.
- *
- *   VERCEL_ENV=production node scripts/check-dev-auth-off-in-prod.mjs
- *   node scripts/check-dev-auth-off-in-prod.mjs --require
- *
- * Exit codes: 0 clean or skipped, 1 a DEV_AUTH_ variable is set on production,
- * 2 the production env could not be listed (fails closed).
- */
 import { execFileSync } from 'node:child_process'
 
 const PREFIX = 'DEV_AUTH_'

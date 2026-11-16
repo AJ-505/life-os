@@ -63,14 +63,10 @@ function collectEntries(board: BoardData): Map<Bucket, Array<Entry>> {
     }
   }
   entries.sort((a, b) => a.due.getTime() - b.due.getTime())
-  // One `now` for the whole pass: an entry must not land in a different
-  // bucket than its neighbour because midnight (or a slow render) crossed
-  // between the two comparisons.
   const now = new Date()
   const grouped = new Map<Bucket, Array<Entry>>()
   for (const e of entries) {
     const b = bucketOf(e.due, now)
-    // Push into the existing array; spreading per insert made this O(n²).
     const bucket = grouped.get(b)
     if (bucket) bucket.push(e)
     else grouped.set(b, [e])
@@ -142,9 +138,6 @@ export function TimelineView() {
   const { data: board } = useSuspenseQuery(boardQueryOptions(null))
   const grouped = collectEntries(board)
   const total = [...grouped.values()].reduce((n, l) => n + l.length, 0)
-  // One dialog host for the whole view. A row owning its dialog used to mount
-  // a radix portal + focus-trap per row — the number of hidden portals grew
-  // with the timeline, and an open row dialog blocked scrolling its section.
   const [openTask, setOpenTask] = useState<Task | null>(null)
   const openProject = openTask
     ? board.find((p) => p.tasks.some((t) => t.id === openTask.id))
