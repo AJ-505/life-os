@@ -16,18 +16,6 @@ import { DEV_AUTH_ENABLED } from '#/feature-flags'
 import { DevSignIn } from './DevSignIn'
 import { RETURN_PATH } from './return-path'
 
-/**
- * The whole app sits behind this. One button kicks off Clerk's Google OAuth
- * redirect; Clerk bounces back to /sso-callback (see routes/sso-callback.tsx),
- * which finishes the handshake and lands on the page the visitor was sent —
- * a shared space, not just the home board. Enabling Google itself is a Clerk
- * dashboard toggle (User & authentication → SSO connections → Google).
- *
- * A click has to survive one dead end: Clerk refuses to start a sign-in while
- * the client holds a session (`session_exists`), which resolves with no redirect
- * and no navigation, and is what made this button look dead. The client is stale
- * at that point, so a reload clears it.
- */
 export function LoginScreen() {
   const router = useRouter()
   const { signIn, fetchStatus } = useSignIn()
@@ -39,12 +27,6 @@ export function LoginScreen() {
     if (isLoading || busy) return
     setBusy(true)
 
-    /**
-     * Whoever is on this screen got here by following a link — a shared space,
-     * most of all — so the board they were sent is the board they land on once
-     * Google is done. It rides the callback URL so it survives the round trip;
-     * /sso-callback reads it from there.
-     */
     const here = router.state.location.href
     const callback =
       here === '/'
@@ -101,9 +83,6 @@ export function LoginScreen() {
                 ? 'Setting things up..'
                 : 'Continue with Google'}
           </Button>
-          {/* Clerk mounts its bot-protection (Smart CAPTCHA) widget here during
-              the custom sign-in flow. Without this element Clerk warns and falls
-              back to an invisible widget. */}
           <div id="clerk-captcha" />
           {DEV_AUTH_ENABLED ? <DevSignIn /> : null}
         </CardContent>

@@ -6,13 +6,6 @@ import { boardQueryOptions } from '#/tracker/queries'
 import type { QueryClient } from '@tanstack/react-query'
 import type { AnyRouter } from '@tanstack/react-router'
 
-/**
- * The warm runs off the idle queue after the first route is on screen, so its
- * observable contract is the chain of calls: which route matches, which data,
- * capped where it must be, and silent when the network is not there. That is
- * what these check — with doubles, no browser and no deployment behind them.
- */
-
 interface Preloaded {
   to: string
   params?: Record<string, string>
@@ -78,8 +71,6 @@ describe('warmRoutes', () => {
       '/space/$spaceId',
     ])
     expect(c.preloaded[3].params).toEqual({ spaceId: 'space_0' })
-    // The spaces list resolves through ensureQueryData so its ids can drive the
-    // rest of the chain.
     expect(c.ensured).toHaveLength(1)
   })
 
@@ -129,7 +120,6 @@ describe('warmRoutes', () => {
       spacesEnabled: true,
     })
 
-    // A rejection here would surface as an unhandled rejection and fail the run.
     await flush()
     expect(c.ensured).toHaveLength(1)
   })

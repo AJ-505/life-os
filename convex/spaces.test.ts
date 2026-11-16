@@ -6,11 +6,6 @@ import schema from './schema'
 
 import type { TestConvex } from 'convex-test'
 
-/**
- * Spaces regressions found by the 2026-10-03 audit. Each case is the proof the
- * fix holds; every one was red before the fix and green after.
- */
-
 const modules = import.meta.glob([
   './**/*.ts',
   '!./**/*.test.ts',
@@ -21,15 +16,11 @@ type T = TestConvex<typeof schema>
 
 const asUser = (t: T, subject: string) => t.withIdentity({ subject })
 
-/** The delete cascade hands its work to the scheduler, and draining that queue
- *  is what makes "it finished" an assertion rather than a hope. */
 beforeEach(() => vi.useFakeTimers())
 afterEach(() => vi.useRealTimers())
 
-/** Run every scheduled function, and anything they schedule, to completion. */
 const drainScheduler = (t: T) => t.finishAllScheduledFunctions(vi.runAllTimers)
 
-/** A two-member space: `user_a` owns it, `user_b` joined. */
 async function twoMemberSpace(t: T) {
   const space = await asUser(t, 'user_a').mutation(api.spaces.createSpace, {
     name: 'Team',
@@ -75,7 +66,6 @@ describe('spaces: lifecycle and authorization', () => {
     expect(mine?.role).toBe('owner')
     expect(mine?.inviteCode).not.toBe(oldCode)
 
-    // The link the leaver held is dead; the rotated one works.
     const joinOld = await asUser(t, 'user_c').mutation(
       api.spaces.joinSpaceByCode,
       { inviteCode: oldCode },
@@ -155,10 +145,6 @@ describe('spaces', () => {
     const t = convexTest(schema, modules)
     const space = await twoMemberSpace(t)
     await sharedProjectAndTask(t, space.id)
-    // One task, more activity rows than a page. The cascade deletes tasks and
-    // activity in separate phases; if it deleted the task first and read the
-    // history as a side effect, everything past the first page would outlive
-    // the task and the space with nothing left pointing at it.
     await t.run(async (ctx) => {
       for (let i = 0; i < 250; i++) {
         await ctx.db.insert('taskActivity', {
@@ -193,8 +179,6 @@ describe('spaces', () => {
     })
     await drainScheduler(t)
 
-    // Asserts completion rather than a resolved promise: a cascade that
-    // started, deleted the first page and stopped would still resolve.
     const left = await t.run(async (ctx) => ({
       tasks: await ctx.db.query('tasks').collect(),
       projects: await ctx.db.query('projects').collect(),
@@ -215,8 +199,6 @@ describe('spaces', () => {
   it('finishes a cascade that stopped part way, on a second click', async () => {
     const t = convexTest(schema, modules)
     const space = await twoMemberSpace(t)
-    // More tasks than one page, so the first click cannot finish and really
-    // does leave the rest to a continuation.
     await t.run(async (ctx) => {
       for (let i = 0; i < 150; i++) {
         await ctx.db.insert('tasks', {
@@ -239,16 +221,12 @@ describe('spaces', () => {
       }
     })
 
-    // Click once and let none of its continuation run: the state a pass that
-    // died mid-cascade leaves behind.
     await asUser(t, 'user_a').mutation(api.spaces.deleteSpace, {
       spaceId: space.id,
     })
     const midway = await asUser(t, 'user_a').query(api.spaces.getMySpaces, {})
-    // Membership survives, so the owner can still reach Delete.
     expect(midway.some((s) => s.id === space.id)).toBe(true)
 
-    // Clicking again is the whole recovery story, and it has to leave nothing.
     await asUser(t, 'user_a').mutation(api.spaces.deleteSpace, {
       spaceId: space.id,
     })
@@ -270,8 +248,6 @@ describe('spaces', () => {
   it('a continuation that fires after the space is gone is a no-op, not a crash', async () => {
     const t = convexTest(schema, modules)
     const space = await twoMemberSpace(t)
-    // The document id, which a scheduled continuation carries. Captured before
-    // the cascade runs, because the cascade is what removes it.
     const docId = await t.run(async (ctx) => {
       const doc = await ctx.db
         .query('spaces')
@@ -280,18 +256,11 @@ describe('spaces', () => {
       return doc!._id
     })
 
-    // Two clicks can overlap: the first queues a continuation, the second
-    // drains the rest and deletes the document. The queued pass then runs
-    // against a space that is already gone. A scheduled function that throws
-    // is swallowed by the scheduler and only logged, so this is asserted by
-    // running the continuation directly rather than by draining.
     await asUser(t, 'user_a').mutation(api.spaces.deleteSpace, {
       spaceId: space.id,
     })
     await drainScheduler(t)
 
-    // The call must not reject: a throw on the missing document is exactly the
-    // failure this test exists for. Awaiting it unguarded is the assertion.
     await t.mutation(internal.spaces.continueDeleteSpace, {
       spaceId: docId,
       phase: 'members',
@@ -334,10 +303,6 @@ describe('spaces', () => {
   })
 
   it('deleteSpace does not read the whole space in one transaction', async () => {
-    // Convex caps a transaction at ~32k docs / 16MB read by default. Lower it
-    // so the unbounded first read is visible at test scale. Every page is a
-    // read and so is every delete of one, so 300 tasks have to go in at least
-    // three passes — which is the whole point of the phase machine.
     const t = convexTest({
       schema,
       modules,

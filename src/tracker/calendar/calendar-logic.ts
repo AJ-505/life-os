@@ -14,11 +14,6 @@ export const EVENT_MINUTES = 60
 export const SNAP_MINUTES = 15
 const DAY_MINUTES = 24 * 60
 
-/**
- * Slot sizes the calendar can draw. A block always occupies the pixels the
- * hourly grid gives an hour, so a finer grid stretches the hour and the whole
- * day with it: a 15 minute grid is four times taller than the hourly one.
- */
 export const BLOCK_MINUTES = [10, 15, 20, 30, 60] as const
 export type BlockMinutes = (typeof BLOCK_MINUTES)[number]
 export const DEFAULT_BLOCK_MINUTES: BlockMinutes = 30
@@ -78,8 +73,6 @@ export function minuteOfDay(at: number): number {
   return date.getHours() * 60 + date.getMinutes()
 }
 
-/** The wall-clock label the grid uses, shared so the external cards read in
- *  the same voice as the task cards. */
 export function timeLabel(minute: number): string {
   return format(atMinute(0, minute), minute % 60 === 0 ? 'h a' : 'h:mm a')
 }
@@ -105,9 +98,6 @@ export function dropMinute(
   return Math.min(Math.max(snapped, step), DAY_MINUTES - step)
 }
 
-/** The block a click at `offsetPx` inside a day column lands on. Grid blocks
- *  above half an hour keep the half-hour placement the calendar always had, so
- *  choosing the hourly default loses no precision. */
 export function slotMinute(offsetPx: number, blockMinutes: number): number {
   const step = Math.min(blockMinutes, 30)
   const raw = (offsetPx / hourPxFor(blockMinutes)) * 60
@@ -121,9 +111,6 @@ export type CalendarTask = {
   occurrence: number
 }
 
-/** The block range a press-drag covers: every block the pointer entered, from
- *  the block under the press to the block under the pointer, in either
- *  direction. Dragging through three 15 minute blocks selects 45 minutes. */
 export function dragSpan(
   downPx: number,
   movePx: number,
@@ -141,10 +128,6 @@ export function dragSpan(
   }
 }
 
-/** The event rows pulled back from Google Calendar (the cache behind these
- *  lives in `convex/calendarEvents`). Read-only by design: an external event
- *  is Google's, so it cannot be dragged, resized or completed here — it can
- *  only be converted into a task, which is an explicit click. */
 export type ExternalEvent = {
   eventId: string
   title: string
@@ -156,8 +139,6 @@ export type ExternalEvent = {
   link: string | null
 }
 
-/** One timed grid entry: an owned task or a pulled-back external event. The
- *  two live in the same lane placement so one column reads as one timeline. */
 export type TimedEntry =
   | {
       kind: 'task'
@@ -186,13 +167,6 @@ export function taskMinutes(task: Task): number {
   return task.durationMinutes ?? EVENT_MINUTES
 }
 
-/** How much text a card of `minutes` can carry when the hour is `hourPx`
- *  wide. Density runs on rendered pixels, never minutes: a one block task
- *  fills 48px on every grid (15 minutes on the 15 minute grid, an hour on
- *  the hourly one), so every freshly clicked card reads at full size, while
- *  15 minutes on the hourly grid is a 12px sliver that only fits the
- *  smallest text. Below `COMPACT_CARD_PX` the time label does not fit under
- *  the title; below `TIGHT_CARD_PX` even the title drops to the small font. */
 export const COMPACT_CARD_PX = 38
 export const TIGHT_CARD_PX = 20
 
@@ -228,10 +202,6 @@ export function resizedMinutes(
   )
 }
 
-/** Every timed entry carries its own `minutes` before placement: a task takes
- *  `taskMinutes`, an external event takes the exposed window length. One
- *  placement pass over both keeps a task and an external event that share a
- *  slot side by side instead of drawn on top of each other. */
 export function placeInLanes<T extends { start: number; minutes: number }>(
   items: Array<T>,
 ): Array<T & { lane: number; lanes: number }> {
@@ -263,10 +233,6 @@ export function placeInLanes<T extends { start: number; minutes: number }>(
   return placed
 }
 
-/** What an external event contributes to one day column, or null when it does
- *  not touch that day. A block that runs past midnight is clipped at the day
- *  edge: the day it starts in keeps the tail, and the next day redraws from
- *  midnight, which is how the task grid treats an over-midnight task block. */
 export function externalPlacement(
   event: ExternalEvent,
   dayStart: number,
@@ -280,9 +246,6 @@ export function externalPlacement(
   return { allDay: false, start: minuteOfDay(segmentStart), minutes }
 }
 
-/** Every event id a board task was imported from. The overlay hides an event
- *  whose import the user already kept — and reveals it again if that task is
- *  deleted, which is the re-import path, not a bug. */
 export function importedEventIds(board: BoardData): Set<string> {
   const ids = new Set<string>()
   for (const project of board) {

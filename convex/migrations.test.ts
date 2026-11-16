@@ -4,16 +4,6 @@ import { describe, expect, it } from 'vitest'
 import { api, internal } from './_generated/api'
 import schema from './schema'
 
-/**
- * The `spaceId` backfill contract, from the 2026-10-03 audit.
- *
- * Personal reads use `eq('spaceId', null)` through `by_user_space`. Convex
- * omits a document from an index when the indexed field is absent, so a row
- * written before the field existed is invisible until `backfillSpaceId` runs.
- * This test pins that contract: it is the reason the migration is a deploy
- * step, not a nice-to-have.
- */
-
 const modules = import.meta.glob([
   './**/*.ts',
   '!./**/*.test.ts',
@@ -24,7 +14,6 @@ describe('spaceId backfill', () => {
   it('makes a pre-space personal row visible to getBoard', async () => {
     const t = convexTest(schema, modules)
 
-    // Rows exactly as the pre-space code wrote them: no `spaceId` key at all.
     await t.run(async (ctx) => {
       await ctx.db.insert('projects', {
         userId: 'user_a',

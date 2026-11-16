@@ -15,30 +15,8 @@ import type { BoardData, Task } from '../types'
 import type { ExternalEvent } from './calendar-logic'
 import type { FunctionReturnType } from 'convex/server'
 
-/**
- * The client half of backward calendar sync.
- *
- * While a personal calendar view is open this hook keeps a window of Google
- * events fresh: it subscribes to the cached slice, calls the pull action when
- * the window is not covered or has aged out, and lets the live Convex
- * subscription repaint the grid when the cache changes. Every failure is a
- * toast with a fix, never a silent blank grid — an absent overlay must not be
- * mistaken for an empty calendar.
- *
- * Import ("Add as task") runs as a mutation whose optimistic patch is built
- * here, not in `.withOptimisticUpdate`: the server derives the task from the
- * cached event row, so the args it validates cannot carry the display fields
- * the patch needs. The variables carry them instead, and rollback restores the
- * snapshot the patch started from.
- */
-
 const externalEventsQuery = (from: number, to: number) =>
   convexQuery(api.calendarPull.listExternalEvents, { from, to })
-
-/** The user's own calendar is the only feed the cache holds, so the overlay is
- *  a personal-scope feature, exactly like push sync. */
-
-/* --------------------------------------------------------------- freshness */
 
 const PULL_WINDOW_PAD_MS = 7 * 86_400_000
 const PULL_MAX_AGE_MS = 5 * 60_000
@@ -60,9 +38,6 @@ function readLastPull(): LastPull | null {
   }
 }
 
-/** When the back-pull last ran, for the sync control's status line. Read at
- *  render time from localStorage: the popover remounts when opened, which is
- *  fresh enough for "a minute ago". */
 export function lastPulledAt(): number | null {
   return readLastPull()?.at ?? null
 }
@@ -70,15 +45,9 @@ export function lastPulledAt(): number | null {
 function writeLastPull(entry: LastPull) {
   try {
     localStorage.setItem(LAST_PULL_KEY, JSON.stringify(entry))
-  } catch {
-    // A dead localStorage costs at most one extra pull per activation.
-  }
+  } catch {}
 }
 
-/** Keys come from the wire type, so a new server reason cannot ship without
- *  copy to show for it. Two failures are push-only (an event Life OS no longer
- *  owns can never be pulled), but keeping the map exhaustive is the price of
- *  the guarantee. */
 type PullFailure = Extract<
   FunctionReturnType<typeof api.calendarPull.pullExternalEvents>,
   { ok: false }
@@ -106,10 +75,6 @@ export function useBackwardSync(days: Array<Date>, active: boolean) {
   const [lastPullEntry, setLastPullEntry] = useState<LastPull | null>(
     readLastPull,
   )
-  // Bumped whenever an in-flight pull ends or a throttle timer elapses, so the
-  // gate re-evaluates against the window the view is showing *now*. Without
-  // it, a click that lands while a pull is mid-flight would never pull: the
-  // effect's other deps did not change, and no render was scheduled.
   const [gateTick, setGateTick] = useState(0)
   const running = useRef(false)
 
@@ -128,9 +93,6 @@ export function useBackwardSync(days: Array<Date>, active: boolean) {
     if (!first || !last) return
     const entry = lastPullEntry
     const age = entry ? Date.now() - entry.at : Number.POSITIVE_INFINITY
-    // Coverage is what matters: a window the last pull did not span has never
-    // been fetched, however recent that pull was. Covered windows refresh on
-    // the age gate, which also acts as the periodic refresh while open.
     const covered = entry ? entry.from <= from && entry.to >= to : false
     const gate = covered ? PULL_MAX_AGE_MS : PULL_NAV_GAP_MS
     if (age < gate) {
@@ -145,8 +107,6 @@ export function useBackwardSync(days: Array<Date>, active: boolean) {
     }
     if (running.current) return
     const stamp: LastPull = { at: Date.now(), from, to }
-    // Stamped before the run so a slow pull cannot queue itself behind every
-    // render; a failure only delays the next attempt to the next gate.
     writeLastPull(stamp)
     setLastPullEntry(stamp)
     running.current = true
@@ -196,13 +156,6 @@ function endOfDayMs(day: Date): number {
   return copy.getTime()
 }
 
-/* ------------------------------------------------------------------- import */
-
-/**
- * The task fields an import will land with, computed once on the client: the
- * optimistic patch and the awaited result must render the same thing, because
- * the server will build exactly this from the cached event row.
- */
 export function importedTask(
   event: ExternalEvent,
   vars: { taskId: string; projectId: string; position: number },
@@ -235,7 +188,6 @@ export function importedTask(
   }
 }
 
-/** Mirror of the server clamp: 5 to 24 hours, whole minutes. */
 const clampTaskDuration = (minutes: number) =>
   Number.isFinite(minutes)
     ? Math.max(5, Math.min(24 * 60, Math.round(minutes)))
@@ -248,16 +200,6 @@ type ImportVars = {
   position: number
 }
 
-/**
- * Copy an external event onto the personal board as a task.
- *
- * Convex cannot validate the display fields the optimistic patch needs — the
- * server derives them from the cached event row, so they are not mutation
- * args — which is why this is a plain background mutation with a hand-rolled
- * TanStack snapshot instead of `.withOptimisticUpdate`. On error the snapshot
- * is restored; on success the live Convex subscription reconciles the patch
- * against server truth on its own.
- */
 export function useImportExternalEvent() {
   const spaceId = useBoardScope()
   const importEvent = useConvexMutation(api.calendarPull.importEvent)

@@ -25,7 +25,6 @@ function JoinComponent() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   useEffect(() => {
-    // Gated: never fire the join mutation while Spaces is off.
     if (!SPACES_ENABLED) return
     if (!inviteCode || phase !== 'idle') return
     setPhase('loading')
@@ -33,8 +32,6 @@ function JoinComponent() {
       { inviteCode },
       {
         onSuccess: (raw: unknown) => {
-          // The mutation answers with a closed union rather than throwing for
-          // the cases a user can act on, so this is a shape check, not a guess.
           const parsed = joinResultSchema.safeParse(raw)
           if (!parsed.success) {
             setErrorMsg('That invite link is not valid.')
@@ -65,8 +62,6 @@ function JoinComponent() {
         },
       },
     )
-    // phase and join listed so no suppression comment opts this effect out
-    // of the compiler. Re-runs are guarded by phase above and no-op.
   }, [inviteCode, phase, join])
 
   if (!SPACES_ENABLED) {

@@ -147,10 +147,6 @@ function CalendarSyncControl() {
   )
 }
 
-/** The line that says the mirror has a read side: your calendar's own events
- *  appear in Calendar view, read-only, clickable to import. The status shows
- *  when that read last ran so "my meetings aren't showing" has an answer
- *  without leaving the popover. */
 function BackwardSyncNote() {
   const pulled = lastPulledAt()
   return (

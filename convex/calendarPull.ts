@@ -27,55 +27,13 @@ import {
 import type { SyncFailure } from './calendar'
 import type { MutationCtx } from './_generated/server'
 
-/**
- * Backward integration: Google Calendar → Life OS.
- *
- * The push side (`calendar.ts`) turns Life OS tasks into Google events. This
- * module is the mirror image: it reads the events that live in the user's real
- * calendar and makes them visible — and, on one explicit click, actionable —
- * inside Life OS.
- *
- * Two boundaries shape everything here:
- *
- * - **Cache, not truth.** Google owns the event; we keep a shadow that is
- *   resumable. A pull re-fetches a window of the calendar, stamps every row it
- *   fetched, and prunes rows it did not touch. Deleting the cache loses
- *   nothing: the next pull rebuilds it.
- * - **Import is a copy, not a link.** "Add as task" creates a task that carries
- *   `importedFromEventId` for idempotence — a second import of the same event
- *   id cannot double it — but the task then lives its own life. Editing either
- *   side after import does not propagate. That is deliberate (see the client
- *   hook for the tradeoff) and is why `taskWantsEvent` refuses to push an
- *   imported task: Life OS no longer owns the slot it came from.
- *
- * Recurring series arrive with `singleEvents=true`, so every occurrence is its
- * own row and its own importable event. The strictly-once semantics this
- * enables (import one instance, not a rule) beat carrying recurrence rules we
- * would then have to expand forever.
- */
-
 const GCAL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events'
 
-/** Pull windows are what one calendar view asks for, padded. Anything larger
- *  is a bug on the caller side, and an unbounded window is an unbounded
- *  response, so the request is clamped rather than trusted. */
 const MAX_WINDOW_MS = 120 * 24 * 60 * 60 * 1000
 
-/** Google returns up to 2500 events per list; the page cap bounds a pathological
- *  calendar (someone syncing a decade of recurring meetings) instead of making
- *  the action run unbounded.   Beyond the cap the cache holds *a* window of the
- *  calendar, silently truncated, which is honest for a cache. */
 const MAX_PAGES = 20
 
 const PAGE_SIZE = 250
-
-/** Client-side opt-out is not enough for a shared space: the cache is
- *  private (one user's calendar), so import must refuse to write into a
- *  shared project where members who cannot see the calendar would read it.
- *  That refusal is written inside `importEvent`, not as an exception class
- *  here. */
-
-/* ------------------------------------------------------------------ shapes */
 
 const googleEvent = z.object({
   id: z.string(),
@@ -91,8 +49,6 @@ const googleEvent = z.object({
   end: z
     .object({ date: z.string().optional(), dateTime: z.string().optional() })
     .optional(),
-  /** Only read to recognise our own pushed events. Anything unknown is left
-   *  alone — the wire may carry more than we model. */
   extendedProperties: z
     .object({ private: z.record(z.string(), z.string()).optional() })
     .optional(),
@@ -125,16 +81,8 @@ export type ExternalEventRow = {
   link: string | null
 }
 
-export type PullResult =
-  | { ok: true; events: number }
-  /** The full push failure set, so the pull can share the outcome helpers
-   *  verbatim; only the reachable cases have client copy. */
-  | SyncFailure
+export type PullResult = { ok: true; events: number } | SyncFailure
 
-/* ------------------------------------------------------------------ clock */
-
-/** The wall clock in `timeZone`, as an epoch-ms reading that pretends the zone
- *  is UTC. Used to invert `zonedDayStart`. */
 function wallClockAsUTC(epochMs: number, timeZone: string): number {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone,
@@ -158,15 +106,6 @@ function wallClockAsUTC(epochMs: number, timeZone: string): number {
   )
 }
 
-/**
- * The instant that is local midnight in `timeZone` for a `YYYY-MM-DD` date.
- *
- * Google hands all-day events a bare date with no offset, so the zone has to
- * come from somewhere: the same user timezone setting the push side already
- * keeps. Two passes usually converge; a DST boundary can push the second pass
- * off by an hour without changing any wall clock we display, because the row
- * is rendered on the day its date names.
- */
 export function zonedDayStart(ymd: string, timeZone: string): number | null {
   const match = /^([+-]?\d{4})-(\d{2})-(\d{2})$/.exec(ymd)
   if (!match) return null
@@ -180,8 +119,6 @@ export function zonedDayStart(ymd: string, timeZone: string): number | null {
   return instant
 }
 
-/** Whole days from one `YYYY-MM-DD` to the next, for multi-day all-day
- *  events whose `end.date` is exclusive. */
 function daysBetween(fromYmd: string, untilYmd: string): number {
   const from = Date.parse(`${fromYmd}T00:00:00Z`)
   const until = Date.parse(`${untilYmd}T00:00:00Z`)
@@ -189,13 +126,6 @@ function daysBetween(fromYmd: string, untilYmd: string): number {
   return Math.max(1, Math.round((until - from) / 86_400_000))
 }
 
-/**
- * Network shape → cache row. Parsed, never asserted, and filtered in one
- * place: cancelled events, our own pushed events (they carry a
- * `lifeosTaskId` extended property, which is exactly how the push side marks
- * them), and shapes that do not decode are dropped here rather than leaking
- * into the UI or worse, into an import.
- */
 export function externalRows(
   events: Array<unknown>,
   timeZone: string,
@@ -258,8 +188,6 @@ function eventsUrl(fromMs: number, toMs: number, pageToken?: string): string {
   })
   return `${GCAL}?${params.toString()}`
 }
-
-/* ------------------------------------------------------------------ pull */
 
 const CACHE_PAGE = 400
 
@@ -324,9 +252,6 @@ export const pullExternalEvents = action({
       pageToken = listing.nextPageToken
     }
 
-    // The stamp is taken *before* the first write, so a row written by this
-    // pull can never be mistaken for one that a prune should drop, even when
-    // the clock ticks between pages.
     const fetchedAt = Date.now()
     const rows = externalRows(raws, timeZone)
     for (let index = 0; index < rows.length; index += CACHE_PAGE) {
@@ -352,11 +277,6 @@ export const userTimeZone = internalQuery({
   },
 })
 
-/**
- * Upsert one page of fetched rows. Patch-in-place on the Google event id keeps
- * a re-fetched calendar stable: an edited event updates its row, an untouched
- * one keeps its `_creationTime`, and nothing accumulates across pulls.
- */
 export const applyRows = internalMutation({
   args: {
     userId: v.string(),
@@ -387,10 +307,6 @@ export const applyRows = internalMutation({
   },
 })
 
-/**
- * Drop every cached row this pull did not stamp. The index range makes the
- * walk cheap and self-continuing when one transaction cannot carry it.
- */
 export const pruneBefore = internalMutation({
   args: { userId: v.string(), cutoff: v.number() },
   handler: async (ctx, args) => {
@@ -407,13 +323,6 @@ export const pruneBefore = internalMutation({
   },
 })
 
-/**
- * Clean up accounts that stopped opening Life OS. The pull-side prune only
- * ever runs for a user who pulls; this cron is what bounds the table for
- * everyone else. A full-table walk paginated by `_creationTime`: the table is
- * bounded by the per-pull prune to roughly one window per active user, so a
- * daily pass is cheap.
- */
 export const purgeStaleCache = internalMutation({
   args: {},
   handler: async (ctx) => {
@@ -453,14 +362,6 @@ async function continuePurgeStaleCache(
   }
 }
 
-/* ------------------------------------------------------------------ read */
-
-/**
- * The cache slice one calendar view needs. The range query is the whole
- * window; an event that overlaps it must satisfy `start < to`, so the index
- * cut at `start < to` plus an in-memory `end > from` filter is exact, and the
- * table is bounded by the prune to roughly one pull's worth of events.
- */
 export const listExternalEvents = query({
   args: { from: v.number(), to: v.number() },
   handler: async (ctx, args) => {
@@ -487,18 +388,6 @@ export const listExternalEvents = query({
   },
 })
 
-/* ------------------------------------------------------------------ import */
-
-/**
- * Copy one cached event onto the personal board as a task.
- *
- * Deterministic on the pair (eventId, taskId): the import client generates the
- * task id optimistically, and a retried click lands on the same id, so a
- * repeat is a no-op rather than a duplicate. The Google event id is the *event*
- * key, not the task key, so two different tasks may, rarely, point at the same
- * event after a delete-plus-reimport — that is the copy semantics doing its
- * job and not something to deduplicate.
- */
 export const importEvent = mutation({
   args: {
     eventId: v.string(),

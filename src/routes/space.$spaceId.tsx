@@ -8,30 +8,12 @@ import { BoardScopeProvider } from '#/tracker/board-scope'
 import { boardQueryOptions } from '#/tracker/queries'
 import { boardSearch } from '#/tracker/board/board-search'
 
-/**
- * A shared board. The scope comes from the URL, which is the point: a space
- * board is a thing you send to someone, so it needs a real path rather than a
- * query string on the personal board.
- */
 export const Route = createFileRoute('/space/$spaceId')({
   component: SpaceBoard,
   validateSearch: boardSearch,
-  // Two triggers for one panel, because the two cases fail differently. A cold
-  // load with no membership throws out of the board's suspense query and lands
-  // here. A membership revoked while the board is open fails a background
-  // refetch, which a suspense query does not rethrow, so `SpaceBoard` watches
-  // for it above.
   errorComponent: SpaceUnavailable,
 })
 
-/**
- * Access can be taken away while you are looking at the board. The board query
- * is reactive, so the revoked member's client keeps the last successful result
- * and the rejected refetch is only stored: `useSuspenseQuery` does not rethrow
- * once it has data. Watching the same query here and rendering this panel is
- * what turns "the board is still on screen but nothing saves" into an
- * explanation. The same key means one subscription, not two.
- */
 function SpaceUnavailable() {
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center p-6">
@@ -55,9 +37,6 @@ function SpaceUnavailable() {
 function SpaceBoard() {
   const { spaceId } = Route.useParams()
   const { view } = Route.useSearch()
-  // `useSuspenseQuery` forces its own `throwOnError`, and a reactive query keeps
-  // its last data on a failed refetch, so a rejected board subscription never
-  // reaches a route error boundary. This plain query exposes the error state.
   const { isError } = useQuery({ ...boardQueryOptions(spaceId), retry: false })
 
   if (isError) return <SpaceUnavailable />

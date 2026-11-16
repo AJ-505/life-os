@@ -1,6 +1,3 @@
-/** Wire format for the JSON backup file. Dates travel as ISO strings (matching
- *  the original on-device backups, so old files still import). The Convex
- *  `exportBackup`/`importBackup` functions produce and consume this shape. */
 import type { RepeatRule } from '../../convex/recurrence'
 
 export interface BackupProject {
@@ -31,9 +28,6 @@ export interface BackupTask {
   inFocus: boolean | null
   focusOrder: number | null
   createdAt: string | null
-  /** Optional so a file written before the calendar work still validates. A
-   *  restore keeps the event id of a task the snapshot carries, and deletes the
-   *  live event of a task the snapshot drops. */
   reminderMinutes?: number | null
   durationMinutes?: number | null
   addToCalendar?: boolean | null
@@ -41,8 +35,6 @@ export interface BackupTask {
   repeat?: RepeatRule | null
 }
 
-/** Backup covers the personal board only: a space's projects are shared, so a
- *  snapshot of them would be a second copy of someone else's data. */
 export interface BackupFile {
   app: 'lifeos'
   version: 1

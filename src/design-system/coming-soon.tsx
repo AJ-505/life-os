@@ -2,15 +2,6 @@ import { Clock } from 'lucide-react'
 
 import { cn } from './utils'
 
-/**
- * The dashed placeholder that stands where gated UI will live, so hidden work
- * never looks broken or half built.
- *
- * `status` overrides the "Coming soon" label. A feature that exists but is not
- * available in this context says so with a status instead, because telling
- * someone to wait for something that already shipped is a lie the UI tells
- * twice.
- */
 export function ComingSoon({
   status = 'Coming soon',
   title,

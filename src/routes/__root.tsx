@@ -33,21 +33,11 @@ interface MyRouterContext {
   convexQueryClient: ConvexQueryClient
 }
 
-/** Reads the caller's Clerk session token on the server. Returns null when
- *  signed out. `getToken()` (no template) yields a token with `aud: "convex"`
- *  thanks to Clerk's native Convex integration. */
 const fetchClerkToken = createServerFn({ method: 'GET' }).handler(async () => {
   const { getToken } = await auth()
   return getToken()
 })
 
-/** The only two fields the head builder needs from a match. Naming them keeps
- *  `head` out of the route's generic inference — inferring `matches` inline
- *  collapses `beforeLoad`'s expected return type to `never`.
- *
- *  `pathname`, not `fullPath`: `fullPath` is the route *pattern*
- *  (`/join/$inviteCode`), which would put a literal `$inviteCode` into every
- *  shared link's `og:url` and canonical. */
 type HeadMatch = { routeId: string; pathname: string }
 
 function buildHead(matches: HeadMatch[]) {
@@ -61,8 +51,6 @@ function buildHead(matches: HeadMatch[]) {
         name: 'viewport',
         content: 'width=device-width, initial-scale=1, viewport-fit=cover',
       },
-      // Read by crawlers, not by the app: this is what decides how a shared
-      // link looks in WhatsApp, Slack and iMessage. No user data reaches it.
       ...metaFor(page, pathname),
     ],
     links: [{ rel: 'stylesheet', href: appCss }, ...linksFor(pathname)],
@@ -71,13 +59,8 @@ function buildHead(matches: HeadMatch[]) {
 }
 
 export const Route = createRootRouteWithContext<MyRouterContext>()({
-  // One builder for the whole document head, driven by the deepest match. The
-  // alternative — letting each route add its own og tags — risks two
-  // `og:title` elements on one page, and a crawler picks either.
   head: ({ matches }: { matches: HeadMatch[] }) => buildHead(matches),
   beforeLoad: async (ctx) => {
-    // serverHttpClient only exists during SSR — give it the Clerk token so
-    // loader-driven Convex queries run authenticated on the first render.
     const server = ctx.context.convexQueryClient.serverHttpClient
     if (!server) return
     const token = await fetchClerkToken()
@@ -89,14 +72,8 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 
 const PUBLIC_PATHS = new Set(['/sso-callback', '/privacy', '/terms'])
 
-/** The entire app lives behind a signed-in identity. ClerkProvider →
- *  ConvexProviderWithClerk keep a Convex-validated Clerk token flowing; AuthGate
- *  then renders the board only when authenticated — no per-route guards. */
 function RootComponent() {
   const { convexClient } = Route.useRouteContext()
-  // The OAuth callback must render OUTSIDE AuthGate: during the handshake the
-  // user isn't authenticated yet, so the gate would show the login screen and
-  // the callback component would never mount (sign-in would deadlock).
   const isPublic = useRouterState({
     select: (s) => PUBLIC_PATHS.has(s.location.pathname),
   })

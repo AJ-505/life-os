@@ -228,7 +228,6 @@ export function LibraryView() {
     .filter((p) => p.status === 'done')
     .sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0))
 
-  // One pass over every task instead of two flatMap+filter sweeps.
   const completedTasks: Array<{ task: Task; project: ProjectWithTasks }> = []
   const archivedTasks: Array<{ task: Task; project: ProjectWithTasks }> = []
   for (const project of board) {
@@ -242,9 +241,6 @@ export function LibraryView() {
   }
   completedTasks.sort((a, b) => (b.task.doneAt ?? 0) - (a.task.doneAt ?? 0))
 
-  // Group completed tasks by month for a little "trophy room" feel. Push into
-  // the existing array instead of spreading on every insert — the spread made
-  // grouping O(n²) in task count.
   const byMonth = new Map<string, typeof completedTasks>()
   for (const item of completedTasks) {
     const key = item.task.doneAt
