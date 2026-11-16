@@ -23,6 +23,11 @@ on:
         required: false
         default: 30
         type: number
+      artifact:
+        description: "File or glob on the runner to upload as the run artifact"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -206,3 +211,12 @@ jobs:
             echo "command failed with exit code $CODE"
             exit "$CODE"
           fi
+
+      - name: Upload artifact
+        if: ${{ !cancelled() && inputs.artifact != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-artifact
+          path: ${{ inputs.artifact }}
+          if-no-files-found: error
+          retention-days: 7
