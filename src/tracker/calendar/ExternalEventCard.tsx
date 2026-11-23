@@ -13,7 +13,8 @@ import {
   PopoverTrigger,
 } from '#/design-system/ui/popover'
 
-import { minuteOfDay, pickProject, timeLabel } from './calendar-logic'
+import { minuteOfDay, timeLabel } from './calendar-logic'
+import { useHomeProject } from './last-project'
 import { ProjectPicker } from './ProjectPicker'
 import { canvasProjects } from '../board/board-logic'
 import { positionAfter } from '../types'
@@ -50,9 +51,8 @@ function ImportPopover({
   onDone: () => void
 }) {
   const importEvent = useImportExternalEvent()
-  const [chosen, setChosen] = useState<string | null>(null)
   const homes = canvasProjects(projects)
-  const home = pickProject(chosen, homes)
+  const { home, choose } = useHomeProject(homes)
   const siblings = projects.find((p) => p.id === home)?.tasks ?? []
 
   useEffect(() => {
@@ -92,7 +92,7 @@ function ImportPopover({
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <ProjectPicker projects={homes} chosen={chosen} onChange={setChosen} />
+        <ProjectPicker projects={homes} value={home} onChange={choose} />
         <Button type="submit" size="sm" disabled={importEvent.isPending}>
           <Plus className="size-3.5" />
           Add as task

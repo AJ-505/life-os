@@ -147,6 +147,15 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index('by_user', ['userId']),
 
+  lastProjects: defineTable({
+    userId: v.string(),
+    spaceId: v.union(v.string(), v.null()),
+    projectId: v.string(),
+    updatedAt: v.number(),
+  })
+    .index('by_user_space', ['userId', 'spaceId'])
+    .index('by_space', ['spaceId']),
+
   calendarEvents: defineTable({
     userId: v.string(),
     eventId: v.string(),

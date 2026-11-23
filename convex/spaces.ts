@@ -429,7 +429,13 @@ export const deleteSpace = mutation({
   },
 })
 
-const DELETE_PHASES = ['projects', 'activity', 'tasks', 'members'] as const
+const DELETE_PHASES = [
+  'projects',
+  'activity',
+  'tasks',
+  'choices',
+  'members',
+] as const
 type DeletePhase = (typeof DELETE_PHASES)[number]
 
 const DELETE_BATCH = 100
@@ -473,6 +479,7 @@ async function deleteTablePage(
 const TABLE_FOR_PHASE = {
   projects: 'projects',
   tasks: 'tasks',
+  choices: 'lastProjects',
   members: 'spaceMembers',
 } as const satisfies Record<Exclude<DeletePhase, 'activity'>, string>
 
@@ -501,6 +508,7 @@ export const continueDeleteSpace = internalMutation({
       v.literal('projects'),
       v.literal('activity'),
       v.literal('tasks'),
+      v.literal('choices'),
       v.literal('members'),
     ),
   },
