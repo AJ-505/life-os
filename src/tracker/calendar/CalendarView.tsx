@@ -26,6 +26,7 @@ import { newId, positionAfter } from '../types'
 import { CalendarSyncButton } from './CalendarSyncButton'
 import { ExternalEventCard } from './ExternalEventCard'
 import { ProjectPicker } from './ProjectPicker'
+import { LastProjectProvider, useHomeProject } from './last-project'
 import { useBackwardSync } from './pull'
 import { useAddTask, useUpdateTask } from '../queries'
 import { useBoardScope } from '../board-scope'
@@ -47,7 +48,6 @@ import {
   isAllDay,
   labelStep,
   minuteOfDay,
-  pickProject,
   resizedMinutes,
   slotMinute,
   taskMinutes,
@@ -686,21 +686,17 @@ function QuickCreate({
   board,
   draft,
   blockMinutes,
-  projectId,
-  onProjectChange,
   onDone,
 }: {
   board: BoardData
   draft: Draft
   blockMinutes: BlockMinutes
-  projectId: string | null
-  onProjectChange: (id: string) => void
   onDone: () => void
 }) {
   const addTask = useAddTask()
   const [title, setTitle] = useState('')
   const projects = canvasProjects(board)
-  const home = pickProject(projectId, projects)
+  const { home, choose } = useHomeProject(projects)
   const siblings = board.find((p) => p.id === home)?.tasks ?? []
   const dueAt = atMinute(draft.dayStart, draft.minute ?? 0)
   const minutes = draft.minute === null ? null : (draft.minutes ?? blockMinutes)
@@ -742,11 +738,7 @@ function QuickCreate({
         aria-label="Task title"
       />
       <div className="flex items-center gap-2">
-        <ProjectPicker
-          projects={projects}
-          chosen={projectId}
-          onChange={onProjectChange}
-        />
+        <ProjectPicker projects={projects} value={home} onChange={choose} />
         <Button type="submit" size="sm" disabled={!title.trim()}>
           Add
         </Button>
@@ -786,24 +778,33 @@ function entryKey(entry: TimedEntry): string {
     : entry.event.eventId
 }
 
-export function CalendarView({
-  board,
-  showDone,
-  blockMinutes,
-  onBlockMinutesChange,
-  active,
-}: {
+type CalendarViewProps = {
   board: BoardData
   showDone: boolean
   blockMinutes: BlockMinutes
   onBlockMinutesChange: (minutes: number) => void
   active: boolean
-}) {
+}
+
+export function CalendarView(props: CalendarViewProps) {
+  return (
+    <LastProjectProvider>
+      <CalendarBody {...props} />
+    </LastProjectProvider>
+  )
+}
+
+function CalendarBody({
+  board,
+  showDone,
+  blockMinutes,
+  onBlockMinutesChange,
+  active,
+}: CalendarViewProps) {
   const wide = useMediaQuery('(min-width: 768px)')
   const span = wide ? 7 : 3
   const [anchor, setAnchor] = useState(() => new Date())
   const [draft, setDraft] = useState<Draft | null>(null)
-  const [projectId, setProjectId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const scrolledRef = useRef(false)
   const now = useNow()
@@ -1004,8 +1005,6 @@ export function CalendarView({
               board={board}
               draft={draft}
               blockMinutes={blockMinutes}
-              projectId={projectId}
-              onProjectChange={setProjectId}
               onDone={() => setDraft(null)}
             />
           ) : null}

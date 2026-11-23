@@ -2,10 +2,18 @@ import { v } from 'convex/values'
 
 import { internalMutation, mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
-import { getUserSettings, requireUserId } from './lib'
+import {
+  NO_PROJECT_ID,
+  getLastProjectRow,
+  getUserSettings,
+  getWritableProject,
+  requireMember,
+  requireUserId,
+} from './lib'
 import { eventsToDelete, taskWantsEvent } from './calendar'
 
 import type { MutationCtx } from './_generated/server'
+import type { Scope } from './lib'
 import type { Doc } from './_generated/dataModel'
 
 const DEFAULT_REMINDER_MINUTES = 15
@@ -208,5 +216,50 @@ export const updateCalendarSettings = mutation({
     } else if (syncing && wasSyncing && wasAuto && !auto) {
       await scheduleAutoSyncOff(ctx, userId)
     }
+  },
+})
+
+const scopeArg = v.union(v.string(), v.null())
+
+export const getLastProject = query({
+  args: { spaceId: scopeArg },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx)
+    const row = await getLastProjectRow(ctx, userId, args.spaceId)
+    return row?.projectId ?? null
+  },
+})
+
+async function requireProjectOnBoard(
+  ctx: MutationCtx,
+  userId: string,
+  spaceId: Scope,
+  projectId: string,
+) {
+  if (spaceId !== null) await requireMember(ctx, userId, spaceId)
+  if (projectId === NO_PROJECT_ID) return
+  const project = await getWritableProject(ctx, userId, projectId)
+  if ((project.spaceId ?? null) !== spaceId)
+    throw new Error('That project is on another board')
+}
+
+export const setLastProject = mutation({
+  args: { spaceId: scopeArg, projectId: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx)
+    await requireProjectOnBoard(ctx, userId, args.spaceId, args.projectId)
+    const row = await getLastProjectRow(ctx, userId, args.spaceId)
+    if (row?.projectId === args.projectId) return
+    const updatedAt = Date.now()
+    if (row) {
+      await ctx.db.patch(row._id, { projectId: args.projectId, updatedAt })
+      return
+    }
+    await ctx.db.insert('lastProjects', {
+      userId,
+      spaceId: args.spaceId,
+      projectId: args.projectId,
+      updatedAt,
+    })
   },
 })

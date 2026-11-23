@@ -58,6 +58,8 @@ const LIVE_CLIENT_SENDS = {
     syncEnabled: false,
     defaultReminderMinutes: 15,
   },
+  'settings:getLastProject': { spaceId: null },
+  'settings:setLastProject': { spaceId: null, projectId: '~none' },
   'calendar:syncTask': { taskId: 'contract-probe' },
   'calendar:retryAccessIssues': {},
   'backup:exportBackup': null,

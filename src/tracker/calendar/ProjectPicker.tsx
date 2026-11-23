@@ -7,7 +7,6 @@ import {
 } from '#/design-system/ui/select'
 
 import { NO_PROJECT_ID } from '../types'
-import { pickProject } from './calendar-logic'
 
 import type { ProjectWithTasks } from '../types'
 
@@ -21,14 +20,13 @@ function Swatch({ color }: { color: string | undefined }) {
 
 export function ProjectPicker({
   projects,
-  chosen,
+  value,
   onChange,
 }: {
   projects: Array<ProjectWithTasks>
-  chosen: string | null
+  value: string
   onChange: (id: string) => void
 }) {
-  const value = pickProject(chosen, projects)
   const project = projects.find((p) => p.id === value)
 
   return (
