@@ -2,7 +2,7 @@ import { convexTest } from 'convex-test'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api } from './_generated/api'
-import { clampDuration } from './lib'
+import { clampDuration } from './taskModel'
 import schema from './schema'
 
 const modules = import.meta.glob([

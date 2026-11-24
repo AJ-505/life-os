@@ -4,15 +4,15 @@ import { internal } from './_generated/api'
 
 const crons = cronJobs()
 
-crons.daily(
+crons.cron(
   'purge stale calendar tasks',
-  { hourUTC: 3, minuteUTC: 0 },
+  '0 3 * * *',
   internal.tracker.purgeStaleCalendarTasks,
 )
 
-crons.daily(
+crons.cron(
   'purge stale calendar event cache',
-  { hourUTC: 3, minuteUTC: 10 },
+  '10 3 * * *',
   internal.calendarPull.purgeStaleCache,
 )
 

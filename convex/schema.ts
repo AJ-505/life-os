@@ -1,17 +1,16 @@
 import { defineSchema, defineTable } from 'convex/server'
 import { v } from 'convex/values'
 
+import { repeatRule } from './recurrence'
+import { activityKind, projectStatus, syncIssue } from './taskModel'
+
 export default defineSchema({
   projects: defineTable({
     userId: v.string(),
     id: v.string(),
     name: v.string(),
     color: v.string(),
-    status: v.union(
-      v.literal('active'),
-      v.literal('shelved'),
-      v.literal('done'),
-    ),
+    status: projectStatus,
     collapsed: v.boolean(),
     showDone: v.optional(v.boolean()),
     gridCol: v.number(),
@@ -42,31 +41,10 @@ export default defineSchema({
     dueAt: v.union(v.number(), v.null()),
     reminderMinutes: v.optional(v.union(v.number(), v.null())),
     durationMinutes: v.optional(v.union(v.number(), v.null())),
-    repeat: v.optional(
-      v.union(
-        v.literal('daily'),
-        v.literal('weekdays'),
-        v.literal('weekly'),
-        v.literal('monthly'),
-        v.literal('yearly'),
-        v.null(),
-      ),
-    ),
+    repeat: v.optional(v.union(repeatRule, v.null())),
     addToCalendar: v.optional(v.boolean()),
     calendarEventId: v.optional(v.union(v.string(), v.null())),
-    calendarSyncIssue: v.optional(
-      v.union(
-        v.literal('not_configured'),
-        v.literal('not_connected'),
-        v.literal('reauth_required'),
-        v.literal('missing_scope'),
-        v.literal('no_timezone'),
-        v.literal('not_personal'),
-        v.literal('event_removed'),
-        v.literal('rate_limited'),
-        v.literal('google_error'),
-      ),
-    ),
+    calendarSyncIssue: v.optional(syncIssue),
     importedFromEventId: v.optional(v.union(v.string(), v.null())),
     inFocus: v.boolean(),
     focusOrder: v.number(),
@@ -98,17 +76,7 @@ export default defineSchema({
     taskId: v.string(),
     projectId: v.union(v.string(), v.null()),
     actorId: v.string(),
-    kind: v.union(
-      v.literal('created'),
-      v.literal('assigned'),
-      v.literal('unassigned'),
-      v.literal('completed'),
-      v.literal('reopened'),
-      v.literal('archived'),
-      v.literal('unarchived'),
-      v.literal('moved'),
-      v.literal('updated'),
-    ),
+    kind: activityKind,
     fromUserId: v.optional(v.union(v.string(), v.null())),
     toUserId: v.optional(v.union(v.string(), v.null())),
     detail: v.optional(v.string()),
@@ -137,7 +105,7 @@ export default defineSchema({
 
   userSettings: defineTable({
     userId: v.string(),
-    calendarEnabled: v.boolean(),
+    calendarEnabled: v.optional(v.boolean()),
     calendarSyncEnabled: v.boolean(),
     defaultReminderMinutes: v.number(),
     autoAddToCalendar: v.optional(v.boolean()),
@@ -170,7 +138,8 @@ export default defineSchema({
   })
     .index('by_user_eventId', ['userId', 'eventId'])
     .index('by_user_start', ['userId', 'start'])
-    .index('by_user_fetchedAt', ['userId', 'fetchedAt']),
+    .index('by_user_fetchedAt', ['userId', 'fetchedAt'])
+    .index('by_fetchedAt', ['fetchedAt']),
 
   inviteAttempts: defineTable({
     userId: v.string(),

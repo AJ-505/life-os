@@ -1,53 +1,56 @@
 import { v } from 'convex/values'
-import type { Infer } from 'convex/values'
 
 import { internalMutation, mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
 import {
-  getMemberSpace,
-  getUserSettings,
+  boardRows,
+  getWritable,
+  idTakenInScope,
   requireMember,
-  getWritableProject,
-  getWritableTask,
-  isSpaceMember,
-  noProjectBucket,
+  requireScope,
   requireUserId,
-  scopeProjects,
-  scopeTasks,
+} from './access'
+import {
+  afterTaskWrite,
+  afterTasksDeleted,
+  readUserSettings,
+} from './calendarSync'
+import { repeatRule } from './recurrence'
+import {
+  applyTaskUpdate,
+  descendants,
+  newTask,
+  noProjectBucket,
+  projectStatus,
   shapeProject,
-  storedProjectId,
   shapeTask,
-  clampDuration,
-  taskByAppId,
-} from './lib'
-import { eventsToDelete, taskWantsEvent } from './calendar'
-import { nextOccurrence, usableTimeZone } from './recurrence'
+  storedProjectId,
+  taskPatchRow,
+  taskRow,
+} from './taskModel'
+import { usableTimeZone } from './zonedTime'
 
-import type { Doc } from './_generated/dataModel'
+import type { Doc, Id } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
-import type { Scope } from './lib'
+import type { Scope } from './access'
+import type { ActivityKind, TaskUpdate } from './taskModel'
 
-type TaskActivityKind =
-  | 'created'
-  | 'assigned'
-  | 'unassigned'
-  | 'completed'
-  | 'reopened'
-  | 'archived'
-  | 'unarchived'
-  | 'moved'
-  | 'updated'
+const DELETE_BATCH = 200
+const STALE_CALENDAR_TASK_MS = 7 * 24 * 60 * 60 * 1000
+const STALE_ROOTS_PER_PASS = 50
 
-async function recordTaskActivity(
+type ActivityTask = { id: string; projectId: string | null; spaceId: Scope }
+
+async function recordActivity(
   ctx: MutationCtx,
-  task: Pick<Doc<'tasks'>, 'id' | 'projectId' | 'spaceId'>,
+  task: ActivityTask,
   actorId: string,
-  kind: TaskActivityKind,
-  options?: {
+  kind: ActivityKind,
+  options: {
     fromUserId?: string | null
     toUserId?: string | null
     detail?: string
-  },
+  } = {},
 ) {
   if (!task.spaceId) return
   await ctx.db.insert('taskActivity', {
@@ -56,17 +59,60 @@ async function recordTaskActivity(
     projectId: task.projectId,
     actorId,
     kind,
-    ...(options?.fromUserId !== undefined && {
-      fromUserId: options.fromUserId,
-    }),
-    ...(options?.toUserId !== undefined && { toUserId: options.toUserId }),
-    ...(options?.detail ? { detail: options.detail } : {}),
+    ...(options.fromUserId !== undefined && { fromUserId: options.fromUserId }),
+    ...(options.toUserId !== undefined && { toUserId: options.toUserId }),
+    ...(options.detail && { detail: options.detail }),
     createdAt: Date.now(),
   })
 }
 
+async function recordUpdateActivity(
+  ctx: MutationCtx,
+  actorId: string,
+  task: Doc<'tasks'>,
+  update: TaskUpdate,
+) {
+  const subject = {
+    id: task.id,
+    projectId: task.projectId,
+    spaceId: task.spaceId ?? null,
+  }
+  const assignee = update.assigneeId
+  if (assignee !== undefined && assignee !== (task.assigneeId ?? null))
+    await recordActivity(
+      ctx,
+      subject,
+      actorId,
+      assignee === null ? 'unassigned' : 'assigned',
+      { fromUserId: task.assigneeId ?? null, toUserId: assignee },
+    )
+  if (update.done !== undefined && update.done !== task.done)
+    await recordActivity(
+      ctx,
+      subject,
+      actorId,
+      update.done ? 'completed' : 'reopened',
+    )
+  if (update.archived !== undefined && update.archived !== task.archived)
+    await recordActivity(
+      ctx,
+      subject,
+      actorId,
+      update.archived ? 'archived' : 'unarchived',
+    )
+  const detailsChanged =
+    (update.title !== undefined && update.title.trim() !== task.title) ||
+    (update.notes !== undefined && update.notes !== task.notes) ||
+    (update.dueAt !== undefined && update.dueAt !== task.dueAt) ||
+    (update.repeat !== undefined && update.repeat !== (task.repeat ?? null))
+  if (detailsChanged)
+    await recordActivity(ctx, subject, actorId, 'updated', {
+      detail: 'Task details updated',
+    })
+}
+
 async function profileName(
-  ctx: QueryCtx | MutationCtx,
+  ctx: QueryCtx,
   userId: string,
 ): Promise<string> {
   const profile = await ctx.db
@@ -83,33 +129,24 @@ export const getBoard = query({
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
     const spaceId = args.spaceId ?? null
-
-    let projects: Array<Doc<'projects'>>
-    if (spaceId === null) {
-      projects = await scopeProjects(ctx, userId, null)
-    } else {
-      await getMemberSpace(ctx, userId, spaceId)
-      projects = await scopeProjects(ctx, userId, spaceId)
-    }
-
-    const tasks = await scopeTasks(ctx, userId, spaceId)
+    await requireScope(ctx, userId, spaceId)
+    const [projects, tasks] = await Promise.all([
+      boardRows(ctx, userId, 'projects', spaceId),
+      boardRows(ctx, userId, 'tasks', spaceId),
+    ])
 
     const tasksByProject = new Map<string | null, Array<Doc<'tasks'>>>()
     for (const task of tasks) {
-      const list = tasksByProject.get(task.projectId) ?? []
-      list.push(task)
-      tasksByProject.set(task.projectId, list)
+      const list = tasksByProject.get(task.projectId)
+      if (list) list.push(task)
+      else tasksByProject.set(task.projectId, [task])
     }
     const ordered = (list: Array<Doc<'tasks'>> | undefined) =>
       (list ?? []).sort((a, b) => a.position - b.position).map(shapeTask)
 
     const board = projects
-      .slice()
       .sort((a, b) => a.gridCol - b.gridCol || a.gridRow - b.gridRow)
-      .map((p) => ({
-        ...shapeProject(p),
-        tasks: ordered(tasksByProject.get(p.id)),
-      }))
+      .map((p) => ({ ...shapeProject(p), tasks: ordered(tasksByProject.get(p.id)) }))
     const loose = tasksByProject.get(null)
     if (!loose) return board
     return [...board, noProjectBucket(spaceId, ordered(loose))]
@@ -120,12 +157,13 @@ export const getTaskHistory = query({
   args: { taskId: v.string() },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
-    const task = await getWritableTask(ctx, userId, args.taskId)
-    if (!task.spaceId) return []
+    const task = await getWritable(ctx, userId, 'tasks', args.taskId)
+    const spaceId = task.spaceId
+    if (!spaceId) return []
     const events = await ctx.db
       .query('taskActivity')
       .withIndex('by_space_task', (q) =>
-        q.eq('spaceId', task.spaceId!).eq('taskId', task.id),
+        q.eq('spaceId', spaceId).eq('taskId', task.id),
       )
       .order('desc')
       .take(100)
@@ -145,30 +183,6 @@ export const getTaskHistory = query({
   },
 })
 
-async function assertScopeIdFree(
-  ctx: MutationCtx,
-  userId: string,
-  id: string,
-  scope: Scope,
-  table: 'projects' | 'tasks',
-  noun: 'project' | 'task',
-): Promise<boolean> {
-  const candidates = await ctx.db
-    .query(table)
-    .withIndex('by_app_id', (q) => q.eq('id', id))
-    .collect()
-  for (const candidate of candidates) {
-    const reachable =
-      candidate.userId === userId ||
-      (candidate.spaceId != null &&
-        (await isSpaceMember(ctx, userId, candidate.spaceId)))
-    if (!reachable) continue
-    if ((candidate.spaceId ?? null) === scope) return true
-    throw new Error(`That ${noun} id is already used on another of your boards`)
-  }
-  return false
-}
-
 export const createProject = mutation({
   args: {
     id: v.string(),
@@ -183,20 +197,8 @@ export const createProject = mutation({
     const name = args.name.trim()
     if (!name) throw new Error('Project name is required')
     const spaceId = args.spaceId ?? null
-    if (spaceId !== null) await getMemberSpace(ctx, userId, spaceId)
-
-    if (
-      await assertScopeIdFree(
-        ctx,
-        userId,
-        args.id,
-        spaceId,
-        'projects',
-        'project',
-      )
-    )
-      return
-
+    await requireScope(ctx, userId, spaceId)
+    if (await idTakenInScope(ctx, userId, 'projects', args.id, spaceId)) return
     await ctx.db.insert('projects', {
       userId,
       id: args.id,
@@ -226,7 +228,7 @@ export const updateProject = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
-    const project = await getWritableProject(ctx, userId, args.id)
+    const project = await getWritable(ctx, userId, 'projects', args.id)
     const { id: _id, ...patch } = args
     await ctx.db.patch(project._id, patch)
   },
@@ -236,7 +238,7 @@ export const moveProject = mutation({
   args: { id: v.string(), gridCol: v.number(), gridRow: v.number() },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
-    const project = await getWritableProject(ctx, userId, args.id)
+    const project = await getWritable(ctx, userId, 'projects', args.id)
     await ctx.db.patch(project._id, {
       gridCol: args.gridCol,
       gridRow: args.gridRow,
@@ -245,17 +247,10 @@ export const moveProject = mutation({
 })
 
 export const setProjectStatus = mutation({
-  args: {
-    id: v.string(),
-    status: v.union(
-      v.literal('active'),
-      v.literal('shelved'),
-      v.literal('done'),
-    ),
-  },
+  args: { id: v.string(), status: projectStatus },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
-    const project = await getWritableProject(ctx, userId, args.id)
+    const project = await getWritable(ctx, userId, 'projects', args.id)
     const now = Date.now()
     await ctx.db.patch(project._id, {
       status: args.status,
@@ -270,11 +265,12 @@ async function projectTasks(
   userId: string,
   project: { id: string | null; spaceId?: Scope },
 ): Promise<Array<Doc<'tasks'>>> {
-  if (project.spaceId) {
+  const spaceId = project.spaceId
+  if (spaceId) {
     return await ctx.db
       .query('tasks')
       .withIndex('by_space_project', (q) =>
-        q.eq('spaceId', project.spaceId!).eq('projectId', project.id),
+        q.eq('spaceId', spaceId).eq('projectId', project.id),
       )
       .collect()
   }
@@ -286,14 +282,56 @@ async function projectTasks(
     .collect()
 }
 
+const taskToDelete = v.object({ _id: v.id('tasks'), id: v.string() })
+
+type TaskToDelete = { _id: Id<'tasks'>; id: string }
+
+async function deleteTasks(
+  ctx: MutationCtx,
+  tasks: Array<TaskToDelete>,
+  spaceId: Scope,
+) {
+  const batch = tasks.slice(0, DELETE_BATCH)
+  await Promise.all(batch.map((task) => ctx.db.delete(task._id)))
+  if (spaceId) {
+    const activity = await Promise.all(
+      batch.map((task) =>
+        ctx.db
+          .query('taskActivity')
+          .withIndex('by_space_task', (q) =>
+            q.eq('spaceId', spaceId).eq('taskId', task.id),
+          )
+          .collect(),
+      ),
+    )
+    await Promise.all(activity.flat().map((row) => ctx.db.delete(row._id)))
+  }
+  const rest = tasks.slice(DELETE_BATCH)
+  if (rest.length === 0) return
+  await ctx.scheduler.runAfter(0, internal.tracker.continueDeleteTasks, {
+    tasks: rest.map((task) => ({ _id: task._id, id: task.id })),
+    spaceId,
+  })
+}
+
+export const continueDeleteTasks = internalMutation({
+  args: {
+    tasks: v.array(taskToDelete),
+    spaceId: v.optional(v.union(v.string(), v.null())),
+  },
+  handler: async (ctx, args) => {
+    await deleteTasks(ctx, args.tasks, args.spaceId ?? null)
+  },
+})
+
 export const deleteProject = mutation({
   args: { id: v.string() },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
-    const project = await getWritableProject(ctx, userId, args.id)
+    const project = await getWritable(ctx, userId, 'projects', args.id)
     const tasks = await projectTasks(ctx, userId, project)
-    await scheduleEventCleanup(ctx, userId, tasks)
-    await deleteTasksBatched(ctx, tasks, project.spaceId ?? null)
+    await afterTasksDeleted(ctx, userId, tasks)
+    await deleteTasks(ctx, tasks, project.spaceId ?? null)
     await ctx.db.delete(project._id)
   },
 })
@@ -304,12 +342,22 @@ async function taskScope(
   projectId: string | null,
   looseScope: Scope,
 ): Promise<Scope> {
-  if (projectId !== null) {
-    const project = await getWritableProject(ctx, userId, projectId)
-    return project.spaceId ?? null
+  if (projectId === null) {
+    await requireScope(ctx, userId, looseScope)
+    return looseScope
   }
-  if (looseScope !== null) await getMemberSpace(ctx, userId, looseScope)
-  return looseScope
+  const project = await getWritable(ctx, userId, 'projects', projectId)
+  return project.spaceId ?? null
+}
+
+async function requireAssignable(
+  ctx: MutationCtx,
+  assigneeId: string | null | undefined,
+  spaceId: Scope,
+) {
+  if (assigneeId == null) return
+  if (!spaceId) throw new Error('Tasks on a personal board cannot be assigned')
+  await requireMember(ctx, assigneeId, spaceId)
 }
 
 export const createTask = mutation({
@@ -327,117 +375,44 @@ export const createTask = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx)
-    const title = args.title.trim()
-    if (!title) throw new Error('Task title is required')
-    const projectId = storedProjectId(args.projectId)
+    if (!args.title.trim()) throw new Error('Task title is required')
     const spaceId = await taskScope(
       ctx,
       userId,
-      projectId,
+      storedProjectId(args.projectId),
       args.spaceId ?? null,
     )
-    const assigneeId = args.assigneeId ?? null
-    if (assigneeId !== null) {
-      if (!spaceId)
-        throw new Error('Tasks on a personal board cannot be assigned')
-      await requireMember(ctx, assigneeId, spaceId)
-    }
+    await requireAssignable(ctx, args.assigneeId, spaceId)
     const parentId = args.parentId ?? null
     if (parentId !== null) {
       if (parentId === args.id)
         throw new Error('A task cannot be its own subtask')
-      const parent = await getWritableTask(ctx, userId, parentId)
+      const parent = await getWritable(ctx, userId, 'tasks', parentId)
       if ((parent.spaceId ?? null) !== spaceId)
         throw new Error('A subtask must live on the same board as its parent')
     }
-    if (await assertScopeIdFree(ctx, userId, args.id, spaceId, 'tasks', 'task'))
-      return
-    await ctx.db.insert('tasks', {
-      userId,
-      id: args.id,
-      projectId,
-      parentId: args.parentId ?? null,
-      title,
-      notes: null,
-      position: args.position,
-      done: false,
-      doneAt: null,
-      archived: false,
-      dueAt: args.dueAt ?? null,
-      durationMinutes: clampDuration(args.durationMinutes),
-      inFocus: false,
-      focusOrder: 0,
-      createdAt: Date.now(),
+    if (await idTakenInScope(ctx, userId, 'tasks', args.id, spaceId)) return
+
+    const task = newTask({ ...args, spaceId }, Date.now())
+    const row = {
+      ...taskRow(task, userId),
       ...(args.createdFrom && { createdFrom: args.createdFrom }),
-      assigneeId,
-      spaceId,
+    }
+    const _id = await ctx.db.insert('tasks', row)
+    await afterTaskWrite(ctx, userId, null, {
+      ...row,
+      _id,
+      _creationTime: Date.now(),
     })
-    if (args.dueAt != null && !spaceId) {
-      await scheduleNewTaskSync(ctx, userId, args.id)
-    }
-    const activityTask = { id: args.id, projectId, spaceId }
-    await recordTaskActivity(ctx, activityTask, userId, 'created')
-    if (assigneeId !== null) {
-      await recordTaskActivity(ctx, activityTask, userId, 'assigned', {
-        toUserId: assigneeId,
+
+    const subject = { id: task.id, projectId: row.projectId, spaceId }
+    await recordActivity(ctx, subject, userId, 'created')
+    if (task.assigneeId !== null)
+      await recordActivity(ctx, subject, userId, 'assigned', {
+        toUserId: task.assigneeId,
       })
-    }
   },
 })
-
-const CALENDAR_FIELDS = [
-  'dueAt',
-  'durationMinutes',
-  'reminderMinutes',
-  'addToCalendar',
-  'done',
-  'archived',
-  'title',
-  'notes',
-] as const
-
-async function scheduleCalendarSync(
-  ctx: MutationCtx,
-  userId: string,
-  before: Doc<'tasks'>,
-  patch: Partial<Doc<'tasks'>>,
-) {
-  const touches = CALENDAR_FIELDS.some(
-    (field) => patch[field] !== undefined && patch[field] !== before[field],
-  )
-  if (!touches) return
-  const merged = { ...before, ...patch }
-  const settings = await getUserSettings(ctx, userId)
-  const wants = taskWantsEvent(merged, {
-    syncEnabled: settings?.calendarSyncEnabled ?? false,
-    autoAdd: settings?.autoAddToCalendar ?? false,
-  })
-  const has = (merged.calendarEventId ?? null) !== null
-  if (!wants && !has) return
-  await ctx.scheduler.runAfter(0, internal.calendar.syncTaskForUser, {
-    userId,
-    taskId: merged.id,
-  })
-}
-
-async function scheduleNewTaskSync(
-  ctx: MutationCtx,
-  userId: string,
-  taskId: string,
-) {
-  const settings = await getUserSettings(ctx, userId)
-  const task = await taskByAppId(ctx, userId, taskId)
-  if (!task) return
-  const wants = taskWantsEvent(task, {
-    syncEnabled: settings?.calendarSyncEnabled ?? false,
-    autoAdd: settings?.autoAddToCalendar ?? false,
-  })
-  if (!wants) return
-  await ctx.scheduler.runAfter(0, internal.calendar.syncTaskForUser, {
-    userId,
-    taskId,
-  })
-}
 
 async function repeatZone(
   ctx: MutationCtx,
@@ -446,130 +421,115 @@ async function repeatZone(
 ): Promise<string> {
   const direct = usableTimeZone(requested)
   if (direct) return direct
-  const settings = await getUserSettings(ctx, userId)
+  const settings = await readUserSettings(ctx, userId)
   return usableTimeZone(settings?.timeZone) ?? 'UTC'
 }
 
-async function scheduleEventCleanup(
-  ctx: MutationCtx,
-  userId: string,
-  tasks: Array<Doc<'tasks'>>,
-) {
-  const events = eventsToDelete(tasks)
-  if (events.length === 0) return
-  await ctx.scheduler.runAfter(0, internal.calendar.deleteEventsForUser, {
-    userId,
-    events,
-  })
-}
-
-function childrenByParent(tasks: Array<Doc<'tasks'>>) {
-  const childrenOf = new Map<string, Array<Doc<'tasks'>>>()
-  for (const task of tasks) {
-    if (!task.parentId) continue
-    const list = childrenOf.get(task.parentId) ?? []
-    list.push(task)
-    childrenOf.set(task.parentId, list)
-  }
-  return childrenOf
-}
-
-function withDescendants(
-  tasks: Array<Doc<'tasks'>>,
-  root: Doc<'tasks'>,
-): Array<Doc<'tasks'>> {
-  const childrenOf = childrenByParent(tasks)
-  const found = [root]
-  const visited = new Set([root.id])
-  const queue = [...(childrenOf.get(root.id) ?? [])]
-  while (queue.length > 0) {
-    const child = queue.shift()!
-    if (visited.has(child.id)) continue
-    visited.add(child.id)
-    found.push(child)
-    queue.push(...(childrenOf.get(child.id) ?? []))
-  }
-  return found
-}
-
-const DELETE_BATCH = 200
-
-const taskToDelete = v.object({ _id: v.string(), id: v.string() })
-type TaskToDelete = Infer<typeof taskToDelete>
-
-export const continueDeleteTasks = internalMutation({
+export const updateTask = mutation({
   args: {
-    tasks: v.array(taskToDelete),
-    spaceId: v.optional(v.union(v.string(), v.null())),
+    id: v.string(),
+    title: v.optional(v.string()),
+    notes: v.optional(v.union(v.string(), v.null())),
+    done: v.optional(v.boolean()),
+    archived: v.optional(v.boolean()),
+    assigneeId: v.optional(v.union(v.string(), v.null())),
+    dueAt: v.optional(v.union(v.number(), v.null())),
+    durationMinutes: v.optional(v.union(v.number(), v.null())),
+    reminderMinutes: v.optional(v.union(v.number(), v.null())),
+    addToCalendar: v.optional(v.boolean()),
+    repeat: v.optional(v.union(repeatRule, v.null())),
+    timeZone: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const batch = args.tasks.slice(0, DELETE_BATCH)
-    await Promise.all(
-      batch.map((task) => ctx.db.delete(task._id as Doc<'tasks'>['_id'])),
-    )
-    if (args.spaceId) await deleteActivityRows(ctx, args.spaceId, batch)
-    if (args.tasks.length > batch.length) {
-      await ctx.scheduler.runAfter(0, internal.tracker.continueDeleteTasks, {
-        tasks: args.tasks.slice(batch.length),
-        spaceId: args.spaceId,
-      })
+    const userId = await requireUserId(ctx)
+    const task = await getWritable(ctx, userId, 'tasks', args.id)
+    const { id: _id, timeZone, ...update } = args
+    await requireAssignable(ctx, update.assigneeId, task.spaceId ?? null)
+
+    const clock = {
+      now: Date.now(),
+      timeZone: update.done ? await repeatZone(ctx, userId, timeZone) : 'UTC',
     }
+    const patch = applyTaskUpdate(shapeTask(task), update, clock)
+    const row = {
+      ...taskPatchRow(patch),
+      ...(patch.repeat && { createdFrom: undefined }),
+    }
+    await ctx.db.patch(task._id, row)
+    await afterTaskWrite(ctx, userId, task, { ...task, ...row })
+    await recordUpdateActivity(ctx, userId, task, update)
   },
 })
 
-async function deleteActivityRows(
-  ctx: MutationCtx,
-  spaceId: string,
-  tasks: Array<TaskToDelete>,
-) {
-  const rows = await Promise.all(
-    tasks.map((task) =>
-      ctx.db
-        .query('taskActivity')
-        .withIndex('by_space_task', (q) =>
-          q.eq('spaceId', spaceId).eq('taskId', task.id),
-        )
-        .collect(),
-    ),
-  )
-  await Promise.all(rows.flat().map((row) => ctx.db.delete(row._id)))
-}
+export const moveTask = mutation({
+  args: { id: v.string(), projectId: v.string(), position: v.number() },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx)
+    const task = await getWritable(ctx, userId, 'tasks', args.id)
+    const projectId = storedProjectId(args.projectId)
+    const source = task.spaceId ?? null
+    if ((await taskScope(ctx, userId, projectId, source)) !== source)
+      throw new Error('Tasks cannot move between a personal board and a space')
 
-async function deleteTasksBatched(
-  ctx: MutationCtx,
-  tasks: Array<Doc<'tasks'>>,
-  spaceId: string | null,
-) {
-  const batch = tasks.slice(0, DELETE_BATCH)
-  await Promise.all(
-    batch.map((task) => ctx.db.delete(task._id as Doc<'tasks'>['_id'])),
-  )
-  if (spaceId)
-    await deleteActivityRows(
+    await ctx.db.patch(task._id, { projectId, position: args.position })
+    await recordActivity(
       ctx,
-      spaceId,
-      batch.map((task) => ({ _id: task._id, id: task.id })),
+      { id: task.id, projectId, spaceId: source },
+      userId,
+      'moved',
+      {
+        detail:
+          projectId === null
+            ? 'Removed from its project'
+            : 'Moved to another project',
+      },
     )
-  if (tasks.length > batch.length) {
-    await ctx.scheduler.runAfter(0, internal.tracker.continueDeleteTasks, {
-      tasks: tasks.slice(batch.length).map((task) => ({
-        _id: task._id,
-        id: task.id,
-      })),
-      spaceId,
-    })
-  }
-}
 
-const STALE_CALENDAR_TASK_MS = 7 * 24 * 60 * 60 * 1000
-const STALE_ROOTS_PER_PASS = 50
+    const board = await boardRows(ctx, userId, 'tasks', source)
+    await Promise.all(
+      descendants(board, task.id).map((child) =>
+        ctx.db.patch(child._id, { projectId }),
+      ),
+    )
+  },
+})
+
+export const setTaskFocus = mutation({
+  args: {
+    id: v.string(),
+    inFocus: v.boolean(),
+    focusOrder: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx)
+    const task = await getWritable(ctx, userId, 'tasks', args.id)
+    if (task.spaceId) throw new Error('Focus is personal only')
+    await ctx.db.patch(task._id, {
+      inFocus: args.inFocus,
+      focusOrder: args.focusOrder ?? 0,
+    })
+  },
+})
+
+export const deleteTask = mutation({
+  args: { id: v.string() },
+  handler: async (ctx, args) => {
+    const userId = await requireUserId(ctx)
+    const task = await getWritable(ctx, userId, 'tasks', args.id)
+    const spaceId = task.spaceId ?? null
+    const board = await boardRows(ctx, userId, 'tasks', spaceId)
+    const doomed = [task, ...descendants(board, task.id)]
+    await afterTasksDeleted(ctx, userId, doomed)
+    await deleteTasks(ctx, doomed, spaceId)
+  },
+})
 
 function groupBy<T, K>(items: Array<T>, key: (item: T) => K) {
   const groups = new Map<K, Array<T>>()
   for (const item of items) {
-    const list = groups.get(key(item)) ?? []
-    list.push(item)
-    groups.set(key(item), list)
+    const list = groups.get(key(item))
+    if (list) list.push(item)
+    else groups.set(key(item), [item])
   }
   return groups
 }
@@ -596,218 +556,16 @@ export const purgeStaleCalendarTasks = internalMutation({
           spaceId: root.spaceId,
         }))
       boards.set(key, board)
-      for (const task of withDescendants(board, root)) {
+      for (const task of [root, ...descendants(board, root.id)])
         doomed.set(task._id, task)
-      }
     }
 
     const rows = [...doomed.values()]
-    for (const [userId, owned] of groupBy(rows, (t) => t.userId)) {
-      await scheduleEventCleanup(ctx, userId, owned)
-    }
-    for (const [spaceId, inSpace] of groupBy(rows, (t) => t.spaceId ?? null)) {
-      await deleteTasksBatched(ctx, inSpace, spaceId)
-    }
-    if (stale.length === STALE_ROOTS_PER_PASS) {
+    for (const [userId, owned] of groupBy(rows, (t) => t.userId))
+      await afterTasksDeleted(ctx, userId, owned)
+    for (const [spaceId, inSpace] of groupBy(rows, (t) => t.spaceId ?? null))
+      await deleteTasks(ctx, inSpace, spaceId)
+    if (stale.length === STALE_ROOTS_PER_PASS)
       await ctx.scheduler.runAfter(0, internal.tracker.purgeStaleCalendarTasks)
-    }
-  },
-})
-
-export const updateTask = mutation({
-  args: {
-    id: v.string(),
-    title: v.optional(v.string()),
-    notes: v.optional(v.union(v.string(), v.null())),
-    done: v.optional(v.boolean()),
-    archived: v.optional(v.boolean()),
-    assigneeId: v.optional(v.union(v.string(), v.null())),
-    dueAt: v.optional(v.union(v.number(), v.null())),
-    durationMinutes: v.optional(v.union(v.number(), v.null())),
-    reminderMinutes: v.optional(v.union(v.number(), v.null())),
-    addToCalendar: v.optional(v.boolean()),
-    repeat: v.optional(
-      v.union(
-        v.literal('daily'),
-        v.literal('weekdays'),
-        v.literal('weekly'),
-        v.literal('monthly'),
-        v.literal('yearly'),
-        v.null(),
-      ),
-    ),
-    timeZone: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx)
-    const task = await getWritableTask(ctx, userId, args.id)
-    const { id: _id, done, assigneeId, timeZone, repeat, ...rest } = args
-    if (assigneeId !== undefined && assigneeId !== null) {
-      if (!task.spaceId)
-        throw new Error('Tasks on a personal board cannot be assigned')
-      await requireMember(ctx, assigneeId, task.spaceId)
-    }
-    const patch: Partial<Doc<'tasks'>> = { ...rest }
-    if (args.addToCalendar === true) patch.calendarSyncIssue = undefined
-    if (args.durationMinutes !== undefined)
-      patch.durationMinutes = clampDuration(args.durationMinutes)
-    if (args.title !== undefined) patch.title = args.title.trim()
-    if (assigneeId !== undefined) patch.assigneeId = assigneeId
-
-    const dueAt = args.dueAt !== undefined ? args.dueAt : task.dueAt
-    const series =
-      dueAt === null
-        ? null
-        : repeat !== undefined
-          ? repeat
-          : (task.repeat ?? null)
-    if (repeat !== undefined || args.dueAt === null) {
-      patch.repeat = series
-      if (series !== null) patch.createdFrom = undefined
-    }
-
-    if (done !== undefined) {
-      const rolled =
-        done && series !== null && dueAt !== null
-          ? nextOccurrence(
-              dueAt,
-              series,
-              Date.now(),
-              await repeatZone(ctx, userId, timeZone),
-            )
-          : null
-      if (rolled !== null) {
-        patch.dueAt = rolled
-        patch.done = false
-        patch.doneAt = null
-      } else {
-        patch.done = done
-        patch.doneAt = done ? Date.now() : (task.doneAt ?? null)
-      }
-    }
-    await ctx.db.patch(task._id, patch)
-    await scheduleCalendarSync(ctx, userId, task, patch)
-    if (task.spaceId) {
-      const activityTask = {
-        id: task.id,
-        projectId: task.projectId,
-        spaceId: task.spaceId,
-      }
-      if (
-        assigneeId !== undefined &&
-        assigneeId !== (task.assigneeId ?? null)
-      ) {
-        await recordTaskActivity(
-          ctx,
-          activityTask,
-          userId,
-          assigneeId === null ? 'unassigned' : 'assigned',
-          {
-            fromUserId: task.assigneeId ?? null,
-            toUserId: assigneeId,
-          },
-        )
-      }
-      if (done !== undefined && done !== task.done) {
-        await recordTaskActivity(
-          ctx,
-          activityTask,
-          userId,
-          done ? 'completed' : 'reopened',
-        )
-      }
-      if (args.archived !== undefined && args.archived !== task.archived) {
-        await recordTaskActivity(
-          ctx,
-          activityTask,
-          userId,
-          args.archived ? 'archived' : 'unarchived',
-        )
-      }
-      if (
-        (args.title !== undefined && args.title.trim() !== task.title) ||
-        (args.notes !== undefined && args.notes !== task.notes) ||
-        (args.dueAt !== undefined && args.dueAt !== task.dueAt) ||
-        (repeat !== undefined && repeat !== (task.repeat ?? null))
-      ) {
-        await recordTaskActivity(ctx, activityTask, userId, 'updated', {
-          detail: 'Task details updated',
-        })
-      }
-    }
-  },
-})
-
-export const moveTask = mutation({
-  args: { id: v.string(), projectId: v.string(), position: v.number() },
-  handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx)
-    const task = await getWritableTask(ctx, userId, args.id)
-    const projectId = storedProjectId(args.projectId)
-    const source = task.spaceId ?? null
-    if ((await taskScope(ctx, userId, projectId, source)) !== source)
-      throw new Error('Tasks cannot move between a personal board and a space')
-
-    await ctx.db.patch(task._id, { projectId, position: args.position })
-    if (source) {
-      await recordTaskActivity(
-        ctx,
-        { id: task.id, projectId, spaceId: source },
-        userId,
-        'moved',
-        {
-          detail:
-            projectId === null
-              ? 'Removed from its project'
-              : 'Moved to another project',
-        },
-      )
-    }
-
-    const boardTasks = await scopeTasks(ctx, userId, source)
-    const childrenOf = childrenByParent(boardTasks)
-    const visited = new Set<string>()
-    let level = childrenOf.get(args.id) ?? []
-    while (level.length > 0) {
-      const patching: Array<Doc<'tasks'>> = []
-      const next: Array<Doc<'tasks'>> = []
-      for (const child of level) {
-        if (visited.has(child.id)) continue
-        visited.add(child.id)
-        patching.push(child)
-        next.push(...(childrenOf.get(child.id) ?? []))
-      }
-      await Promise.all(patching.map((c) => ctx.db.patch(c._id, { projectId })))
-      level = next
-    }
-  },
-})
-
-export const setTaskFocus = mutation({
-  args: {
-    id: v.string(),
-    inFocus: v.boolean(),
-    focusOrder: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx)
-    const task = await getWritableTask(ctx, userId, args.id)
-    if (task.spaceId) throw new Error('Focus is personal only')
-    await ctx.db.patch(task._id, {
-      inFocus: args.inFocus,
-      focusOrder: args.focusOrder ?? 0,
-    })
-  },
-})
-
-export const deleteTask = mutation({
-  args: { id: v.string() },
-  handler: async (ctx, args) => {
-    const userId = await requireUserId(ctx)
-    const task = await getWritableTask(ctx, userId, args.id)
-    const boardTasks = await scopeTasks(ctx, userId, task.spaceId ?? null)
-    const toDelete = withDescendants(boardTasks, task)
-    await scheduleEventCleanup(ctx, userId, toDelete)
-    await deleteTasksBatched(ctx, toDelete, task.spaceId ?? null)
   },
 })

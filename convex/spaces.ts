@@ -2,9 +2,11 @@ import { v } from 'convex/values'
 
 import { internalMutation, mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
-import { dropMembership, requireMember, requireUserId } from './lib'
+import { requireMember, requireUserId } from './access'
+import { lastProjectRow } from './settings'
 
-import type { Doc } from './_generated/dataModel'
+import type { Infer } from 'convex/values'
+import type { Doc, Id } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
 
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
@@ -14,6 +16,23 @@ const CODE_SHAPE = /^[A-Z0-9]{4,16}$/
 
 const JOIN_WINDOW_MS = 5 * 60 * 1000
 const JOIN_MAX_ATTEMPTS = 10
+
+async function dropMembership(
+  ctx: MutationCtx,
+  spaceId: string,
+  userId: string,
+): Promise<number> {
+  const rows = await ctx.db
+    .query('spaceMembers')
+    .withIndex('by_space_user', (q) =>
+      q.eq('spaceId', spaceId).eq('userId', userId),
+    )
+    .collect()
+  const choice = await lastProjectRow(ctx, userId, spaceId)
+  if (choice) await ctx.db.delete(choice._id)
+  await Promise.all(rows.map((row) => ctx.db.delete(row._id)))
+  return rows.length
+}
 
 function newInviteCode(): string {
   const bytes = new Uint8Array(CODE_LENGTH)
@@ -429,14 +448,17 @@ export const deleteSpace = mutation({
   },
 })
 
-const DELETE_PHASES = [
-  'projects',
-  'activity',
-  'tasks',
-  'choices',
-  'members',
-] as const
-type DeletePhase = (typeof DELETE_PHASES)[number]
+const deletePhase = v.union(
+  v.literal('projects'),
+  v.literal('activity'),
+  v.literal('tasks'),
+  v.literal('choices'),
+  v.literal('members'),
+)
+type DeletePhase = Infer<typeof deletePhase>
+const DELETE_PHASES = deletePhase.members.map((member) => member.value)
+
+type Cascade = { spaceId: Id<'spaces'>; phase: DeletePhase }
 
 const DELETE_BATCH = 100
 
@@ -444,9 +466,9 @@ const UNASSIGN_BATCH = 100
 
 async function deleteSpacePhase(
   ctx: MutationCtx,
-  next: { spaceId: string; phase: DeletePhase },
+  next: Cascade,
 ): Promise<PhaseOutcome> {
-  const space = await ctx.db.get(next.spaceId as Doc<'spaces'>['_id'])
+  const space = await ctx.db.get(next.spaceId)
   if (!space) return 'gone'
 
   const drained = await deleteTablePage(ctx, next.phase, space.id)
@@ -485,9 +507,9 @@ const TABLE_FOR_PHASE = {
 
 async function runDeleteCascade(
   ctx: MutationCtx,
-  start: { spaceId: string; phase: DeletePhase },
+  start: Cascade,
 ) {
-  let next: { spaceId: string; phase: DeletePhase } = start
+  let next: Cascade = start
   for (;;) {
     const outcome = await deleteSpacePhase(ctx, next)
     if (outcome === 'gone') return
@@ -498,20 +520,11 @@ async function runDeleteCascade(
     }
     next = { spaceId: start.spaceId, phase: outcome }
   }
-  await ctx.db.delete(start.spaceId as Doc<'spaces'>['_id'])
+  await ctx.db.delete(start.spaceId)
 }
 
 export const continueDeleteSpace = internalMutation({
-  args: {
-    spaceId: v.string(),
-    phase: v.union(
-      v.literal('projects'),
-      v.literal('activity'),
-      v.literal('tasks'),
-      v.literal('choices'),
-      v.literal('members'),
-    ),
-  },
+  args: { spaceId: v.id('spaces'), phase: deletePhase },
   handler: async (ctx, args) => {
     await runDeleteCascade(ctx, args)
   },

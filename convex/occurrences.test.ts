@@ -5,8 +5,8 @@ import {
   isRepeatRule,
   nextOccurrence,
   occurrencesBetween,
-  usableTimeZone,
-} from '../../../convex/recurrence'
+} from './recurrence'
+import { usableTimeZone } from './zonedTime'
 
 const at = (year: number, month: number, day: number, hour = 0, minute = 0) =>
   Date.UTC(year, month - 1, day, hour, minute)
