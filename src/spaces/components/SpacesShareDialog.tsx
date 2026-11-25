@@ -98,11 +98,7 @@ export function SpacesShareDialog({
             <Users className="size-4 text-signal" /> Share “
             {space?.name ?? 'this space'}”
           </DialogTitle>
-          <DialogDescription>
-            Anyone with the link can join — no paywall, unlimited members.
-            Leaving removes your access but does not invalidate the link, so
-            reset it if you need the old one dead.
-          </DialogDescription>
+          <DialogDescription>Anyone with the link can join.</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
