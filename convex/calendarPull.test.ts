@@ -2,9 +2,10 @@ import { convexTest } from 'convex-test'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api, internal } from './_generated/api'
-import { externalRows, zonedDayStart } from './calendarPull'
-import { taskWantsEvent } from './calendar'
-import { NO_PROJECT_ID } from './lib'
+import { externalRows } from './calendarPull'
+import { taskWantsEvent } from './syncRule'
+import { NO_PROJECT_ID } from './taskModel'
+import { dayStartIn } from './zonedTime'
 import schema from './schema'
 
 import type { TestConvex } from 'convex-test'
@@ -22,8 +23,6 @@ const asUser = (t: T) => t.withIdentity({ subject: 'user_a' })
 beforeEach(() => vi.useFakeTimers())
 
 const SCOPE = 'https://www.googleapis.com/auth/calendar.events'
-const LIST_URL =
-  'https://www.googleapis.com/calendar/v3/calendars/primary/events?'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -50,7 +49,7 @@ function stubCalendar(options: {
   tokenPages?: number
 }) {
   let call = 0
-  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  return vi.fn(async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : String(input)
     if (url.includes('api.clerk.com')) {
       return new Response(
@@ -89,21 +88,21 @@ const listCalled = (google: ReturnType<typeof stubCalendar>) =>
     String(input).startsWith('https://www.googleapis.com/calendar'),
   )
 
-describe('zonedDayStart', () => {
+describe('dayStartIn', () => {
   it('names local midnight in the requested zone', () => {
-    const start = zonedDayStart('2026-10-14', 'Europe/Berlin')
+    const start = dayStartIn('2026-10-14', 'Europe/Berlin')
     expect(start).not.toBeNull()
     expect(new Date(start!)).toEqual(new Date('2026-10-14T00:00:00+02:00'))
   })
 
   it('survives a winter DST-adjacent date', () => {
-    const start = zonedDayStart('2026-11-02', 'Europe/Berlin')
+    const start = dayStartIn('2026-11-02', 'Europe/Berlin')
     expect(new Date(start!)).toEqual(new Date('2026-11-02T00:00:00+01:00'))
   })
 
   it('rejects a shape that is not YYYY-MM-DD', () => {
-    expect(zonedDayStart('14/10/2026', 'UTC')).toBeNull()
-    expect(zonedDayStart('2026-13-01', 'UTC')).toBeNull()
+    expect(dayStartIn('14/10/2026', 'UTC')).toBeNull()
+    expect(dayStartIn('2026-13-01', 'UTC')).toBeNull()
   })
 })
 

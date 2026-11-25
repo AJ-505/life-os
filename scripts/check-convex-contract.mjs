@@ -62,6 +62,7 @@ const LIVE_CLIENT_SENDS = {
   'settings:setLastProject': { spaceId: null, projectId: '~none' },
   'calendar:syncTask': { taskId: 'contract-probe' },
   'calendar:retryAccessIssues': {},
+  'calendar:repairCalendar': {},
   'backup:exportBackup': null,
   'backup:importBackup': {
     app: 'lifeos',
@@ -121,7 +122,7 @@ const LIVE_CLIENT_SENDS = {
   },
 }
 
-const ACTIONS = new Set(['calendar:syncTask'])
+const ACTIONS = new Set(['calendar:syncTask', 'calendar:repairCalendar'])
 
 function deployment() {
   const env = readFileSync(new URL('../.env.local', import.meta.url), 'utf8')

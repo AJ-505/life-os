@@ -1,112 +1,29 @@
-export const REPEAT_RULES = [
-  'daily',
-  'weekdays',
-  'weekly',
-  'monthly',
-  'yearly',
-] as const
+import { v } from 'convex/values'
 
-export type RepeatRule = (typeof REPEAT_RULES)[number]
+import { DAY_MS, civilAt, instantAt, usableTimeZone } from './zonedTime'
 
-const DAY_MS = 86_400_000
-const MAX_STEPS = 1_000
+import type { Infer } from 'convex/values'
+import type { CivilTime } from './zonedTime'
 
-type CivilTime = {
-  year: number
-  month: number
-  day: number
-  hour: number
-  minute: number
-  second: number
-}
+export const repeatRule = v.union(
+  v.literal('daily'),
+  v.literal('weekdays'),
+  v.literal('weekly'),
+  v.literal('monthly'),
+  v.literal('yearly'),
+)
 
-type Anchor = { civil: CivilTime; ms: number }
+export type RepeatRule = Infer<typeof repeatRule>
 
-const formatters = new Map<string, Intl.DateTimeFormat>()
-
-function formatter(timeZone: string): Intl.DateTimeFormat {
-  const cached = formatters.get(timeZone)
-  if (cached) return cached
-  const created = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-  formatters.set(timeZone, created)
-  return created
-}
-
-export function usableTimeZone(
-  value: string | null | undefined,
-): string | null {
-  if (!value) return null
-  try {
-    formatter(value)
-    return value
-  } catch {
-    return null
-  }
-}
-
-export function localTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-}
+export const REPEAT_RULES = repeatRule.members.map((member) => member.value)
 
 export function isRepeatRule(value: unknown): value is RepeatRule {
   return REPEAT_RULES.some((rule) => rule === value)
 }
 
-function civilAt(instant: number, timeZone: string): CivilTime {
-  const parts = formatter(timeZone).formatToParts(new Date(instant))
-  const read = (type: Intl.DateTimeFormatPartTypes): number => {
-    const part = parts.find((candidate) => candidate.type === type)
-    return part ? Number(part.value) : 0
-  }
-  return {
-    year: read('year'),
-    month: read('month'),
-    day: read('day'),
-    hour: read('hour'),
-    minute: read('minute'),
-    second: read('second'),
-  }
-}
+const MAX_STEPS = 1_000
 
-function offsetMs(instant: number, timeZone: string): number {
-  const whole = Math.floor(instant / 1000) * 1000
-  const civil = civilAt(whole, timeZone)
-  return (
-    Date.UTC(
-      civil.year,
-      civil.month - 1,
-      civil.day,
-      civil.hour,
-      civil.minute,
-      civil.second,
-    ) - whole
-  )
-}
-
-function instantAt(civil: CivilTime, ms: number, timeZone: string): number {
-  const utc = Date.UTC(
-    civil.year,
-    civil.month - 1,
-    civil.day,
-    civil.hour,
-    civil.minute,
-    civil.second,
-  )
-  const first = offsetMs(utc, timeZone)
-  let instant = utc - first
-  const second = offsetMs(instant, timeZone)
-  if (second !== first) instant = utc - second
-  return instant + ms
-}
+type Anchor = { civil: CivilTime; ms: number }
 
 function civilDay(civil: CivilTime): Date {
   return new Date(Date.UTC(civil.year, civil.month - 1, civil.day))
@@ -178,7 +95,7 @@ function occurrenceAt(
   index: number,
   timeZone: string,
 ): number {
-  return instantAt(advanceCivil(anchor.civil, rule, index), anchor.ms, timeZone)
+  return instantAt(advanceCivil(anchor.civil, rule, index), timeZone, anchor.ms)
 }
 
 function startIndex(
@@ -223,7 +140,7 @@ export function occurrencesBetween(
     const found: Array<number> = []
     for (let step = 0; step < days; step++) {
       if (!isWeekend(civil)) {
-        const at = instantAt(civil, anchor.ms, zone)
+        const at = instantAt(civil, zone, anchor.ms)
         if (at > to) break
         if (at >= from && at >= anchorInstant) found.push(at)
       }
@@ -265,7 +182,7 @@ export function nextOccurrence(
     )
     for (let step = 0; step < 9; step++) {
       if (!isWeekend(civil)) {
-        const at = instantAt(civil, anchor.ms, zone)
+        const at = instantAt(civil, zone, anchor.ms)
         if (at > threshold) return at
       }
       civil = addDays(civil, 1)

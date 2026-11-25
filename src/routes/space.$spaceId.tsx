@@ -43,7 +43,7 @@ function SpaceBoard() {
 
   return (
     <BoardScopeProvider spaceId={spaceId}>
-      <BoardView spaceId={spaceId} view={view ?? 'board'} />
+      <BoardView view={view ?? 'board'} />
     </BoardScopeProvider>
   )
 }

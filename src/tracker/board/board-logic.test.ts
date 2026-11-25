@@ -4,98 +4,13 @@ import {
   boardColumns,
   canvasProjects,
   columnProjects,
-  descendantIds,
-  focusDrop,
   focusTasks,
-  parseDragId,
   withTasksIn,
 } from './board-logic'
+import { focusTask, project, task } from '../testing/board'
 import { NO_PROJECT_ID } from '../types'
 
-import type { ProjectWithTasks, Task } from '../types'
-
-function task(id: string, parentId: string | null): Task {
-  return {
-    id,
-    projectId: 'p1',
-    parentId,
-    title: id,
-    notes: null,
-    position: 1,
-    done: false,
-    doneAt: null,
-    archived: false,
-    dueAt: null,
-    reminderMinutes: null,
-    durationMinutes: null,
-    repeat: null,
-    addToCalendar: false,
-    calendarEventId: null,
-    calendarSyncIssue: null,
-    importedFromEventId: null,
-    inFocus: false,
-    focusOrder: 0,
-    createdAt: 1,
-    assigneeId: null,
-    spaceId: null,
-  }
-}
-
-describe('descendantIds', () => {
-  it('walks a normal tree', () => {
-    const tasks = [
-      task('root', null),
-      task('child', 'root'),
-      task('grandchild', 'child'),
-      task('other', null),
-    ]
-    expect(descendantIds(tasks, 'root').sort()).toEqual(['child', 'grandchild'])
-  })
-
-  it('terminates on a parent cycle, and still returns the other half', () => {
-    const cyclic = [task('a', 'b'), task('b', 'a')]
-    expect(descendantIds(cyclic, 'a')).toEqual(['b'])
-    expect(descendantIds(cyclic, 'b')).toEqual(['a'])
-  })
-
-  it('stops a cycle from swallowing a real subtask', () => {
-    const cyclic = [task('a', 'b'), task('b', 'a'), task('real', 'b')]
-    expect(descendantIds(cyclic, 'a').sort()).toEqual(['b', 'real'])
-  })
-})
-
-function project(id: string, tasks: Array<Task>): ProjectWithTasks {
-  return {
-    id,
-    name: id,
-    color: 'moss',
-    status: 'active',
-    collapsed: false,
-    showDone: true,
-    gridCol: 0,
-    gridRow: 1,
-    targetDate: null,
-    createdAt: 1,
-    finishedAt: null,
-    shelvedAt: null,
-    spaceId: null,
-    tasks,
-  }
-}
-
-function focusTask(
-  id: string,
-  focusOrder: number,
-  doneAt: number | null = null,
-): Task {
-  return {
-    ...task(id, null),
-    inFocus: true,
-    focusOrder,
-    done: doneAt !== null,
-    doneAt,
-  }
-}
+import type { ProjectWithTasks } from '../types'
 
 const ids = (board: Array<ProjectWithTasks>) =>
   focusTasks(board).map((e) => e.task.id)
@@ -163,45 +78,8 @@ describe('focusTasks', () => {
   })
 })
 
-describe('focusDrop', () => {
-  it('keeps a finished row where it is when it is dragged', () => {
-    const board = [
-      project('p1', [
-        focusTask('a', 3072),
-        focusTask('b', 4096),
-        focusTask('c', 1024, 100),
-      ]),
-    ]
-    expect(focusDrop(board, 'c', { kind: 'fitem', key: 'a' }, 'before')).toBe(
-      1024,
-    )
-  })
-
-  it('positions open rows against other open rows, ignoring finished ones', () => {
-    const board = [
-      project('p1', [
-        focusTask('a', 1024),
-        focusTask('done', 2048, 100),
-        focusTask('b', 4096),
-      ]),
-    ]
-    expect(focusDrop(board, 'b', { kind: 'fitem', key: 'a' }, 'before')).toBe(0)
-  })
-
-  it('still reorders open rows by the drop position', () => {
-    const board = [
-      project('p1', [
-        focusTask('a', 1024),
-        focusTask('b', 2048),
-        focusTask('c', 3072),
-      ]),
-    ]
-    expect(focusDrop(board, 'c', { kind: 'fitem', key: 'a' }, 'before')).toBe(0)
-  })
-})
-
 describe('the no-project bucket', () => {
-  const at = (id: string, position: number) => ({ ...task(id, null), position })
+  const at = (id: string, position: number) => task(id, { position })
   const bucket = { ...project(NO_PROJECT_ID, []), gridCol: -1 }
 
   it('stays off the board canvas while real projects remain', () => {
@@ -235,31 +113,5 @@ describe('the no-project bucket', () => {
   it('drops tasks aimed at a project the board does not have', () => {
     const board = [project('p1', [])]
     expect(withTasksIn(board, 'gone', null, [at('a', 1)])).toEqual(board)
-  })
-})
-
-describe('parseDragId', () => {
-  it('reads a plain calendar drag id', () => {
-    expect(parseDragId('cal@task-1')).toEqual({
-      kind: 'cal',
-      key: 'task-1',
-      occurrence: null,
-    })
-  })
-
-  it('splits the occurrence off a repeating calendar drag id', () => {
-    expect(parseDragId('cal@task-1@1761000000000')).toEqual({
-      kind: 'cal',
-      key: 'task-1',
-      occurrence: 1761000000000,
-    })
-  })
-
-  it('leaves the other kinds without an occurrence', () => {
-    expect(parseDragId('task@task-1')).toEqual({
-      kind: 'task',
-      key: 'task-1',
-      occurrence: null,
-    })
   })
 })

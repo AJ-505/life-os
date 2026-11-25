@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useConvexMutation } from '@convex-dev/react-query'
 import {
   Copy,
   Link2,
@@ -42,28 +43,25 @@ import {
 } from '#/design-system/ui/dropdown-menu'
 import {
   mySpacesQueryOptions,
-  useCreateSpace,
   useDeleteSpace,
   useLeaveSpace,
 } from '#/spaces/queries'
 import { boardQueryOptions } from '#/tracker/queries'
 import { SpacesShareDialog } from '#/spaces/components/SpacesShareDialog'
+import { api } from '../../convex/_generated/api'
+
+import type { FunctionReturnType } from 'convex/server'
 
 export const Route = createFileRoute('/spaces')({
   component: SpacesView,
 })
 
-type SpaceRow = {
-  id: string
-  name: string
-  inviteCode: string
-  ownerId: string
-  createdAt: number
-  role: 'owner' | 'member'
-}
+type SpaceRow = FunctionReturnType<typeof api.spaces.getMySpaces>[number]
 
 function SpacesView() {
-  const createSpace = useCreateSpace()
+  const createSpace = useMutation({
+    mutationFn: useConvexMutation(api.spaces.createSpace),
+  })
   const leaveSpace = useLeaveSpace()
   const deleteSpace = useDeleteSpace()
   const navigate = useNavigate()
@@ -125,24 +123,10 @@ function SpacesView() {
   const runConfirm = () => {
     if (!confirm) return
     const { space, kind } = confirm
-    const done = () => {
-      setConfirm(null)
-      toast.success(kind === 'leave' ? 'You left the space' : 'Space deleted')
-    }
-    const failed = (e: unknown) =>
-      toast.error(kind === 'leave' ? 'Could not leave' : 'Could not delete', {
-        description: e instanceof Error ? e.message : String(e),
-      })
-    if (kind === 'leave')
-      leaveSpace.mutate(
-        { spaceId: space.id },
-        { onSuccess: done, onError: failed },
-      )
-    else
-      deleteSpace.mutate(
-        { spaceId: space.id },
-        { onSuccess: done, onError: failed },
-      )
+    setConfirm(null)
+    if (kind === 'leave') leaveSpace.mutate({ spaceId: space.id })
+    else deleteSpace.mutate({ spaceId: space.id })
+    toast.success(kind === 'leave' ? 'You left the space' : 'Space deleted')
   }
 
   if (!SPACES_ENABLED) {
@@ -385,7 +369,6 @@ function SpacesView() {
               size="sm"
               variant={confirm?.kind === 'delete' ? 'destructive' : 'default'}
               onClick={runConfirm}
-              disabled={leaveSpace.isPending || deleteSpace.isPending}
             >
               {confirm?.kind === 'delete' ? 'Delete space' : 'Leave space'}
             </Button>

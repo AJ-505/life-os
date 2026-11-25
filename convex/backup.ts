@@ -4,10 +4,12 @@ import type { Infer } from 'convex/values'
 
 import { internalMutation, mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
-import { clampDuration, requireUserId } from './lib'
-import { eventsToDelete } from './calendar'
+import { requireUserId } from './access'
+import { scheduleRemoval } from './calendarSync'
+import { eventsToDelete } from './syncRule'
+import { repeatRule } from './recurrence'
+import { clampDuration } from './taskModel'
 
-import type { Doc } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
 
 const IMPORT_BATCH = 200
@@ -49,16 +51,7 @@ const backupTask = v.object({
   addToCalendar: v.optional(v.union(v.boolean(), v.null())),
   calendarEventId: v.optional(v.union(v.string(), v.null())),
   importedFromEventId: v.optional(v.union(v.string(), v.null())),
-  repeat: v.optional(
-    v.union(
-      v.literal('daily'),
-      v.literal('weekdays'),
-      v.literal('weekly'),
-      v.literal('monthly'),
-      v.literal('yearly'),
-      v.null(),
-    ),
-  ),
+  repeat: v.optional(v.union(repeatRule, v.null())),
 })
 
 async function personalRows(ctx: QueryCtx | MutationCtx, userId: string) {
@@ -152,12 +145,7 @@ export const importBackup = mutation({
       tasks.filter((task) => !task.calendarEventId),
     ))
       staleEvents.set(event.eventId, event)
-    if (staleEvents.size > 0) {
-      await ctx.scheduler.runAfter(0, internal.calendar.deleteEventsForUser, {
-        userId,
-        events: [...staleEvents.values()],
-      })
-    }
+    await scheduleRemoval(ctx, userId, [...staleEvents.values()])
 
     const projectsById = new Map(data.projects.map((p) => [p.id, p]))
     const tasksById = new Map(data.tasks.map((t) => [t.id, t]))
@@ -180,8 +168,8 @@ export const importBackup = mutation({
 
 const importSide = v.object({
   userId: v.string(),
-  deleteProjectIds: v.array(v.string()),
-  deleteTaskIds: v.array(v.string()),
+  deleteProjectIds: v.array(v.id('projects')),
+  deleteTaskIds: v.array(v.id('tasks')),
   projects: v.array(backupProject),
   tasks: v.array(backupTask),
 })
@@ -195,21 +183,13 @@ export const continueImportBackup = internalMutation({
 
 async function importBackupSide(
   ctx: MutationCtx,
-  side: {
-    userId: string
-    deleteProjectIds: string[]
-    deleteTaskIds: string[]
-    projects: Array<Infer<typeof backupProject>>
-    tasks: Array<Infer<typeof backupTask>>
-  },
+  side: Infer<typeof importSide>,
 ) {
   await Promise.all([
     ...side.deleteProjectIds
       .slice(0, IMPORT_BATCH)
-      .map((id) => ctx.db.delete(id as Doc<'projects'>['_id'])),
-    ...side.deleteTaskIds
-      .slice(0, IMPORT_BATCH)
-      .map((id) => ctx.db.delete(id as Doc<'tasks'>['_id'])),
+      .map((id) => ctx.db.delete(id)),
+    ...side.deleteTaskIds.slice(0, IMPORT_BATCH).map((id) => ctx.db.delete(id)),
   ])
 
   const projectBatch = side.projects.slice(0, IMPORT_BATCH)

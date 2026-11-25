@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { configDefaults, defineConfig } from 'vitest/config'
 
 export default defineConfig({
   test: {
@@ -8,6 +8,14 @@ export default defineConfig({
           name: 'app',
           environment: 'node',
           include: ['src/**/*.test.ts'],
+          exclude: [...configDefaults.exclude, 'src/**/*.dom.test.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'dom',
+          environment: 'jsdom',
+          include: ['src/**/*.dom.test.ts'],
         },
       },
       {

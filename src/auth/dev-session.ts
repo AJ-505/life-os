@@ -1,57 +1,33 @@
-import { useSyncExternalStore } from 'react'
 import * as z from 'zod'
 
-const STORAGE_KEY = 'lifeos-dev-auth'
+import { jsonCodec, storedValue, useStored } from '#/design-system/stored'
 
 const Credentials = z.object({ email: z.string(), password: z.string() })
 const TokenResponse = z.object({ token: z.string() })
 
 export type DevCredentials = z.infer<typeof Credentials>
 
-const listeners = new Set<() => void>()
-
-function subscribe(listener: () => void) {
-  listeners.add(listener)
-  return () => listeners.delete(listener)
-}
-
-function notify() {
-  for (const listener of listeners) listener()
-}
-
-function readStored(): string | null {
-  return typeof window === 'undefined'
-    ? null
-    : window.localStorage.getItem(STORAGE_KEY)
-}
-
-function parseStored(raw: string | null): DevCredentials | null {
-  if (raw === null) return null
-  let json: unknown
-  try {
-    json = JSON.parse(raw)
-  } catch {
-    return null
-  }
-  const parsed = Credentials.safeParse(json)
-  return parsed.success ? parsed.data : null
-}
+const credentials = storedValue<DevCredentials | null>(
+  'lifeos-dev-auth',
+  jsonCodec(Credentials.nullable()),
+  null,
+)
 
 export function readDevCredentials() {
-  return parseStored(readStored())
+  return credentials.read()
 }
 
 export function useDevCredentials() {
-  return parseStored(useSyncExternalStore(subscribe, readStored, () => null))
+  return useStored(credentials)[0]
 }
 
-export async function fetchDevToken(credentials: DevCredentials) {
+export async function fetchDevToken(devCredentials: DevCredentials) {
   const response = await fetch(
     `${import.meta.env.VITE_CONVEX_SITE_URL}/dev-auth/token`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(credentials),
+      body: JSON.stringify(devCredentials),
     },
   )
   if (response.status === 401) throw new Error('Wrong dev password.')
@@ -64,13 +40,11 @@ export async function fetchDevToken(credentials: DevCredentials) {
 }
 
 export async function signInDev(email: string, password: string) {
-  const credentials = { email: email.trim().toLowerCase(), password }
-  await fetchDevToken(credentials)
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(credentials))
-  notify()
+  const next = { email: email.trim().toLowerCase(), password }
+  await fetchDevToken(next)
+  credentials.write(next)
 }
 
 export function signOutDev() {
-  window.localStorage.removeItem(STORAGE_KEY)
-  notify()
+  credentials.clear()
 }

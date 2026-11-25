@@ -718,8 +718,9 @@ describe('auto add to calendar', () => {
     await asUser(t).mutation(api.settings.updateCalendarSettings, {
       autoAddToCalendar: false,
     })
-    await t.mutation(internal.settings.continueAutoSyncOff, {
+    await t.mutation(internal.calendarSync.sweep, {
       userId: 'user_a',
+      mode: 'removeAutoAdded',
       cursor: null,
     })
     await asUser(t).mutation(api.settings.updateCalendarSettings, {

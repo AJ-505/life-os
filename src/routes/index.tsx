@@ -13,7 +13,7 @@ function PersonalBoard() {
   const { view } = Route.useSearch()
   return (
     <BoardScopeProvider spaceId={null}>
-      <BoardView spaceId={null} view={view ?? 'board'} />
+      <BoardView view={view ?? 'board'} />
     </BoardScopeProvider>
   )
 }

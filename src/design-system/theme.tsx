@@ -1,11 +1,21 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { MoonStar, SunMedium } from 'lucide-react'
+import * as z from 'zod'
 
 import { Button } from '#/design-system/ui/button'
+import { storedValue, textCodec } from './stored'
 
-type Theme = 'light' | 'dark'
+const themeName = z.enum(['light', 'dark'])
+
+type Theme = z.infer<typeof themeName>
 
 const STORAGE_KEY = 'lifeos-theme'
+
+const storedTheme = storedValue<Theme>(
+  STORAGE_KEY,
+  textCodec(themeName),
+  'light',
+)
 
 export const THEME_INIT_SCRIPT = `(function(){try{var q=new URLSearchParams(location.search).get('theme');var t=q||localStorage.getItem('${STORAGE_KEY}');var d=t? t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',d)}catch(e){}})()`
 
@@ -26,7 +36,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const setTheme = (t: Theme) => {
     setThemeState(t)
     document.documentElement.classList.toggle('dark', t === 'dark')
-    localStorage.setItem(STORAGE_KEY, t)
+    storedTheme.write(t)
   }
 
   return (

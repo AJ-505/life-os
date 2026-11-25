@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { endOfDay } from 'date-fns/endOfDay'
 import { format } from 'date-fns/format'
 import { isSameDay } from 'date-fns/isSameDay'
@@ -17,8 +17,9 @@ import { minuteOfDay, timeLabel } from './calendar-logic'
 import { useHomeProject } from './last-project'
 import { ProjectPicker } from './ProjectPicker'
 import { canvasProjects } from '../board/board-logic'
-import { positionAfter } from '../types'
-import { useImportExternalEvent } from './pull'
+import { appendRootPosition } from '../board/placement'
+import { newId } from '../types'
+import { useImportEvent } from '../queries'
 
 import type { CardDensity, ExternalEvent, PlacedTask } from './calendar-logic'
 import type { ProjectWithTasks } from '../types'
@@ -50,24 +51,19 @@ function ImportPopover({
   projects: Array<ProjectWithTasks>
   onDone: () => void
 }) {
-  const importEvent = useImportExternalEvent()
+  const importEvent = useImportEvent()
   const homes = canvasProjects(projects)
   const { home, choose } = useHomeProject(homes)
-  const siblings = projects.find((p) => p.id === home)?.tasks ?? []
-
-  useEffect(() => {
-    if (!importEvent.isSuccess) return
-    onDone()
-  }, [importEvent.isSuccess, onDone])
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
-    importEvent.mutate({
+    importEvent({
       event,
-      taskId: globalThis.crypto.randomUUID(),
+      taskId: newId(),
       projectId: home,
-      position: positionAfter(siblings.filter((x) => !x.parentId)),
+      position: appendRootPosition(projects.find((p) => p.id === home)),
     })
+    onDone()
   }
 
   return (
@@ -93,7 +89,7 @@ function ImportPopover({
       </div>
       <div className="flex items-center gap-2">
         <ProjectPicker projects={homes} value={home} onChange={choose} />
-        <Button type="submit" size="sm" disabled={importEvent.isPending}>
+        <Button type="submit" size="sm">
           <Plus className="size-3.5" />
           Add as task
         </Button>

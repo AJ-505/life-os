@@ -3,12 +3,19 @@ import { toast } from 'sonner'
 import { convexQuery, useConvexMutation } from '@convex-dev/react-query'
 
 import { api } from '../../convex/_generated/api'
-import { localTimeZone, nextOccurrence } from '../../convex/recurrence'
-import { descendantIds, withTasksIn } from './board/board-logic'
+import {
+  applyTaskUpdate,
+  descendants,
+  importedTask,
+  newTask,
+} from '../../convex/taskModel'
+import { localTimeZone } from '../../convex/zonedTime'
+import { withTasksIn } from './board/board-logic'
 import { useBoardScope } from './board-scope'
 
 import type { FunctionArgs } from 'convex/server'
 import type { OptimisticLocalStore } from 'convex/browser'
+import type { ExternalEventRow } from '../../convex/calendarPull'
 import type { BoardData, Project, Task } from './types'
 
 export type CreateProjectArgs = FunctionArgs<typeof api.tracker.createProject>
@@ -53,8 +60,21 @@ const patchProject = (
   patch: Partial<Project>,
 ): BoardData => board.map((p) => (p.id === id ? { ...p, ...patch } : p))
 
+const withoutTasks = (board: BoardData, gone: Set<string>): BoardData =>
+  board.map((p) =>
+    p.tasks.some((t) => gone.has(t.id))
+      ? { ...p, tasks: p.tasks.filter((t) => !gone.has(t.id)) }
+      : p,
+  )
+
+const findTask = (board: BoardData, id: string) =>
+  board.flatMap((p) => p.tasks).find((t) => t.id === id)
+
+const errorText = (error: unknown) =>
+  error instanceof Error ? error.message : String(error)
+
 export function useCreateProject() {
-  const spaceId = useBoardScope()
+  const { spaceId } = useBoardScope()
   const mutationFn = useConvexMutation(
     api.tracker.createProject,
   ).withOptimisticUpdate((store, args) => {
@@ -62,7 +82,7 @@ export function useCreateProject() {
       ...board,
       {
         id: args.id,
-        name: args.name,
+        name: args.name.trim(),
         color: args.color,
         status: 'active',
         collapsed: false,
@@ -82,7 +102,7 @@ export function useCreateProject() {
 }
 
 export function useUpdateProject() {
-  const spaceId = useBoardScope()
+  const { spaceId } = useBoardScope()
   const mutationFn = useConvexMutation(
     api.tracker.updateProject,
   ).withOptimisticUpdate((store, args) => {
@@ -93,7 +113,7 @@ export function useUpdateProject() {
 }
 
 export function useMoveProject() {
-  const spaceId = useBoardScope()
+  const { spaceId } = useBoardScope()
   const mutationFn = useConvexMutation(
     api.tracker.moveProject,
   ).withOptimisticUpdate((store, args) => {
@@ -108,7 +128,7 @@ export function useMoveProject() {
 }
 
 export function useSetProjectStatus() {
-  const spaceId = useBoardScope()
+  const { spaceId } = useBoardScope()
   const mutationFn = useConvexMutation(
     api.tracker.setProjectStatus,
   ).withOptimisticUpdate((store, args) => {
@@ -125,7 +145,7 @@ export function useSetProjectStatus() {
 }
 
 export function useDeleteProject() {
-  const spaceId = useBoardScope()
+  const { spaceId } = useBoardScope()
   const mutationFn = useConvexMutation(
     api.tracker.deleteProject,
   ).withOptimisticUpdate((store, args) => {
@@ -134,127 +154,77 @@ export function useDeleteProject() {
   return useMutation({ mutationFn })
 }
 
-export function useCreateTask() {
-  const spaceId = useBoardScope()
+export type AddTaskArgs = Omit<CreateTaskArgs, 'spaceId'>
+
+export function useAddTask() {
+  const { spaceId } = useBoardScope()
   const mutationFn = useConvexMutation(
     api.tracker.createTask,
   ).withOptimisticUpdate((store, args) => {
+    const task = newTask({ ...args, spaceId }, Date.now())
     withBoard(store, spaceId, (board) =>
-      withTasksIn(board, args.projectId, spaceId, [
-        {
-          id: args.id,
-          projectId: args.projectId,
-          parentId: args.parentId ?? null,
-          title: args.title,
-          notes: null,
-          position: args.position,
-          done: false,
-          doneAt: null,
-          archived: false,
-          dueAt: args.dueAt ?? null,
-          reminderMinutes: null,
-          durationMinutes: args.durationMinutes ?? null,
-          repeat: null,
-          addToCalendar: false,
-          calendarEventId: null,
-          calendarSyncIssue: null,
-          importedFromEventId: null,
-          inFocus: false,
-          focusOrder: 0,
-          createdAt: Date.now(),
-          assigneeId: args.assigneeId ?? null,
-          spaceId,
-        },
-      ]),
+      withTasksIn(board, args.projectId, spaceId, [task]),
     )
   })
   const create = useMutation({
     mutationFn,
-    onError: (e: unknown, args: CreateTaskArgs) => {
+    onError: (error: unknown, args: CreateTaskArgs) => {
       toast.error('Could not create the task', {
-        description: e instanceof Error ? e.message : String(e),
+        description: errorText(error),
         action: { label: 'Retry', onClick: () => create.mutate(args) },
       })
     },
   })
-  return create
-}
-
-export function useAddTask() {
-  const spaceId = useBoardScope()
-  const create = useCreateTask()
-  return (args: Omit<CreateTaskArgs, 'spaceId'>) =>
-    create.mutate({ ...args, spaceId })
+  return (args: AddTaskArgs) => create.mutate({ ...args, spaceId })
 }
 
 export function useUpdateTask() {
-  const spaceId = useBoardScope()
+  const { spaceId } = useBoardScope()
   const convexUpdate = useConvexMutation(
     api.tracker.updateTask,
   ).withOptimisticUpdate((store, args) => {
-    const { id, done, timeZone: _timeZone, ...rest } = args
+    const { id, timeZone, ...update } = args
+    const clock = { now: Date.now(), timeZone: timeZone ?? localTimeZone() }
     withBoard(store, spaceId, (board) => {
-      const current = board.flatMap((p) => p.tasks).find((t) => t.id === id)
-      if (done === true && current?.repeat && current.dueAt !== null) {
-        const next = nextOccurrence(
-          current.dueAt,
-          current.repeat,
-          Date.now(),
-          localTimeZone(),
-        )
-        if (next !== null)
-          return patchTask(board, id, {
-            ...rest,
-            done: false,
-            doneAt: null,
-            dueAt: next,
-          })
-      }
-      return patchTask(board, id, {
-        ...rest,
-        ...(rest.dueAt === null &&
-          rest.repeat === undefined && { repeat: null }),
-        ...(done !== undefined && {
-          done,
-          doneAt: done ? Date.now() : (current?.doneAt ?? null),
-        }),
-      })
+      const current = findTask(board, id)
+      if (!current) return board
+      return patchTask(board, id, applyTaskUpdate(current, update, clock))
     })
   })
   const mutationFn = (args: UpdateTaskArgs) =>
     convexUpdate({ ...args, timeZone: localTimeZone() })
-  return useMutation({ mutationFn })
+  return useMutation({
+    mutationFn,
+    onError: (error: unknown) => {
+      toast.error('Could not save the task', { description: errorText(error) })
+    },
+  })
 }
 
 export function useMoveTask() {
-  const spaceId = useBoardScope()
+  const { spaceId } = useBoardScope()
   const mutationFn = useConvexMutation(
     api.tracker.moveTask,
   ).withOptimisticUpdate((store, args) => {
     withBoard(store, spaceId, (board) => {
       const all = board.flatMap((p) => p.tasks)
-      if (!all.some((t) => t.id === args.id)) return board
-      const movingIds = new Set([args.id, ...descendantIds(all, args.id)])
-      const subtree = all
-        .filter((t) => movingIds.has(t.id))
-        .map((t) =>
-          t.id === args.id
-            ? { ...t, projectId: args.projectId, position: args.position }
-            : { ...t, projectId: args.projectId },
-        )
-      const without = board.map((p) =>
-        p.tasks.some((t) => movingIds.has(t.id))
-          ? { ...p, tasks: p.tasks.filter((t) => !movingIds.has(t.id)) }
-          : p,
+      const moving = all.find((t) => t.id === args.id)
+      if (!moving) return board
+      const subtree = [moving, ...descendants(all, args.id)]
+      const moved = subtree.map((t) =>
+        t.id === args.id
+          ? { ...t, projectId: args.projectId, position: args.position }
+          : { ...t, projectId: args.projectId },
       )
-      return withTasksIn(without, args.projectId, spaceId, subtree)
+      const without = withoutTasks(board, new Set(subtree.map((t) => t.id)))
+      return withTasksIn(without, args.projectId, spaceId, moved)
     })
   })
   return useMutation({ mutationFn })
 }
 
 export function useSetTaskFocus() {
-  const spaceId = useBoardScope()
+  const { spaceId } = useBoardScope()
   const mutationFn = useConvexMutation(
     api.tracker.setTaskFocus,
   ).withOptimisticUpdate((store, args) => {
@@ -269,19 +239,56 @@ export function useSetTaskFocus() {
 }
 
 export function useDeleteTask() {
-  const spaceId = useBoardScope()
+  const { spaceId } = useBoardScope()
   const mutationFn = useConvexMutation(
     api.tracker.deleteTask,
   ).withOptimisticUpdate((store, args) => {
     withBoard(store, spaceId, (board) => {
       const all = board.flatMap((p) => p.tasks)
-      const gone = new Set([args.id, ...descendantIds(all, args.id)])
-      return board.map((p) =>
-        p.tasks.some((t) => gone.has(t.id))
-          ? { ...p, tasks: p.tasks.filter((t) => !gone.has(t.id)) }
-          : p,
-      )
+      const gone = new Set([
+        args.id,
+        ...descendants(all, args.id).map((t) => t.id),
+      ])
+      return withoutTasks(board, gone)
     })
   })
   return useMutation({ mutationFn })
+}
+
+export type ImportTarget = {
+  event: ExternalEventRow
+  taskId: string
+  projectId: string
+  position: number
+}
+
+export function useImportEvent() {
+  const mutationFn = useConvexMutation(
+    api.calendarPull.importEvent,
+  ).withOptimisticUpdate((store, args) => {
+    const event = store
+      .getAllQueries(api.calendarPull.listExternalEvents)
+      .flatMap((entry) => entry.value ?? [])
+      .find((candidate) => candidate.eventId === args.eventId)
+    if (!event) return
+    const task = importedTask(event, args, Date.now())
+    withBoard(store, null, (board) =>
+      withTasksIn(board, args.projectId, null, [task]),
+    )
+  })
+  const importEvent = useMutation({
+    mutationFn,
+    onError: (error: unknown) => {
+      toast.error('Could not add that event as a task', {
+        description: errorText(error),
+      })
+    },
+  })
+  return (target: ImportTarget) =>
+    importEvent.mutate({
+      eventId: target.event.eventId,
+      taskId: target.taskId,
+      projectId: target.projectId,
+      position: target.position,
+    })
 }

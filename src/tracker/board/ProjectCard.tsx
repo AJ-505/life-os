@@ -47,14 +47,16 @@ import {
   PopoverTrigger,
 } from '#/design-system/ui/popover'
 
-import { PROJECT_COLORS, newId, positionAfter } from '../types'
+import { PROJECT_COLORS, newId } from '../types'
 import {
   useAddTask,
   useDeleteProject,
   useSetProjectStatus,
   useUpdateProject,
 } from '../queries'
-import { listId, projId, projectCounts, taskId, taskTree } from './board-logic'
+import { projectCounts, taskTree } from './board-logic'
+import { listId, projId, taskId } from './drop'
+import { appendRootPosition } from './placement'
 import { TaskRow } from './TaskRow'
 
 import type { ProjectWithTasks } from '../types'
@@ -207,7 +209,7 @@ function AddTaskInput({ project }: { project: ProjectWithTasks }) {
       id: newId(),
       projectId: project.id,
       title: t,
-      position: positionAfter(project.tasks.filter((x) => !x.parentId)),
+      position: appendRootPosition(project),
     })
     setTitle('')
   }

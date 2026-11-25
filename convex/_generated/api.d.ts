@@ -8,19 +8,24 @@
  * @module
  */
 
+import type * as access from "../access.js";
 import type * as backup from "../backup.js";
 import type * as calendar from "../calendar.js";
 import type * as calendarPull from "../calendarPull.js";
+import type * as calendarSync from "../calendarSync.js";
 import type * as crons from "../crons.js";
 import type * as devAuth from "../devAuth.js";
+import type * as googleCalendar from "../googleCalendar.js";
 import type * as http from "../http.js";
-import type * as lib from "../lib.js";
 import type * as migrations from "../migrations.js";
 import type * as recurrence from "../recurrence.js";
 import type * as release from "../release.js";
 import type * as settings from "../settings.js";
 import type * as spaces from "../spaces.js";
+import type * as syncRule from "../syncRule.js";
+import type * as taskModel from "../taskModel.js";
 import type * as tracker from "../tracker.js";
+import type * as zonedTime from "../zonedTime.js";
 
 import type {
   ApiFromModules,
@@ -29,19 +34,24 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  access: typeof access;
   backup: typeof backup;
   calendar: typeof calendar;
   calendarPull: typeof calendarPull;
+  calendarSync: typeof calendarSync;
   crons: typeof crons;
   devAuth: typeof devAuth;
+  googleCalendar: typeof googleCalendar;
   http: typeof http;
-  lib: typeof lib;
   migrations: typeof migrations;
   recurrence: typeof recurrence;
   release: typeof release;
   settings: typeof settings;
   spaces: typeof spaces;
+  syncRule: typeof syncRule;
+  taskModel: typeof taskModel;
   tracker: typeof tracker;
+  zonedTime: typeof zonedTime;
 }>;
 
 /**

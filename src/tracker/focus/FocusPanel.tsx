@@ -13,9 +13,10 @@ import { Checkbox } from '#/design-system/ui/checkbox'
 import { ScrollArea } from '#/design-system/ui/scroll-area'
 
 import { useSetTaskFocus, useUpdateTask } from '../queries'
-import { focusItemId, focusTasks } from '../board/board-logic'
+import { focusTasks } from '../board/board-logic'
+import { focusItemId } from '../board/drop'
 import { DueChip } from '../board/TaskRow'
-import { useBoardUI } from '../board/board-ui'
+import { useBoardUI } from '../board/TaskDetailsHost'
 
 import type { BoardData, Project, Task } from '../types'
 

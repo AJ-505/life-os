@@ -1,72 +1,42 @@
 import { useState } from 'react'
 import { useSuspenseQuery } from '@tanstack/react-query'
-import { differenceInCalendarDays } from 'date-fns/differenceInCalendarDays'
 import { format } from 'date-fns/format'
-import { isPast } from 'date-fns/isPast'
-import { isToday } from 'date-fns/isToday'
-import { isTomorrow } from 'date-fns/isTomorrow'
 import { CalendarRange, Crosshair, Flag } from 'lucide-react'
 
 import { cn } from '#/design-system'
 import { Checkbox } from '#/design-system/ui/checkbox'
 
-import { POSITION_GAP } from '../types'
-import { boardQueryOptions, useSetTaskFocus, useUpdateTask } from '../queries'
-import { activeProjects } from '../board/board-logic'
+import { buildTaskIndex, activeProjects } from '../board/board-logic'
+import { appendFocusOrder } from '../board/placement'
 import { DueChip } from '../board/TaskRow'
 import { TaskDetails } from '../board/TaskDetails'
+import { DUE_BUCKETS, dueBucket } from '../due'
+import { boardQueryOptions, useSetTaskFocus, useUpdateTask } from '../queries'
 
+import type { DueBucket } from '../due'
 import type { BoardData, Project, Task } from '../types'
 
 type Entry =
-  | { kind: 'task'; due: Date; task: Task; project: Project }
-  | { kind: 'milestone'; due: Date; project: Project }
+  | { kind: 'task'; due: number; task: Task; project: Project }
+  | { kind: 'milestone'; due: number; project: Project }
 
-const BUCKETS = [
-  'Overdue',
-  'This hour',
-  'Today',
-  'Tomorrow',
-  'This week',
-  'Later',
-] as const
-type Bucket = (typeof BUCKETS)[number]
-
-function bucketOf(due: Date, now: Date): Bucket {
-  if (isPast(due)) return 'Overdue'
-  if (isToday(due) && due.getHours() === now.getHours()) return 'This hour'
-  if (isToday(due)) return 'Today'
-  if (isTomorrow(due)) return 'Tomorrow'
-  if (differenceInCalendarDays(due, now) < 7) return 'This week'
-  return 'Later'
-}
-
-function collectEntries(board: BoardData): Map<Bucket, Array<Entry>> {
+function collectEntries(board: BoardData): Map<DueBucket, Array<Entry>> {
   const entries: Array<Entry> = []
   for (const p of activeProjects(board)) {
     if (p.targetDate) {
-      entries.push({
-        kind: 'milestone',
-        due: new Date(p.targetDate),
-        project: p,
-      })
+      entries.push({ kind: 'milestone', due: p.targetDate, project: p })
     }
     for (const t of p.tasks) {
       if (t.dueAt && !t.archived && !t.done) {
-        entries.push({
-          kind: 'task',
-          due: new Date(t.dueAt),
-          task: t,
-          project: p,
-        })
+        entries.push({ kind: 'task', due: t.dueAt, task: t, project: p })
       }
     }
   }
-  entries.sort((a, b) => a.due.getTime() - b.due.getTime())
-  const now = new Date()
-  const grouped = new Map<Bucket, Array<Entry>>()
+  entries.sort((a, b) => a.due - b.due)
+  const now = Date.now()
+  const grouped = new Map<DueBucket, Array<Entry>>()
   for (const e of entries) {
-    const b = bucketOf(e.due, now)
+    const b = dueBucket(e.due, now)
     const bucket = grouped.get(b)
     if (bucket) bucket.push(e)
     else grouped.set(b, [e])
@@ -76,11 +46,15 @@ function collectEntries(board: BoardData): Map<Bucket, Array<Entry>> {
 
 function TaskEntry({
   task,
+  due,
   project,
+  board,
   onOpen,
 }: {
   task: Task
+  due: number
   project: Project
+  board: BoardData
   onOpen: () => void
 }) {
   const updateTask = useUpdateTask()
@@ -110,7 +84,7 @@ function TaskEntry({
           {project.name}
         </p>
       </button>
-      <DueChip due={task.dueAt!} done={task.done} />
+      <DueChip due={due} done={task.done} />
       <button
         type="button"
         aria-label={task.inFocus ? 'Remove from focus' : 'Add to focus'}
@@ -118,7 +92,7 @@ function TaskEntry({
           setFocus.mutate({
             id: task.id,
             inFocus: !task.inFocus,
-            focusOrder: Date.now() / 1000 + POSITION_GAP,
+            focusOrder: appendFocusOrder(board, task.id),
           })
         }
         className={cn(
@@ -138,9 +112,9 @@ export function TimelineView() {
   const { data: board } = useSuspenseQuery(boardQueryOptions(null))
   const grouped = collectEntries(board)
   const total = [...grouped.values()].reduce((n, l) => n + l.length, 0)
-  const [openTask, setOpenTask] = useState<Task | null>(null)
-  const openProject = openTask
-    ? board.find((p) => p.tasks.some((t) => t.id === openTask.id))
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null)
+  const openTask = openTaskId
+    ? (buildTaskIndex(board).get(openTaskId)?.task ?? null)
     : null
 
   return (
@@ -163,7 +137,7 @@ export function TimelineView() {
               </p>
             </div>
           ) : (
-            BUCKETS.map((bucket) => {
+            DUE_BUCKETS.map((bucket) => {
               const entries = grouped.get(bucket)
               if (!entries || entries.length === 0) return null
               return (
@@ -183,8 +157,10 @@ export function TimelineView() {
                         <TaskEntry
                           key={e.task.id}
                           task={e.task}
+                          due={e.due}
                           project={e.project}
-                          onOpen={() => setOpenTask(e.task)}
+                          board={board}
+                          onOpen={() => setOpenTaskId(e.task.id)}
                         />
                       ) : (
                         <div
@@ -212,12 +188,12 @@ export function TimelineView() {
           )}
         </div>
       </div>
-      {openTask && openProject ? (
+      {openTask ? (
         <TaskDetails
+          key={openTask.id}
           task={openTask}
           board={board}
-          open={true}
-          onClose={() => setOpenTask(null)}
+          onClose={() => setOpenTaskId(null)}
         />
       ) : null}
     </div>

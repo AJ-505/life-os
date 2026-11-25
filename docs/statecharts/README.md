@@ -29,13 +29,13 @@ into the folder they came from.
 
 ## What is modelled
 
-| Folder             | Machine                                                             | Code                                                            |
-| ------------------ | ------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `ProjectLifecycle` | A project on the board, in the Library, done, deleted               | `convex/tracker.ts` `setProjectStatus`, `deleteProject`         |
-| `TaskLifecycle`    | A task on the board, in the Library, ticked off, deleted            | `convex/tracker.ts` `updateTask`, `deleteTask`                  |
-| `CalendarSync`     | One task's Google event, the two settings, the push and the cleanup | `convex/calendar.ts`, `convex/settings.ts`, `convex/tracker.ts` |
-| `CalendarPull`     | The gate that decides when the Calendar view reads Google           | `src/tracker/calendar/pull.ts`, `convex/calendarPull.ts`        |
-| `SpaceMembership`  | One person in a shared space: membership, throttle, assigned work   | `convex/spaces.ts`                                              |
+| Folder             | Machine                                                             | Code                                                                 |
+| ------------------ | ------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `ProjectLifecycle` | A project on the board, in the Library, done, deleted               | `convex/tracker.ts` `setProjectStatus`, `deleteProject`              |
+| `TaskLifecycle`    | A task on the board, in the Library, ticked off, deleted            | `convex/tracker.ts` `updateTask`, `deleteTask`                       |
+| `CalendarSync`     | One task's Google event, the two settings, the push and the cleanup | `convex/calendar.ts`, `convex/calendarSync.ts`, `convex/settings.ts` |
+| `CalendarPull`     | The gate that decides when the Calendar view reads Google           | `src/tracker/calendar/pull.ts`, `convex/calendarPull.ts`             |
+| `SpaceMembership`  | One person in a shared space: membership, throttle, assigned work   | `convex/spaces.ts`                                                   |
 
 ## What these rules are
 

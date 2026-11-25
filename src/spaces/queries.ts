@@ -1,7 +1,10 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { convexQuery, useConvexMutation } from '@convex-dev/react-query'
+import { toast } from 'sonner'
 
 import { api } from '../../convex/_generated/api'
+
+import type { OptimisticLocalStore } from 'convex/browser'
 
 export const mySpacesQueryOptions = convexQuery(api.spaces.getMySpaces, {})
 
@@ -17,36 +20,67 @@ export function useSpaceMembers(spaceId: string | null) {
   return data
 }
 
-export function useCreateSpace() {
-  return useMutation({ mutationFn: useConvexMutation(api.spaces.createSpace) })
-}
+const errorText = (error: unknown) =>
+  error instanceof Error ? error.message : String(error)
 
-export function useJoinSpace() {
-  return useMutation({
-    mutationFn: useConvexMutation(api.spaces.joinSpaceByCode),
-  })
+function withoutSpace(store: OptimisticLocalStore, spaceId: string) {
+  const spaces = store.getQuery(api.spaces.getMySpaces, {})
+  if (!spaces) return
+  store.setQuery(
+    api.spaces.getMySpaces,
+    {},
+    spaces.filter((space) => space.id !== spaceId),
+  )
 }
 
 export function useLeaveSpace() {
-  return useMutation({ mutationFn: useConvexMutation(api.spaces.leaveSpace) })
+  const mutationFn = useConvexMutation(
+    api.spaces.leaveSpace,
+  ).withOptimisticUpdate((store, args) => withoutSpace(store, args.spaceId))
+  return useMutation({
+    mutationFn,
+    onError: (error: unknown) => {
+      toast.error('Could not leave the space', {
+        description: errorText(error),
+      })
+    },
+  })
 }
 
 export function useDeleteSpace() {
-  return useMutation({ mutationFn: useConvexMutation(api.spaces.deleteSpace) })
-}
-
-export function useResetInviteCode() {
+  const mutationFn = useConvexMutation(
+    api.spaces.deleteSpace,
+  ).withOptimisticUpdate((store, args) => withoutSpace(store, args.spaceId))
   return useMutation({
-    mutationFn: useConvexMutation(api.spaces.resetInviteCode),
+    mutationFn,
+    onError: (error: unknown) => {
+      toast.error('Could not delete the space', {
+        description: errorText(error),
+      })
+    },
   })
 }
 
 export function useRemoveMember() {
-  return useMutation({ mutationFn: useConvexMutation(api.spaces.removeMember) })
-}
-
-export function useSyncUserProfile() {
+  const mutationFn = useConvexMutation(
+    api.spaces.removeMember,
+  ).withOptimisticUpdate((store, args) => {
+    const members = store.getQuery(api.spaces.getSpaceMembers, {
+      spaceId: args.spaceId,
+    })
+    if (!members) return
+    store.setQuery(
+      api.spaces.getSpaceMembers,
+      { spaceId: args.spaceId },
+      members.filter((member) => member.userId !== args.userId),
+    )
+  })
   return useMutation({
-    mutationFn: useConvexMutation(api.spaces.syncUserProfile),
+    mutationFn,
+    onError: (error: unknown) => {
+      toast.error('Could not remove that member', {
+        description: errorText(error),
+      })
+    },
   })
 }
