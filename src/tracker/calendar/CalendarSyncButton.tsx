@@ -1,5 +1,3 @@
-import { useQuery } from '@tanstack/react-query'
-import { toast } from 'sonner'
 import { CalendarCheck, CalendarSync } from 'lucide-react'
 
 import { CALENDAR_ENABLED } from '#/feature-flags'
@@ -11,41 +9,27 @@ import {
   PopoverTrigger,
 } from '#/design-system/ui/popover'
 import { Switch } from '#/design-system/ui/switch'
-import { useGoogleCalendar } from '#/settings/googleCalendar'
-import { lastPulledAt } from './pull'
-import {
-  calendarSettingsQueryOptions,
-  useUpdateCalendarSettings,
-} from '#/settings/queries'
+import { useCalendarSync } from '#/settings/calendar-sync'
+import { useUpdateCalendarSettings } from '#/settings/queries'
+import { useLastPulledAt } from './pull'
 
 import { useBoardScope } from '../board-scope'
 
 export function CalendarSyncButton() {
-  const spaceId = useBoardScope()
-  if (!CALENDAR_ENABLED || spaceId !== null) return null
+  const { can } = useBoardScope()
+  if (!CALENDAR_ENABLED || !can.calendar) return null
   return <CalendarSyncControl />
 }
 
 function CalendarSyncControl() {
-  const { data: settings } = useQuery(calendarSettingsQueryOptions)
+  const sync = useCalendarSync()
   const updateSettings = useUpdateCalendarSettings()
-  const { connection, connect } = useGoogleCalendar()
+  const { connection, connected } = sync
 
-  const connected = connection.status === 'connected'
-  const syncing = settings?.syncEnabled ?? false
-  const autoAdd = settings?.autoAddToCalendar ?? false
+  const syncing = sync.rule.syncEnabled
+  const autoAdd = sync.rule.autoAdd
   const done = connected && syncing && autoAdd
   const Icon = done ? CalendarCheck : CalendarSync
-
-  const handleConnect = async () => {
-    try {
-      await connect()
-    } catch (e) {
-      toast.error('Could not connect Google Calendar', {
-        description: e instanceof Error ? e.message : String(e),
-      })
-    }
-  }
 
   return (
     <Popover>
@@ -98,7 +82,7 @@ function CalendarSyncControl() {
               <Button
                 size="sm"
                 disabled={connection.status === 'loading'}
-                onClick={handleConnect}
+                onClick={sync.connect}
               >
                 {connection.status === 'needs_scope'
                   ? 'Grant calendar access'
@@ -148,7 +132,7 @@ function CalendarSyncControl() {
 }
 
 function BackwardSyncNote() {
-  const pulled = lastPulledAt()
+  const pulled = useLastPulledAt()
   return (
     <p className="border-t pt-2 text-xs leading-snug text-muted-foreground">
       Events in your Google calendar also show in Calendar view, read-only.

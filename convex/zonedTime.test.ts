@@ -22,9 +22,7 @@ describe('zoned time', () => {
 
   it('round trips a civil time through an instant', () => {
     const civil = civilAt(Date.UTC(2026, 2, 29, 1, 15), 'Europe/London')
-    expect(instantAt(civil, 'Europe/London')).toBe(
-      Date.UTC(2026, 2, 29, 1, 15),
-    )
+    expect(instantAt(civil, 'Europe/London')).toBe(Date.UTC(2026, 2, 29, 1, 15))
   })
 
   it('names midnight as the all-day mark in the zone', () => {

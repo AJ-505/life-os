@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { api, internal } from './_generated/api'
 import { externalRows } from './calendarPull'
-import { taskWantsEvent } from './calendarSync'
+import { taskWantsEvent } from './syncRule'
 import { NO_PROJECT_ID } from './taskModel'
 import { dayStartIn } from './zonedTime'
 import schema from './schema'
@@ -23,8 +23,6 @@ const asUser = (t: T) => t.withIdentity({ subject: 'user_a' })
 beforeEach(() => vi.useFakeTimers())
 
 const SCOPE = 'https://www.googleapis.com/auth/calendar.events'
-const LIST_URL =
-  'https://www.googleapis.com/calendar/v3/calendars/primary/events?'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -51,7 +49,7 @@ function stubCalendar(options: {
   tokenPages?: number
 }) {
   let call = 0
-  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  return vi.fn(async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : String(input)
     if (url.includes('api.clerk.com')) {
       return new Response(

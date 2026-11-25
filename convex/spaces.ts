@@ -505,10 +505,7 @@ const TABLE_FOR_PHASE = {
   members: 'spaceMembers',
 } as const satisfies Record<Exclude<DeletePhase, 'activity'>, string>
 
-async function runDeleteCascade(
-  ctx: MutationCtx,
-  start: Cascade,
-) {
+async function runDeleteCascade(ctx: MutationCtx, start: Cascade) {
   let next: Cascade = start
   for (;;) {
     const outcome = await deleteSpacePhase(ctx, next)

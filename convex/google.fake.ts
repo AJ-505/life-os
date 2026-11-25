@@ -1,6 +1,6 @@
 import * as z from 'zod'
 
-import { GOOGLE_EVENTS_SCOPE } from './googleCalendar'
+import { GOOGLE_EVENTS_SCOPE } from './syncRule'
 
 const EVENTS_URL =
   'https://www.googleapis.com/calendar/v3/calendars/primary/events'

@@ -49,6 +49,8 @@ export const activityKind = v.union(
 
 export type ActivityKind = Infer<typeof activityKind>
 
+export const DEFAULT_EVENT_MINUTES = 60
+
 export const MIN_DURATION_MINUTES = 5
 export const MAX_DURATION_MINUTES = 24 * 60
 
@@ -155,6 +157,34 @@ export function newTask(input: NewTask, now: number): Task {
   }
 }
 
+export function importedTask(
+  event: {
+    eventId: string
+    title: string
+    notes: string | null
+    allDay: boolean
+    start: number
+    end: number
+  },
+  target: { taskId: string; projectId: string; position: number },
+  now: number,
+) {
+  return newTask(
+    {
+      id: target.taskId,
+      projectId: target.projectId,
+      spaceId: null,
+      title: event.title,
+      notes: event.notes,
+      position: target.position,
+      dueAt: event.start,
+      durationMinutes: event.allDay ? null : (event.end - event.start) / 60_000,
+      importedFromEventId: event.eventId,
+    },
+    now,
+  )
+}
+
 export function taskRow(task: Task, userId: string) {
   const { calendarSyncIssue, ...fields } = task
   return {
@@ -219,7 +249,11 @@ export function applyTaskUpdate(
 
   const dueAt = update.dueAt !== undefined ? update.dueAt : task.dueAt
   const series =
-    dueAt === null ? null : update.repeat !== undefined ? update.repeat : task.repeat
+    dueAt === null
+      ? null
+      : update.repeat !== undefined
+        ? update.repeat
+        : task.repeat
   if (update.repeat !== undefined || update.dueAt === null)
     patch.repeat = series
 

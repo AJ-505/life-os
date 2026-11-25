@@ -9,17 +9,16 @@ import {
 } from './_generated/server'
 import { internal } from './_generated/api'
 import { ownTask, requireUserId } from './access'
+import { eventToDelete, readUserSettings, schedulePush } from './calendarSync'
 import {
+  DEFAULT_REMINDER_MINUTES,
   derivedEventId,
-  eventToDelete,
-  readUserSettings,
-  schedulePush,
   syncRule,
   taskHasEvent,
   taskWantsEvent,
-} from './calendarSync'
+} from './syncRule'
 import { openGoogleCalendar } from './googleCalendar'
-import { syncIssue } from './taskModel'
+import { DEFAULT_EVENT_MINUTES, syncIssue } from './taskModel'
 import { nextDate, usableTimeZone, utcOffset, wallClock } from './zonedTime'
 
 import type { ActionCtx, MutationCtx } from './_generated/server'
@@ -28,9 +27,6 @@ import type { GoogleCalendar, SyncFailure } from './googleCalendar'
 import type { SyncIssue } from './taskModel'
 
 export type { SyncFailure } from './googleCalendar'
-
-const DEFAULT_EVENT_MINUTES = 60
-const DEFAULT_REMINDER_MINUTES = 15
 
 const RETRIES = 3
 const BACKOFF_MS = 30_000
@@ -532,7 +528,12 @@ export const retryAccessIssues = mutation({
         )
         .take(ACCESS_RETRY_LIMIT - queued)
       for (const task of stuck) {
-        await schedulePush(ctx, userId, task.id, queued * ACCESS_RETRY_SPACING_MS)
+        await schedulePush(
+          ctx,
+          userId,
+          task.id,
+          queued * ACCESS_RETRY_SPACING_MS,
+        )
         queued += 1
       }
       if (queued >= ACCESS_RETRY_LIMIT) break

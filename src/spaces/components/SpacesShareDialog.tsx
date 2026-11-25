@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { useConvexMutation } from '@convex-dev/react-query'
 import { Check, Copy, Link2, Lock, ShieldOff, Users } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -19,18 +20,13 @@ import { Separator } from '#/design-system/ui/separator'
 import {
   mySpacesQueryOptions,
   useRemoveMember,
-  useResetInviteCode,
   useSpaceMembers,
 } from '#/spaces/queries'
+import { api } from '../../../convex/_generated/api'
 
-type Member = {
-  userId: string
-  name: string
-  initials: string
-  role: string
-  joinedAt: number
-  isSelf: boolean
-}
+import type { FunctionReturnType } from 'convex/server'
+
+type Member = FunctionReturnType<typeof api.spaces.getSpaceMembers>[number]
 
 export function SpacesShareDialog({
   open,
@@ -47,7 +43,9 @@ export function SpacesShareDialog({
 
   const { data: spaces } = useQuery({ ...mySpacesQueryOptions, retry: false })
   const members = useSpaceMembers(open ? spaceId : null)
-  const resetInviteCode = useResetInviteCode()
+  const resetInviteCode = useMutation({
+    mutationFn: useConvexMutation(api.spaces.resetInviteCode),
+  })
   const removeMember = useRemoveMember()
 
   const space = spaces?.find((s) => s.id === spaceId) ?? null
@@ -84,24 +82,12 @@ export function SpacesShareDialog({
 
   const doRemove = () => {
     if (!removing) return
-    const target = removing
-    removeMember.mutate(
-      { spaceId, userId: target.userId },
-      {
-        onSuccess: () => {
-          setRemoving(null)
-          toast.success(`${label(target)} removed`, {
-            description:
-              'The invite link changed, so the link they hold no longer works.',
-          })
-        },
-        onError: (e: unknown) => {
-          toast.error('Could not remove them', {
-            description: e instanceof Error ? e.message : String(e),
-          })
-        },
-      },
-    )
+    removeMember.mutate({ spaceId, userId: removing.userId })
+    setRemoving(null)
+    toast.success(`${label(removing)} removed`, {
+      description:
+        'The invite link changed, so the link they hold no longer works.',
+    })
   }
 
   return (
@@ -204,13 +190,8 @@ export function SpacesShareDialog({
                 projects and tasks stay in the space.
               </p>
               <div className="flex gap-1.5">
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  disabled={removeMember.isPending}
-                  onClick={doRemove}
-                >
-                  {removeMember.isPending ? 'Removing…' : 'Remove member'}
+                <Button size="sm" variant="destructive" onClick={doRemove}>
+                  Remove member
                 </Button>
                 <Button
                   size="sm"

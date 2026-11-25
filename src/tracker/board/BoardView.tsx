@@ -18,7 +18,13 @@ import { useSuspenseQuery } from '@tanstack/react-query'
 import { Check, Crosshair, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { cn, useLocalFlag, useLocalNumber } from '#/design-system'
+import {
+  cn,
+  flagCodec,
+  numberCodec,
+  storedValue,
+  useStored,
+} from '#/design-system'
 import { Button } from '#/design-system/ui/button'
 import {
   Dialog,
@@ -31,7 +37,8 @@ import { Input } from '#/design-system/ui/input'
 import { Label } from '#/design-system/ui/label'
 import { Sheet, SheetContent } from '#/design-system/ui/sheet'
 
-import { PROJECT_COLORS, newId, positionAfter } from '../types'
+import { PROJECT_COLORS, newId } from '../types'
+import { useBoardScope } from '../board-scope'
 import {
   type CreateProjectArgs,
   boardQueryOptions,
@@ -46,18 +53,12 @@ import {
   activeProjects,
   canvasProjects,
   boardColumns,
-  colId,
   columnProjects,
-  focusDrop,
-  focusTasks,
-  parseDragId,
-  projId,
-  projectDrop,
-  taskDrop,
-  visibleTasks,
   buildTaskIndex,
   projectCounts,
 } from './board-logic'
+import { colId, parseDragId, projId, resolveDrop } from './drop'
+import { appendProjectRow } from './placement'
 import { ProjectCard } from './ProjectCard'
 import { BoardHeader } from './BoardHeader'
 import { ResizableFocusPanel } from './ResizableFocusPanel'
@@ -82,6 +83,7 @@ import type {
   DroppableContainer,
 } from '@dnd-kit/core'
 import type { BlockMinutes } from '../calendar/calendar-logic'
+import type { CalendarSlot, DropIntent } from './drop'
 import type { BoardData, ProjectWithTasks, Task } from '../types'
 
 type DragKind = 'proj' | 'task' | 'fitem' | 'cal' | null
@@ -92,6 +94,14 @@ const mouseSensorOptions = { activationConstraint: { distance: 5 } }
 const touchSensorOptions = {
   activationConstraint: { delay: 250, tolerance: 5 },
 }
+const showDoneStore = storedValue('lifeos-show-done', flagCodec, false)
+const focusOpenStore = storedValue('lifeos-focus-open', flagCodec, true)
+const blockMinutesStore = storedValue(
+  'lifeos-calendar-block',
+  numberCodec,
+  DEFAULT_BLOCK_MINUTES,
+)
+
 const dndMeasuring = {
   droppable: {
     strategy: MeasuringStrategy.WhileDragging,
@@ -188,14 +198,13 @@ function NewProjectDialog({
   onClose,
   gridCol,
   board,
-  spaceId,
 }: {
   open: boolean
   onClose: () => void
   gridCol: number
   board: BoardData
-  spaceId: string | null
 }) {
+  const { spaceId } = useBoardScope()
   const createProject = useCreateProject()
   const [name, setName] = useState('')
   const nextColor = (offset: number) =>
@@ -225,9 +234,7 @@ function NewProjectDialog({
       color,
       spaceId,
       gridCol,
-      gridRow: positionAfter(
-        columnProjects(board, gridCol).map((p) => ({ position: p.gridRow })),
-      ),
+      gridRow: appendProjectRow(board, gridCol),
     })
     setName('')
     setColor(nextColor(1))
@@ -464,13 +471,13 @@ function FastDragOverlay({
 }
 
 function calendarDropAt(
-  dst: { kind: 'day' | 'allday'; key: string },
+  slot: CalendarSlot,
   ghostTop: number,
   blockMinutes: BlockMinutes,
 ): number {
-  const dayStart = Number(dst.key)
-  if (dst.kind === 'allday') return dayStart
-  const column = document.querySelector(`[data-cal-day="${dst.key}"]`)
+  const { dayStart } = slot
+  if (slot.kind === 'allday') return dayStart
+  const column = document.querySelector(`[data-cal-day="${dayStart}"]`)
   const top = column?.getBoundingClientRect().top ?? ghostTop
   return atMinute(
     dayStart,
@@ -494,13 +501,8 @@ function useMountWhenIdle(needed: boolean) {
   return mounted
 }
 
-export function BoardView({
-  spaceId,
-  view,
-}: {
-  spaceId: string | null
-  view: BoardViewMode
-}) {
+export function BoardView({ view }: { view: BoardViewMode }) {
+  const { spaceId, can } = useBoardScope()
   const { data: board } = useSuspenseQuery(boardQueryOptions(spaceId))
   const moveProject = useMoveProject()
   const moveTask = useMoveTask()
@@ -508,14 +510,10 @@ export function BoardView({
   const updateTask = useUpdateTask()
   const calendarMounted = useMountWhenIdle(view === 'calendar')
 
-  const [showDone, setShowDone] = useLocalFlag('lifeos-show-done', false)
-  const [focusOpen, setFocusOpen] = useLocalFlag('lifeos-focus-open', true)
-  const [storedBlockMinutes, setBlockMinutes] = useLocalNumber(
-    'lifeos-calendar-block',
-    DEFAULT_BLOCK_MINUTES,
-  )
+  const [showDone, setShowDone] = useStored(showDoneStore)
+  const [focusOpen, setFocusOpen] = useStored(focusOpenStore)
+  const [storedBlockMinutes, setBlockMinutes] = useStored(blockMinutesStore)
   const blockMinutes = normalizeBlockMinutes(storedBlockMinutes)
-  const focusOpenRef = useRef(focusOpen)
   const [mobileFocusOpen, setMobileFocusOpen] = useState(false)
   const [newProjectCol, setNewProjectCol] = useState<number | null>(null)
   const [activeDrag, setActiveDrag] = useState<ActiveDrag | null>(null)
@@ -525,12 +523,8 @@ export function BoardView({
   const [dragKind, setDragKind] = useState<DragKind>(null)
   const collisionDetection = collisionFor(dragKind)
 
-  const toggleFocus = () => setFocusOpen(!focusOpenRef.current)
+  const toggleFocus = () => setFocusOpen(!focusOpenStore.read())
   const closeFocus = () => setFocusOpen(false)
-
-  useEffect(() => {
-    focusOpenRef.current = focusOpen
-  }, [focusOpen])
 
   const sensors = useSensors(
     useSensor(MouseSensor, mouseSensorOptions),
@@ -592,130 +586,50 @@ export function BoardView({
     }
   }
 
+  const apply = (intent: DropIntent) => {
+    if (intent.kind === 'moveProject') {
+      const { id, gridCol, gridRow } = intent
+      moveProject.mutate({ id, gridCol, gridRow })
+    } else if (intent.kind === 'moveTask') {
+      const { id, projectId, position } = intent
+      moveTask.mutate({ id, projectId, position })
+    } else if (intent.kind === 'focus') {
+      setFocus.mutate({
+        id: intent.id,
+        inFocus: true,
+        focusOrder: intent.focusOrder,
+      })
+    } else {
+      updateTask.mutate({ id: intent.id, dueAt: intent.dueAt })
+    }
+  }
+
   const onDragEnd = (e: DragEndEvent) => {
     setActiveDrag(null)
     setDragKind(null)
     const { active: a, over } = e
     if (!over) return
-    const src = parseDragId(a.id)
-    let dst = parseDragId(over.id)
-    if (!src || !dst) return
-
-    if (dst.kind === 'day' || dst.kind === 'allday') {
-      if (src.kind !== 'task' && src.kind !== 'fitem' && src.kind !== 'cal')
-        return
-      const dueAt = calendarDropAt(
-        { kind: dst.kind, key: dst.key },
-        pointerPos.current.y - grabOffset.current.y,
-        blockMinutes,
-      )
-      if (findTask(src.key)?.task.dueAt !== dueAt)
-        updateTask.mutate({ id: src.key, dueAt })
-      return
-    }
-
-    const dirSide = (
-      orderedIds: Array<string>,
-      overKey: string,
-    ): 'before' | 'after' | null => {
-      const ai = orderedIds.indexOf(src.key)
-      const oi = orderedIds.indexOf(overKey)
-      if (ai === -1 || oi === -1) return null
-      return ai < oi ? 'after' : 'before'
-    }
     const activeRect = a.rect.current.translated
-    const rectSide: 'before' | 'after' =
+    const side =
       activeRect &&
       activeRect.top + activeRect.height / 2 >
         over.rect.top + over.rect.height / 2
         ? 'after'
         : 'before'
-
-    if (src.kind === 'proj') {
-      let target: { gridCol: number; gridRow: number } | null = null
-      if (dst.kind === 'col') {
-        target = projectDrop(board, src.key, { kind: 'col', key: dst.key })
-      } else {
-        let projKey: string | null = null
-        if (dst.kind === 'proj') {
-          projKey = dst.key
-        } else if (dst.kind === 'list') {
-          projKey = dst.key
-        } else if (dst.kind === 'task') {
-          projKey = findTask(dst.key)?.project.id ?? null
-        }
-        if (!projKey || projKey === src.key) return
-        const proj = board.find((p) => p.id === projKey)
-        const orderedProjects = proj
-          ? columnProjects(board, proj.gridCol).map((p) => p.id)
-          : []
-        const projSide =
-          dst.kind === 'proj'
-            ? (dirSide(orderedProjects, projKey) ?? rectSide)
-            : 'before'
-        target = projectDrop(
-          board,
-          src.key,
-          { kind: 'proj', key: projKey },
-          projSide,
-        )
-      }
-      if (target) moveProject.mutate({ id: src.key, ...target })
-      return
-    }
-
-    if (src.kind === 'task' || src.kind === 'cal') {
-      if (dst.kind === 'focuszone' || dst.kind === 'fitem') {
-        const focusOrder = focusDrop(
-          board,
-          src.key,
-          { kind: dst.kind, key: dst.key },
-          dst.kind === 'fitem' ? rectSide : 'before',
-        )
-        setFocus.mutate({ id: src.key, inFocus: true, focusOrder })
-        return
-      }
-      if (dst.kind === 'proj')
-        dst = { kind: 'list', key: dst.key, occurrence: null }
-      if (dst.kind !== 'task' && dst.kind !== 'list') return
-      const { kind: dstKind, key: dstKey } = dst
-      const overProj =
-        dstKind === 'task'
-          ? board.find((p) => p.tasks.some((t) => t.id === dstKey))
-          : null
-      const orderedTasks = overProj
-        ? visibleTasks(overProj, showDone || overProj.showDone).map((t) => t.id)
-        : []
-      const taskSide =
-        dstKind === 'task'
-          ? (dirSide(orderedTasks, dstKey) ?? rectSide)
-          : 'before'
-      const target = taskDrop(
-        board,
-        src.key,
-        { kind: dstKind, key: dstKey },
-        showDone,
-        taskSide,
-      )
-      if (target) moveTask.mutate({ id: src.key, ...target })
-      return
-    }
-
-    if (src.kind === 'fitem') {
-      if (dst.kind !== 'focuszone' && dst.kind !== 'fitem') return
-      const orderedFocus = focusTasks(board).map((e) => e.task.id)
-      const focusSide =
-        dst.kind === 'fitem'
-          ? (dirSide(orderedFocus, dst.key) ?? rectSide)
-          : 'before'
-      const focusOrder = focusDrop(
-        board,
-        src.key,
-        { kind: dst.kind, key: dst.key },
-        focusSide,
-      )
-      setFocus.mutate({ id: src.key, inFocus: true, focusOrder })
-    }
+    const intent = resolveDrop({
+      board,
+      showDone,
+      active: a.id,
+      over: over.id,
+      side,
+      dropAt: (slot) =>
+        calendarDropAt(
+          slot,
+          pointerPos.current.y - grabOffset.current.y,
+          blockMinutes,
+        ),
+    })
+    if (intent) apply(intent)
   }
 
   const onDragCancel = () => {
@@ -784,12 +698,12 @@ export function BoardView({
             </div>
           </div>
 
-          {focusOpen && spaceId === null ? (
+          {focusOpen && can.focus ? (
             <ResizableFocusPanel board={board} onClose={closeFocus} />
           ) : null}
         </div>
 
-        {spaceId === null ? (
+        {can.focus ? (
           <Button
             size="icon"
             aria-label="Open focus"
@@ -799,7 +713,7 @@ export function BoardView({
             <Crosshair className="size-5" />
           </Button>
         ) : null}
-        {spaceId === null ? (
+        {can.focus ? (
           <Sheet open={mobileFocusOpen} onOpenChange={setMobileFocusOpen}>
             <SheetContent
               side="right"
@@ -816,7 +730,6 @@ export function BoardView({
           onClose={() => setNewProjectCol(null)}
           gridCol={newProjectCol ?? 0}
           board={board}
-          spaceId={spaceId}
         />
 
         <FastDragOverlay

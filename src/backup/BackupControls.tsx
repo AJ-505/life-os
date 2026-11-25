@@ -14,8 +14,9 @@ import {
   DialogTitle,
 } from '#/design-system/ui/dialog'
 
-import type { BackupFile } from './types'
-import { backupFile as backupFileSchema } from '#/spaces/validation'
+import { backupFile } from './schema'
+
+import type { BackupFile } from './schema'
 
 export function BackupControls() {
   const convex = useConvex()
@@ -46,7 +47,7 @@ export function BackupControls() {
     } catch {
       obj = null
     }
-    const parsed = backupFileSchema.safeParse(obj)
+    const parsed = backupFile.safeParse(obj)
     if (!parsed.success) {
       setError('That file is not a LifeOS backup.')
       return

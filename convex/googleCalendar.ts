@@ -1,9 +1,8 @@
 import * as z from 'zod'
 
-import type { SyncIssue } from './taskModel'
+import { GOOGLE_EVENTS_SCOPE } from './syncRule'
 
-export const GOOGLE_EVENTS_SCOPE =
-  'https://www.googleapis.com/auth/calendar.events'
+import type { SyncIssue } from './taskModel'
 
 const EVENTS_URL =
   'https://www.googleapis.com/calendar/v3/calendars/primary/events'

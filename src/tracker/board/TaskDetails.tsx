@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
-import type { MutableRefObject } from 'react'
+import { useState } from 'react'
 import { format } from 'date-fns/format'
 import {
   Archive,
@@ -10,6 +9,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { cn, ComingSoon } from '#/design-system'
 import { CALENDAR_ENABLED } from '#/feature-flags'
@@ -40,34 +40,43 @@ import {
 } from '#/design-system/ui/select'
 import { Switch } from '#/design-system/ui/switch'
 import { Textarea } from '#/design-system/ui/textarea'
-
-import { useBoardScope } from '../board-scope'
+import {
+  calendarSwitch,
+  syncIssueNote,
+  useCalendarSync,
+} from '#/settings/calendar-sync'
 import { useSpaceMembers } from '#/spaces/queries'
 import { AssigneeSelect } from '#/spaces/components/AssigneeSelect'
-import { canvasProjects } from './board-logic'
-import { NO_PROJECT_ID, POSITION_GAP, newId, positionAfter } from '../types'
+
+import { REMINDER_CHOICES } from '../../../convex/syncRule'
+import { DEFAULT_EVENT_MINUTES } from '../../../convex/taskModel'
 import { isRepeatRule, REPEAT_RULES } from '../../../convex/recurrence'
+import { useBoardScope } from '../board-scope'
+import { canvasProjects } from './board-logic'
+import { appendFocusOrder, appendRootPosition } from './placement'
+import { useTaskEditSession } from './task-edit-session'
+import { NO_PROJECT_ID } from '../types'
+import { durationUntil, minuteOfDay } from '../calendar/calendar-logic'
 import {
-  EVENT_MINUTES,
-  durationUntil,
+  DEFAULT_DUE_TIME,
+  formatTime24,
   isAllDay,
-  minuteOfDay,
-} from '../calendar/calendar-logic'
+  parseTime24,
+  withTime,
+} from '../due'
 import {
-  useAddTask,
+  taskHistoryQueryOptions,
   useDeleteTask,
   useMoveTask,
   useSetTaskFocus,
   useUpdateTask,
 } from '../queries'
-import { taskHistoryQueryOptions } from '../queries'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { calendarSettingsQueryOptions } from '#/settings/queries'
-import { syncIssueMessage, useGoogleCalendar } from '#/settings/googleCalendar'
-import { toast } from 'sonner'
 
-import type { BoardData, CalendarSyncIssue, Task } from '../types'
 import type { RepeatRule } from '../../../convex/recurrence'
+import type { TaskUpdate } from '../../../convex/taskModel'
+import type { BoardData, Task } from '../types'
+
+type Session = ReturnType<typeof useTaskEditSession>
 
 const REPEAT_LABELS: Record<RepeatRule, string> = {
   daily: 'Every day',
@@ -77,68 +86,10 @@ const REPEAT_LABELS: Record<RepeatRule, string> = {
   yearly: 'Every year',
 }
 
-type DeferredWrite = () => void
-type CaptureWrite = () => DeferredWrite | null
-type PendingWrites = {
-  fields: { title: string; notes: string }
-  subtask: DeferredWrite | null
-  draft: DeferredWrite | null
-}
-
-function Subtasks({
-  parent,
-  board,
-  closingRef,
-  draftCaptureRef,
-}: {
-  parent: Task
-  board: BoardData
-  closingRef: MutableRefObject<boolean>
-  draftCaptureRef: MutableRefObject<CaptureWrite | null>
-}) {
+function Subtasks({ session }: { session: Session }) {
   const updateTask = useUpdateTask()
   const deleteTask = useDeleteTask()
-  const draftRef = useRef<HTMLInputElement>(null)
-
-  const project = board.find((p) => p.id === parent.projectId)
-  const children = (project?.tasks ?? [])
-    .filter((t) => t.parentId === parent.id && !t.archived)
-    .sort((a, b) => a.position - b.position)
-  const childrenRef = useRef(children)
-  useEffect(() => {
-    childrenRef.current = children
-  })
-
-  const create = useAddTask()
-
-  const commitDraft = (title: string) => {
-    create({
-      id: newId(),
-      projectId: parent.projectId,
-      parentId: parent.id,
-      title,
-      position: positionAfter(childrenRef.current),
-    })
-  }
-
-  const takeDraft = (): string => {
-    const t = draftRef.current?.value.trim() ?? ''
-    if (draftRef.current) draftRef.current.value = ''
-    return t
-  }
-
-  const add = () => {
-    const t = takeDraft()
-    if (t) commitDraft(t)
-  }
-
-  useEffect(() => {
-    draftCaptureRef.current = () => {
-      const t = takeDraft()
-      if (!t) return null
-      return () => commitDraft(t)
-    }
-  })
+  const children = session.subtasks
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -163,28 +114,12 @@ function Subtasks({
               className="rounded-full"
             />
             <input
-              key={c.id}
-              defaultValue={c.title}
-              data-subtask-id={c.id}
-              data-subtask-was={c.title}
-              onBlur={(e) => {
-                const next = e.currentTarget.value.trim()
-                if (!next) {
-                  e.currentTarget.value = c.title
-                  return
-                }
-                if (next === c.title) return
-                const id = c.id
-                setTimeout(() => {
-                  if (closingRef.current) return
-                  updateTask.mutate({ id, title: next })
-                }, 0)
-              }}
+              value={session.subtaskTitle(c)}
+              onChange={(e) => session.editSubtask(c.id, e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  ;(e.target as HTMLInputElement).blur()
-                }
+                if (e.key !== 'Enter') return
+                e.preventDefault()
+                e.currentTarget.blur()
               }}
               aria-label="Subtask title"
               className={cn(
@@ -207,13 +142,14 @@ function Subtasks({
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          add()
+          session.addSubtask()
         }}
         className="flex items-center gap-1.5 px-1"
       >
         <Plus className="size-3.5 shrink-0 text-muted-foreground" />
         <input
-          ref={draftRef}
+          value={session.view.newSubtask}
+          onChange={(e) => session.edit({ newSubtask: e.target.value })}
           enterKeyHint="done"
           placeholder="Add a subtask"
           className="w-full bg-transparent py-1 text-sm outline-none placeholder:text-muted-foreground/70"
@@ -231,80 +167,57 @@ function Subtasks({
 }
 
 function TaskCalendarFields({
-  localDueAt,
-  localAddToCal,
-  onAddToCal,
-  localReminder,
-  onReminder,
-  issue,
-  done,
-  archived,
+  task,
+  session,
 }: {
-  issue: CalendarSyncIssue | null
-  done: boolean
-  archived: boolean
-  localDueAt: number | null
-  localAddToCal: boolean
-  onAddToCal: (v: boolean) => void
-  localReminder: number | null
-  onReminder: (v: number) => void
+  task: Task
+  session: Session
 }) {
-  const { data: calendarSettings } = useQuery(calendarSettingsQueryOptions)
-  const reminder =
-    localReminder ?? calendarSettings?.defaultReminderMinutes ?? 15
-  const { connection } = useGoogleCalendar()
-  const calendarReady =
-    connection.status === 'connected' &&
-    (calendarSettings?.syncEnabled ?? false)
-  const autoAdd =
-    calendarReady &&
-    !done &&
-    !archived &&
-    (calendarSettings?.autoAddToCalendar ?? false)
-  const calendarHint = !calendarSettings?.syncEnabled
-    ? 'Turn on calendar sync in Settings'
-    : connection.status === 'needs_scope'
-      ? 'Reconnect Google to grant calendar access'
-      : connection.status !== 'connected'
-        ? 'Connect Google in Settings'
-        : !localDueAt
-          ? 'Set a date first'
-          : autoAdd
-            ? 'Every dated task syncs (Settings)'
-            : ''
+  const sync = useCalendarSync()
+  const { view } = session
+  const reminder = view.reminderMinutes ?? sync.defaultReminder
+  const toggle = calendarSwitch(sync, {
+    ...task,
+    dueAt: view.dueAt,
+    addToCalendar: view.addToCalendar,
+  })
+  const issue = task.calendarSyncIssue
 
   return (
     <div className="flex flex-col gap-2 rounded-md border px-3 py-2.5">
-      {issue && (localAddToCal || autoAdd) ? (
+      {issue && toggle.showsIssue ? (
         <p role="status" className="text-xs leading-snug text-destructive">
-          {syncIssueMessage(issue)}
+          {syncIssueNote(issue)}
         </p>
       ) : null}
       <div className="flex items-center justify-between">
         <span className="flex items-center gap-2">
           <Switch
-            checked={localDueAt ? localAddToCal || autoAdd : false}
-            disabled={!localDueAt || !calendarReady || autoAdd}
-            onCheckedChange={onAddToCal}
+            checked={toggle.checked}
+            disabled={toggle.disabled}
+            onCheckedChange={(addToCalendar) => session.edit({ addToCalendar })}
           />
           <Label className="text-sm font-medium">Add to calendar</Label>
         </span>
-        <span className="text-xs text-muted-foreground">{calendarHint}</span>
+        <span className="text-xs text-muted-foreground">{toggle.hint}</span>
       </div>
       <div className="flex items-center justify-between">
         <Label className="text-sm font-medium">Reminder</Label>
         <Select
           value={String(reminder)}
-          onValueChange={(v) => onReminder(Number(v))}
+          onValueChange={(value) =>
+            session.edit({ reminderMinutes: Number(value) })
+          }
         >
           <SelectTrigger size="sm" className="w-[180px] text-xs">
             <SelectValue>{`${reminder} minutes before`}</SelectValue>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="5">5 minutes before</SelectItem>
-            <SelectItem value="15">15 minutes before</SelectItem>
-            <SelectItem value="30">30 minutes before</SelectItem>
-            <SelectItem value="60">60 minutes before</SelectItem>
+            {REMINDER_CHOICES.map((minutes) => (
+              <SelectItem key={minutes} value={String(minutes)}>
+                {minutes} minutes before
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>
@@ -411,37 +324,35 @@ function TaskHistoryPanel({ taskId }: { taskId: string }) {
 export function TaskDetails({
   task,
   board,
-  open,
   onClose,
 }: {
   task: Task
   board: BoardData
-  open: boolean
   onClose: () => void
 }) {
+  const session = useTaskEditSession(task, board)
+  const { view } = session
   const updateTask = useUpdateTask()
   const moveTask = useMoveTask()
   const setFocus = useSetTaskFocus()
-  const spaceId = useBoardScope()
-
-  const toggleFocus = () =>
-    setFocus.mutate({
-      id: task.id,
-      inFocus: !task.inFocus,
-      focusOrder: Date.now() / 1000 + POSITION_GAP,
-    })
   const deleteTask = useDeleteTask()
+  const { spaceId, can } = useBoardScope()
+  const members = useSpaceMembers(can.assign ? spaceId : null)
+  const queryClient = useQueryClient()
 
-  const titleRef = useRef<HTMLInputElement>(null)
-  const notesRef = useRef<HTMLTextAreaElement>(null)
-  const closingRef = useRef(false)
-  const pendingRef = useRef<PendingWrites | null>(null)
-  const draftCaptureRef = useRef<CaptureWrite | null>(null)
   const [dueOpen, setDueOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
-  const members = useSpaceMembers(spaceId)
+  const timeOf = (dueAt: number | null) =>
+    dueAt ? formatTime24(dueAt) : DEFAULT_DUE_TIME
+  const [timeText, setTimeText] = useState(() => timeOf(view.dueAt))
+  const [shownDueAt, setShownDueAt] = useState(view.dueAt)
+  if (shownDueAt !== view.dueAt) {
+    setShownDueAt(view.dueAt)
+    setTimeText(timeOf(view.dueAt))
+  }
+  const [endDraft, setEndDraft] = useState<string | null>(null)
+  const [endRejected, setEndRejected] = useState(false)
 
-  const queryClient = useQueryClient()
   const prefetchHistory = () => {
     void queryClient.prefetchQuery(taskHistoryQueryOptions(task.id))
   }
@@ -453,69 +364,15 @@ export function TaskDetails({
   const canLeaveProject =
     task.dueAt !== null || task.projectId === NO_PROJECT_ID
 
-  const [localDueAt, setLocalDueAt] = useState<number | null>(
-    task.dueAt ?? null,
-  )
-  const [localReminder, setLocalReminder] = useState<number | null>(
-    task.reminderMinutes,
-  )
-  const [localAddToCal, setLocalAddToCal] = useState<boolean>(
-    task.addToCalendar,
-  )
-  const [localDuration, setLocalDuration] = useState<number | null>(
-    task.durationMinutes,
-  )
-  const [localRepeat, setLocalRepeat] = useState<RepeatRule | null>(task.repeat)
-  const [endDraft, setEndDraft] = useState<string | null>(null)
-  const [endRejected, setEndRejected] = useState(false)
-  const [timeInput, setTimeInput] = useState<string>(() =>
-    task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00',
-  )
-  const syncKey = JSON.stringify([
-    task.id,
-    task.dueAt,
-    task.reminderMinutes,
-    task.durationMinutes,
-    task.addToCalendar,
-    task.repeat,
-  ])
-  const [syncedKey, setSyncedKey] = useState(syncKey)
-  if (syncedKey !== syncKey) {
-    setSyncedKey(syncKey)
-    setLocalDueAt(task.dueAt ?? null)
-    setLocalReminder(task.reminderMinutes)
-    setLocalDuration(task.durationMinutes)
-    setLocalAddToCal(task.addToCalendar)
-    setLocalRepeat(task.repeat)
-    setTimeInput(task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00')
-  }
-
-  const parseTime24 = (s: string): { h: number; m: number } | null => {
-    const m = s.trim().match(/^(\d{1,2}):(\d{2})$/)
-    if (!m) return null
-    const h = Number(m[1])
-    const min = Number(m[2])
-    if (h < 0 || h > 23 || min < 0 || min > 59) return null
-    return { h, m: min }
-  }
-  const applyTimeToLocal = (timeStr: string) => {
-    if (!localDueAt) return
-    const parsed = parseTime24(timeStr)
-    if (!parsed) return
-    const base = new Date(localDueAt)
-    base.setHours(parsed.h, parsed.m, 0, 0)
-    setLocalDueAt(base.getTime())
-  }
-
   const timedStart =
-    localDueAt !== null && !isAllDay(localDueAt) ? localDueAt : null
+    view.dueAt !== null && !isAllDay(view.dueAt) ? view.dueAt : null
   const endText =
     timedStart === null
       ? ''
-      : format(
-          new Date(timedStart + (localDuration ?? EVENT_MINUTES) * 60_000),
-          'HH:mm',
+      : formatTime24(
+          timedStart + (view.durationMinutes ?? DEFAULT_EVENT_MINUTES) * 60_000,
         )
+
   const commitEnd = () => {
     const parsed = endDraft === null ? null : parseTime24(endDraft)
     setEndDraft(null)
@@ -528,142 +385,52 @@ export function TaskDetails({
       parsed.h * 60 + parsed.m,
     )
     setEndRejected(minutes === null)
-    if (minutes !== null) setLocalDuration(minutes)
+    if (minutes !== null) session.edit({ durationMinutes: minutes })
   }
 
-  const readFields = () => ({
-    title: titleRef.current?.value.trim() ?? task.title,
-    notes: notesRef.current?.value.trim() ?? task.notes ?? '',
-  })
+  const commitTime = () => {
+    const parsed = parseTime24(timeText)
+    if (!parsed) {
+      setTimeText(timeOf(view.dueAt))
+      return
+    }
+    const formatted = `${String(parsed.h).padStart(2, '0')}:${String(parsed.m).padStart(2, '0')}`
+    setTimeText(formatted)
+    if (view.dueAt) session.edit({ dueAt: withTime(view.dueAt, formatted) })
+  }
 
-  const fieldsChanged = (f: { title: string; notes: string }) =>
-    f.title !== task.title || f.notes !== (task.notes ?? '')
+  const clearDate = () => {
+    setDueOpen(false)
+    session.edit({ dueAt: null, repeat: null })
+  }
 
-  const commitFields = (f: {
-    title: string
-    notes: string
-  }): Promise<unknown> => {
-    if (!fieldsChanged(f)) return Promise.resolve()
-    return updateTask.mutateAsync({
+  const save = (extra?: TaskUpdate) => {
+    session.commit(extra)
+    onClose()
+  }
+
+  const toggleFocus = () =>
+    setFocus.mutate({
       id: task.id,
-      title: f.title || task.title,
-      notes: f.notes || null,
+      inFocus: !task.inFocus,
+      focusOrder: appendFocusOrder(board, task.id),
     })
-  }
-
-  const commitText = () => {
-    const f = readFields()
-    setTimeout(() => {
-      if (closingRef.current) return
-      void commitFields(f).catch(() => {
-        toast.error('Could not save the task')
-      })
-    }, 0)
-  }
-
-  const captureFocusedSubtask = (): DeferredWrite | null => {
-    const el = document.activeElement
-    if (!(el instanceof HTMLInputElement)) return null
-    const id = el.dataset.subtaskId
-    if (!id) return null
-    const was = el.dataset.subtaskWas ?? ''
-    const next = el.value.trim()
-    if (!next || next === was) return null
-    return () => updateTask.mutate({ id, title: next })
-  }
-
-  const collectPending = (): PendingWrites => ({
-    fields: readFields(),
-    subtask: captureFocusedSubtask(),
-    draft: draftCaptureRef.current?.() ?? null,
-  })
-
-  const armClose = () => {
-    closingRef.current = true
-    pendingRef.current = collectPending()
-  }
-
-  const armSuppress = () => {
-    closingRef.current = true
-  }
-
-  const closeWith = (after?: () => void) => {
-    closingRef.current = true
-    const p = pendingRef.current ?? collectPending()
-    pendingRef.current = null
-    const dueAtToCommit = localDueAt
-    const reminderToCommit = localReminder
-    const addToCalToCommit = localAddToCal
-    const durationToCommit = localDuration
-    const repeatToCommit = localRepeat
-    onClose()
-    setTimeout(() => {
-      p.subtask?.()
-      p.draft?.()
-
-      const patch: {
-        dueAt?: number | null
-        reminderMinutes?: number | null
-        durationMinutes?: number | null
-        addToCalendar?: boolean
-        repeat?: RepeatRule | null
-      } = {}
-      if (dueAtToCommit !== task.dueAt) patch.dueAt = dueAtToCommit
-      if (reminderToCommit !== task.reminderMinutes)
-        patch.reminderMinutes = reminderToCommit ?? null
-      if (durationToCommit !== task.durationMinutes)
-        patch.durationMinutes = durationToCommit
-      if (addToCalToCommit !== task.addToCalendar)
-        patch.addToCalendar = addToCalToCommit
-      if (repeatToCommit !== task.repeat) patch.repeat = repeatToCommit
-
-      const written = Promise.all([
-        commitFields(p.fields),
-        Object.keys(patch).length > 0
-          ? updateTask.mutateAsync({ id: task.id, ...patch })
-          : Promise.resolve(),
-      ])
-
-      void written.catch((e: unknown) => {
-        toast.error('Could not save the task', {
-          description: e instanceof Error ? e.message : String(e),
-        })
-      })
-      after?.()
-    }, 0)
-  }
-
-  const close = () => {
-    closeWith()
-  }
-
-  const cancel = () => {
-    closingRef.current = true
-    pendingRef.current = null
-    setLocalDueAt(task.dueAt ?? null)
-    setLocalReminder(task.reminderMinutes)
-    setLocalDuration(task.durationMinutes)
-    setEndDraft(null)
-    setLocalAddToCal(task.addToCalendar)
-    setLocalRepeat(task.repeat)
-    setTimeInput(task.dueAt ? format(new Date(task.dueAt), 'HH:mm') : '09:00')
-    draftCaptureRef.current?.()
-    onClose()
-    setTimeout(() => {
-      closingRef.current = false
-    }, 0)
-  }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && cancel()}>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         showCloseButton={false}
         className="max-w-md"
         data-proj={project?.color}
         onOpenAutoFocus={(e) => {
           e.preventDefault()
-          titleRef.current?.focus()
-          titleRef.current?.select()
+          const title = e.currentTarget
+          if (!(title instanceof HTMLElement)) return
+          const input = title.querySelector<HTMLInputElement>(
+            'input[aria-label="Task title"]',
+          )
+          input?.focus()
+          input?.select()
         }}
       >
         <DialogHeader>
@@ -693,20 +460,16 @@ export function TaskDetails({
 
         <div className="flex flex-col gap-4">
           <Input
-            ref={titleRef}
-            key={`${task.id}-title`}
-            defaultValue={task.title}
-            onBlur={commitText}
-            onKeyDown={(e) => e.key === 'Enter' && close()}
+            value={view.title}
+            onChange={(e) => session.edit({ title: e.target.value })}
+            onKeyDown={(e) => e.key === 'Enter' && save()}
             className="h-auto border-0 border-b border-border bg-input/30 px-2 py-2 text-base font-medium shadow-none focus-visible:ring-0"
             aria-label="Task title"
           />
 
           <Textarea
-            ref={notesRef}
-            key={`${task.id}-notes`}
-            defaultValue={task.notes ?? ''}
-            onBlur={commitText}
+            value={view.notes}
+            onChange={(e) => session.edit({ notes: e.target.value })}
             placeholder="Notes…"
             rows={4}
             spellCheck={false}
@@ -724,12 +487,12 @@ export function TaskDetails({
                       size="sm"
                       className={cn(
                         'w-[9.5rem] justify-start gap-2 font-mono text-xs',
-                        !localDueAt && 'text-muted-foreground',
+                        !view.dueAt && 'text-muted-foreground',
                       )}
                     >
                       <CalendarIcon className="size-3.5" />
-                      {localDueAt
-                        ? format(new Date(localDueAt), 'd MMM yyyy')
+                      {view.dueAt
+                        ? format(new Date(view.dueAt), 'd MMM yyyy')
                         : 'No date'}
                     </Button>
                   </PopoverTrigger>
@@ -741,19 +504,11 @@ export function TaskDetails({
                   >
                     <Calendar
                       mode="single"
-                      selected={localDueAt ? new Date(localDueAt) : undefined}
-                      onSelect={(d) => {
+                      selected={view.dueAt ? new Date(view.dueAt) : undefined}
+                      onSelect={(day) => {
+                        if (!day) return clearDate()
                         setDueOpen(false)
-                        if (!d) {
-                          setLocalDueAt(null)
-                          setLocalRepeat(null)
-                          return
-                        }
-                        const timeStr = timeInput || '09:00'
-                        const parsed = parseTime24(timeStr) ?? { h: 9, m: 0 }
-                        const combined = new Date(d)
-                        combined.setHours(parsed.h, parsed.m, 0, 0)
-                        setLocalDueAt(combined.getTime())
+                        session.edit({ dueAt: withTime(day, timeText) })
                       }}
                     />
                     <div className="border-t p-2">
@@ -761,12 +516,8 @@ export function TaskDetails({
                         variant="ghost"
                         size="sm"
                         className="w-full"
-                        disabled={!localDueAt}
-                        onClick={() => {
-                          setDueOpen(false)
-                          setLocalDueAt(null)
-                          setLocalRepeat(null)
-                        }}
+                        disabled={!view.dueAt}
+                        onClick={clearDate}
                       >
                         Clear date
                       </Button>
@@ -774,38 +525,21 @@ export function TaskDetails({
                   </PopoverContent>
                 </Popover>
                 <Input
-                  value={timeInput}
-                  disabled={!localDueAt}
+                  value={timeText}
+                  disabled={!view.dueAt}
                   onChange={(e) => {
-                    let v = e.target.value.replace(/[^0-9:]/g, '')
+                    let next = e.target.value.replace(/[^0-9:]/g, '')
                     if (
-                      v.length === 2 &&
-                      timeInput.length === 1 &&
-                      !v.includes(':')
+                      next.length === 2 &&
+                      timeText.length === 1 &&
+                      !next.includes(':')
                     )
-                      v = v + ':'
-                    if (v.length > 5) v = v.slice(0, 5)
-                    setTimeInput(v)
+                      next = `${next}:`
+                    setTimeText(next.slice(0, 5))
                   }}
-                  onBlur={() => {
-                    const parsed = parseTime24(timeInput)
-                    if (!parsed) {
-                      setTimeInput(
-                        localDueAt
-                          ? format(new Date(localDueAt), 'HH:mm')
-                          : '09:00',
-                      )
-                      return
-                    }
-                    const formatted =
-                      String(parsed.h).padStart(2, '0') +
-                      ':' +
-                      String(parsed.m).padStart(2, '0')
-                    setTimeInput(formatted)
-                    applyTimeToLocal(formatted)
-                  }}
+                  onBlur={commitTime}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                    if (e.key === 'Enter') e.currentTarget.blur()
                   }}
                   placeholder="HH:MM"
                   className="h-8 w-[5.5rem] border-input bg-transparent px-2 font-mono text-xs shadow-xs"
@@ -851,11 +585,11 @@ export function TaskDetails({
             <div className="flex flex-col gap-1.5">
               <Label className="os-label">Repeat</Label>
               <Select
-                value={localRepeat ?? 'none'}
+                value={view.repeat ?? 'none'}
                 onValueChange={(value) =>
-                  setLocalRepeat(isRepeatRule(value) ? value : null)
+                  session.edit({ repeat: isRepeatRule(value) ? value : null })
                 }
-                disabled={localDueAt === null}
+                disabled={view.dueAt === null}
               >
                 <SelectTrigger
                   size="sm"
@@ -863,7 +597,7 @@ export function TaskDetails({
                   aria-label="Repeat"
                 >
                   <SelectValue>
-                    {localRepeat === null ? 'None' : REPEAT_LABELS[localRepeat]}
+                    {view.repeat === null ? 'None' : REPEAT_LABELS[view.repeat]}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
@@ -875,7 +609,7 @@ export function TaskDetails({
                   ))}
                 </SelectContent>
               </Select>
-              {localDueAt === null ? (
+              {view.dueAt === null ? (
                 <p className="text-[11px] text-muted-foreground">
                   Set a date to repeat.
                 </p>
@@ -888,11 +622,12 @@ export function TaskDetails({
                 value={task.projectId}
                 onValueChange={(projectId) => {
                   if (projectId === task.projectId) return
-                  const target = board.find((p) => p.id === projectId)
                   moveTask.mutate({
                     id: task.id,
                     projectId,
-                    position: positionAfter(target?.tasks ?? []),
+                    position: appendRootPosition(
+                      board.find((p) => p.id === projectId),
+                    ),
                   })
                 }}
               >
@@ -913,23 +648,14 @@ export function TaskDetails({
             </div>
           </div>
 
-          {spaceId !== null ? (
+          {can.assign ? (
             <div className="flex flex-col gap-1.5">
               <Label className="os-label">Assignee</Label>
               <AssigneeSelect
                 assigneeId={task.assigneeId}
                 members={members}
                 onAssign={(assigneeId) =>
-                  updateTask.mutate(
-                    { id: task.id, assigneeId },
-                    {
-                      onError: (e) =>
-                        toast.error('Could not change the assignee', {
-                          description:
-                            e instanceof Error ? e.message : String(e),
-                        }),
-                    },
-                  )
+                  updateTask.mutate({ id: task.id, assigneeId })
                 }
               />
               <p className="text-[11px] text-muted-foreground">
@@ -945,17 +671,8 @@ export function TaskDetails({
               title="Calendar sync"
               description="Google Calendar integration is on its way."
             />
-          ) : spaceId === null ? (
-            <TaskCalendarFields
-              localDueAt={localDueAt}
-              localAddToCal={localAddToCal}
-              onAddToCal={setLocalAddToCal}
-              localReminder={localReminder}
-              onReminder={setLocalReminder}
-              issue={task.calendarSyncIssue}
-              done={task.done}
-              archived={task.archived}
-            />
+          ) : can.calendar ? (
+            <TaskCalendarFields task={task} session={session} />
           ) : (
             <ComingSoon
               status="Personal only"
@@ -964,14 +681,9 @@ export function TaskDetails({
             />
           )}
 
-          <Subtasks
-            parent={task}
-            board={board}
-            closingRef={closingRef}
-            draftCaptureRef={draftCaptureRef}
-          />
+          <Subtasks session={session} />
 
-          {spaceId === null ? (
+          {can.focus ? (
             <div
               role="switch"
               aria-checked={task.inFocus}
@@ -1011,12 +723,7 @@ export function TaskDetails({
               variant="ghost"
               size="sm"
               className="gap-1.5 text-muted-foreground"
-              onPointerDown={armClose}
-              onClick={() =>
-                closeWith(() => {
-                  updateTask.mutate({ id: task.id, archived: !task.archived })
-                })
-              }
+              onClick={() => save({ archived: !task.archived })}
             >
               <Archive className="size-3.5" />
               {task.archived ? 'Unarchive' : 'Archive'}
@@ -1025,13 +732,9 @@ export function TaskDetails({
               variant="ghost"
               size="sm"
               className="gap-1.5 text-destructive hover:text-destructive"
-              onPointerDown={armSuppress}
               onClick={() => {
-                closingRef.current = true
                 onClose()
-                setTimeout(() => {
-                  deleteTask.mutate({ id: task.id })
-                }, 0)
+                deleteTask.mutate({ id: task.id })
               }}
             >
               <Trash2 className="size-3.5" />
@@ -1039,7 +742,7 @@ export function TaskDetails({
             </Button>
           </div>
           <div className="flex items-center gap-1.5">
-            {spaceId !== null ? (
+            {can.history ? (
               <Button
                 variant="outline"
                 size="sm"
@@ -1052,7 +755,7 @@ export function TaskDetails({
                 {historyOpen ? 'Hide history' : 'History'}
               </Button>
             ) : null}
-            <Button size="sm" onPointerDown={armClose} onClick={close}>
+            <Button size="sm" onClick={() => save()}>
               Done
             </Button>
           </div>
@@ -1060,10 +763,7 @@ export function TaskDetails({
         <button
           type="button"
           aria-label="Close"
-          onPointerDown={() => {
-            closingRef.current = true
-          }}
-          onClick={cancel}
+          onClick={onClose}
           className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
         >
           <X className="size-4" />

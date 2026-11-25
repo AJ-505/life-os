@@ -3,14 +3,17 @@ import { format } from 'date-fns/format'
 import { startOfDay } from 'date-fns/startOfDay'
 import { startOfWeek } from 'date-fns/startOfWeek'
 
-import { localTimeZone, occurrencesBetween } from '../../../convex/recurrence'
+import { occurrencesBetween } from '../../../convex/recurrence'
+import { DEFAULT_EVENT_MINUTES } from '../../../convex/taskModel'
+import { localTimeZone } from '../../../convex/zonedTime'
 import { activeProjects } from '../board/board-logic'
+import { isAllDay } from '../due'
 import { NO_PROJECT_ID } from '../types'
 
+import type { ExternalEventRow } from '../../../convex/calendarPull'
 import type { BoardData, ProjectWithTasks, Task } from '../types'
 
 export const HOUR_PX = 48
-export const EVENT_MINUTES = 60
 export const SNAP_MINUTES = 15
 const DAY_MINUTES = 24 * 60
 
@@ -52,11 +55,6 @@ export function pickProject(
   return projects.at(0)?.id ?? NO_PROJECT_ID
 }
 
-export const dayId = (dayStart: number) => `day@${dayStart}`
-export const allDayId = (dayStart: number) => `allday@${dayStart}`
-export const calTaskId = (id: string, occurrence?: number) =>
-  occurrence === undefined ? `cal@${id}` : `cal@${id}@${occurrence}`
-
 export function weekDays(anchor: Date): Array<Date> {
   const first = startOfWeek(anchor, { weekStartsOn: 1 })
   return Array.from({ length: 7 }, (_, i) => addDays(first, i))
@@ -75,10 +73,6 @@ export function minuteOfDay(at: number): number {
 
 export function timeLabel(minute: number): string {
   return format(atMinute(0, minute), minute % 60 === 0 ? 'h a' : 'h:mm a')
-}
-
-export function isAllDay(at: number): boolean {
-  return minuteOfDay(at) === 0
 }
 
 export function atMinute(dayStart: number, minutes: number): number {
@@ -128,16 +122,7 @@ export function dragSpan(
   }
 }
 
-export type ExternalEvent = {
-  eventId: string
-  title: string
-  notes: string | null
-  location: string | null
-  allDay: boolean
-  start: number
-  end: number
-  link: string | null
-}
+export type ExternalEvent = ExternalEventRow
 
 export type TimedEntry =
   | {
@@ -164,7 +149,7 @@ export type CalendarDay = {
 }
 
 export function taskMinutes(task: Task): number {
-  return task.durationMinutes ?? EVENT_MINUTES
+  return task.durationMinutes ?? DEFAULT_EVENT_MINUTES
 }
 
 export const COMPACT_CARD_PX = 38

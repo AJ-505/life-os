@@ -15,7 +15,7 @@ type LastProject = {
 const LastProjectContext = createContext<LastProject | null>(null)
 
 function useStoredLastProject(): LastProject {
-  const spaceId = useBoardScope()
+  const { spaceId } = useBoardScope()
   const { data } = useQuery(
     convexQuery(api.settings.getLastProject, { spaceId }),
   )

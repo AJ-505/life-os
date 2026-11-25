@@ -1,68 +1,25 @@
-import { useEffect, useState } from 'react'
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { useConvexMutation } from '@convex-dev/react-query'
 import { Check, Loader2, Users } from 'lucide-react'
 
 import { Button } from '#/design-system/ui/button'
 import { ComingSoon } from '#/design-system'
 import { SPACES_ENABLED } from '#/feature-flags'
 import { Badge } from '#/design-system/ui/badge'
-import { useJoinSpace } from '#/spaces/queries'
-import { joinResult as joinResultSchema } from '#/spaces/validation'
+import { useJoinSpace } from '#/spaces/join'
+import { api } from '../../convex/_generated/api'
 
 export const Route = createFileRoute('/join/$inviteCode')({
   component: JoinComponent,
 })
 
-type Joined = { spaceId: string; name: string; alreadyMember: boolean }
-
 function JoinComponent() {
   const { inviteCode } = Route.useParams()
-  const join = useJoinSpace()
-  const [phase, setPhase] = useState<'idle' | 'loading' | 'success' | 'error'>(
-    'idle',
+  const outcome = useJoinSpace(
+    inviteCode,
+    useConvexMutation(api.spaces.joinSpaceByCode),
+    SPACES_ENABLED,
   )
-  const [joined, setJoined] = useState<Joined | null>(null)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!SPACES_ENABLED) return
-    if (!inviteCode || phase !== 'idle') return
-    setPhase('loading')
-    join.mutate(
-      { inviteCode },
-      {
-        onSuccess: (raw: unknown) => {
-          const parsed = joinResultSchema.safeParse(raw)
-          if (!parsed.success) {
-            setErrorMsg('That invite link is not valid.')
-            setPhase('error')
-            return
-          }
-          if (!parsed.data.ok) {
-            setErrorMsg(
-              parsed.data.reason === 'throttled'
-                ? `Too many attempts. Try again in ${parsed.data.retryAfterMinutes ?? 5} minutes.`
-                : parsed.data.reason === 'invalid'
-                  ? 'That invite code is not a valid code.'
-                  : 'No space matches that invite code.',
-            )
-            setPhase('error')
-            return
-          }
-          setJoined({
-            spaceId: parsed.data.space.id,
-            name: parsed.data.space.name,
-            alreadyMember: parsed.data.alreadyMember,
-          })
-          setPhase('success')
-        },
-        onError: (e: unknown) => {
-          setErrorMsg(e instanceof Error ? e.message : 'Failed to join')
-          setPhase('error')
-        },
-      },
-    )
-  }, [inviteCode, phase, join])
 
   if (!SPACES_ENABLED) {
     return (
@@ -88,7 +45,7 @@ function JoinComponent() {
           </Badge>
         </div>
 
-        {phase === 'loading' || phase === 'idle' ? (
+        {outcome === null ? (
           <div className="flex flex-col items-center gap-3 py-6">
             <Loader2 className="size-6 animate-spin text-signal" />
             <p className="text-sm text-muted-foreground">
@@ -99,16 +56,16 @@ function JoinComponent() {
               Live sync via Convex
             </Badge>
           </div>
-        ) : phase === 'success' && joined ? (
+        ) : outcome.kind === 'joined' ? (
           <div className="flex flex-col gap-4">
             <div className="flex items-center gap-2 rounded-lg bg-signal/10 px-3 py-2.5">
               <Check className="size-5 text-signal" />
               <div className="flex flex-col">
                 <span className="text-sm font-semibold">
-                  Joined “{joined.name}”
+                  Joined “{outcome.name}”
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {joined.alreadyMember
+                  {outcome.alreadyMember
                     ? 'You were already a member - welcome back.'
                     : 'Anyone with the link can join'}
                 </span>
@@ -116,7 +73,7 @@ function JoinComponent() {
             </div>
             <Link
               to="/space/$spaceId"
-              params={{ spaceId: joined.spaceId }}
+              params={{ spaceId: outcome.spaceId }}
               className="no-underline"
             >
               <Button className="w-full bg-signal text-signal-foreground hover:bg-signal/90">
@@ -127,7 +84,7 @@ function JoinComponent() {
         ) : (
           <div className="flex flex-col gap-3">
             <p className="rounded-lg bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
-              {errorMsg ?? 'Invalid invite code.'}
+              {outcome.message}
             </p>
             <p className="text-xs text-muted-foreground">
               Ask the owner for a fresh link. Life OS codes are 10 characters

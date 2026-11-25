@@ -12,7 +12,7 @@ import { internal } from './_generated/api'
 import { getWritable, requireUserId } from './access'
 import { readUserSettings } from './calendarSync'
 import { openGoogleCalendar } from './googleCalendar'
-import { newTask, storedProjectId, taskRow } from './taskModel'
+import { importedTask, storedProjectId, taskRow } from './taskModel'
 import { dayStartIn, daysBetween } from './zonedTime'
 
 import type { Infer } from 'convex/values'
@@ -277,24 +277,3 @@ export const importEvent = mutation({
     )
   },
 })
-
-export function importedTask(
-  event: ExternalEventRow,
-  target: { taskId: string; projectId: string; position: number },
-  now: number,
-) {
-  return newTask(
-    {
-      id: target.taskId,
-      projectId: target.projectId,
-      spaceId: null,
-      title: event.title,
-      notes: event.notes,
-      position: target.position,
-      dueAt: event.start,
-      durationMinutes: event.allDay ? null : (event.end - event.start) / 60_000,
-      importedFromEventId: event.eventId,
-    },
-    now,
-  )
-}

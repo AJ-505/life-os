@@ -1,30 +1,8 @@
-import 'zod/compile'
 import * as z from 'zod'
 
 import { REPEAT_RULES } from '../../convex/recurrence'
 
-export const space = z.object({
-  id: z.string(),
-  ownerId: z.string(),
-  name: z.string(),
-  inviteCode: z.string(),
-  createdAt: z.number(),
-})
-
-export const joinResult = z.discriminatedUnion('ok', [
-  z.object({
-    ok: z.literal(true),
-    space,
-    alreadyMember: z.boolean(),
-  }),
-  z.object({
-    ok: z.literal(false),
-    reason: z.enum(['invalid', 'not_found', 'throttled']),
-    retryAfterMinutes: z.number().optional(),
-  }),
-])
-
-const backupProjectSchema = z.object({
+const backupProject = z.object({
   id: z.string(),
   name: z.string(),
   color: z.string().nullable(),
@@ -38,9 +16,9 @@ const backupProjectSchema = z.object({
   shelvedAt: z.string().nullable(),
 })
 
-const backupTaskSchema = z.object({
+const backupTask = z.object({
   id: z.string(),
-  projectId: z.string(),
+  projectId: z.string().nullable(),
   parentId: z.string().nullable().optional(),
   title: z.string(),
   notes: z.string().nullable(),
@@ -60,12 +38,12 @@ const backupTaskSchema = z.object({
   repeat: z.enum(REPEAT_RULES).nullable().optional(),
 })
 
-const backupFileSchema = z.object({
+export const backupFile = z.object({
   app: z.literal('lifeos'),
   version: z.literal(1),
   exportedAt: z.string(),
-  projects: z.array(backupProjectSchema),
-  tasks: z.array(backupTaskSchema),
+  projects: z.array(backupProject),
+  tasks: z.array(backupTask),
 })
 
-export const backupFile = backupFileSchema
+export type BackupFile = z.infer<typeof backupFile>

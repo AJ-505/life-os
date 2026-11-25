@@ -57,7 +57,10 @@ describe('newTask', () => {
 
 describe('applyTaskUpdate', () => {
   it('rolls a weekly series forward instead of closing it', () => {
-    const series = { ...task({ dueAt: MONDAY_NINE }), repeat: 'weekly' as const }
+    const series = {
+      ...task({ dueAt: MONDAY_NINE }),
+      repeat: 'weekly' as const,
+    }
     expect(applyTaskUpdate(series, { done: true }, clock)).toEqual({
       dueAt: Date.UTC(2026, 10, 30, 9),
       done: false,
@@ -80,7 +83,10 @@ describe('applyTaskUpdate', () => {
   })
 
   it('clears the repeat rule with the date', () => {
-    const series = { ...task({ dueAt: MONDAY_NINE }), repeat: 'weekly' as const }
+    const series = {
+      ...task({ dueAt: MONDAY_NINE }),
+      repeat: 'weekly' as const,
+    }
     expect(applyTaskUpdate(series, { dueAt: null }, clock)).toEqual({
       dueAt: null,
       repeat: null,
@@ -133,5 +139,15 @@ describe('descendants', () => {
   it('stops on a parent cycle', () => {
     const tasks = [node('a', 'b'), node('b', 'a')]
     expect(descendants(tasks, 'a').map((t) => t.id)).toEqual(['b'])
+    expect(descendants(tasks, 'b').map((t) => t.id)).toEqual(['a'])
+  })
+
+  it('stops a cycle from swallowing a real subtask', () => {
+    const tasks = [node('a', 'b'), node('b', 'a'), node('real', 'b')]
+    expect(
+      descendants(tasks, 'a')
+        .map((t) => t.id)
+        .sort(),
+    ).toEqual(['b', 'real'])
   })
 })

@@ -1,9 +1,18 @@
-import type * as React from 'react'
+import { useState } from 'react'
 
-import { useLocalNumber } from '#/design-system'
+import { numberCodec, storedValue, useStored } from '#/design-system'
 import { FocusPanel } from '../focus/FocusPanel'
 
+import type * as React from 'react'
 import type { BoardData } from '../types'
+
+const DEFAULT_FOCUS_WIDTH = 320
+
+const focusWidthStore = storedValue(
+  'lifeos-focus-width',
+  numberCodec,
+  DEFAULT_FOCUS_WIDTH,
+)
 
 export function ResizableFocusPanel({
   board,
@@ -12,8 +21,9 @@ export function ResizableFocusPanel({
   board: BoardData
   onClose: () => void
 }) {
-  const [focusWidth, setFocusWidth, setFocusWidthLive, commitFocusWidth] =
-    useLocalNumber('lifeos-focus-width', 320)
+  const [storedWidth, setStoredWidth] = useStored(focusWidthStore)
+  const [liveWidth, setLiveWidth] = useState<number | null>(null)
+  const focusWidth = liveWidth ?? storedWidth
 
   const startFocusResize = (e: React.PointerEvent) => {
     e.preventDefault()
@@ -21,12 +31,16 @@ export function ResizableFocusPanel({
     const startW = focusWidth
     const max = Math.min(720, window.innerWidth - 360)
     const clamp = (w: number) => Math.max(280, Math.min(max, w))
+    let width = startW
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
-    const onMove = (ev: PointerEvent) =>
-      setFocusWidthLive(clamp(startW + (startX - ev.clientX)))
+    const onMove = (ev: PointerEvent) => {
+      width = clamp(startW + (startX - ev.clientX))
+      setLiveWidth(width)
+    }
     const onUp = () => {
-      commitFocusWidth()
+      setStoredWidth(width)
+      setLiveWidth(null)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
       window.removeEventListener('pointermove', onMove)
@@ -46,7 +60,7 @@ export function ResizableFocusPanel({
         aria-orientation="vertical"
         aria-label="Resize focus panel"
         onPointerDown={startFocusResize}
-        onDoubleClick={() => setFocusWidth(320)}
+        onDoubleClick={() => setStoredWidth(DEFAULT_FOCUS_WIDTH)}
         title="Drag to resize · double-click to reset"
         className="group absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize"
       >

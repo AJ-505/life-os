@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useRouterState } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
 import { useUser } from '@clerk/tanstack-react-start'
+import { useConvexMutation } from '@convex-dev/react-query'
 import {
   CalendarRange,
   LayoutGrid,
@@ -9,13 +9,19 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
-  Loader2,
   Settings,
   Users,
 } from 'lucide-react'
-import { toast } from 'sonner'
 
-import { ComingSoon, ModeToggle, cn, useLocalFlag } from '#/design-system'
+import {
+  ComingSoon,
+  ModeToggle,
+  cn,
+  flagCodec,
+  storedValue,
+  useKeyShortcuts,
+  useStored,
+} from '#/design-system'
 import { CALENDAR_ENABLED } from '#/feature-flags'
 import { Button } from '#/design-system/ui/button'
 import {
@@ -26,14 +32,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '#/design-system/ui/dialog'
-import { Label } from '#/design-system/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '#/design-system/ui/select'
 import { Separator } from '#/design-system/ui/separator'
 import {
   Sheet,
@@ -42,7 +40,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '#/design-system/ui/sheet'
-import { Switch } from '#/design-system/ui/switch'
 import {
   Tooltip,
   TooltipContent,
@@ -52,21 +49,14 @@ import {
 import { BackupControls } from '#/backup'
 import { SignOutButton } from '#/auth'
 import {
-  calendarSettingsQueryOptions,
-  useUpdateCalendarSettings,
-} from '#/settings/queries'
-import type { SyncOutcome } from '#/settings/googleCalendar'
-import {
   useEnsureTimezone,
-  useGoogleCalendar,
   useRestoreCalendarAccess,
-  useSyncTaskToCalendar,
 } from '#/settings/googleCalendar'
-import { boardQueryOptions } from '#/tracker/queries'
-import { useSyncUserProfile } from '#/spaces/queries'
+import { CalendarSettings } from '#/settings/CalendarSettings'
 import { useSpacesNavTarget } from '#/spaces/last-space'
 import type { SpacesNavTarget } from '#/spaces/last-space'
 import { usePrefetchRoutes } from '#/prefetch/prefetch-routes'
+import { api } from '../../convex/_generated/api'
 
 const NAV = [
   { to: '/', label: 'Board', icon: LayoutGrid },
@@ -164,7 +154,7 @@ function NavLinks({
 
 function ProfileSync() {
   const { user } = useUser()
-  const { mutate } = useSyncUserProfile()
+  const syncProfile = useConvexMutation(api.spaces.syncUserProfile)
   const displayName =
     user?.fullName ?? user?.username ?? user?.primaryEmailAddress?.emailAddress
   const email = user?.primaryEmailAddress?.emailAddress
@@ -175,8 +165,8 @@ function ProfileSync() {
     const signature = `${user.id}|${displayName}|${email ?? ''}`
     if (syncedRef.current === signature) return
     syncedRef.current = signature
-    mutate({ displayName, ...(email ? { email } : {}) })
-  }, [user, displayName, email, mutate])
+    void syncProfile({ displayName, ...(email ? { email } : {}) })
+  }, [user, displayName, email, syncProfile])
 
   return null
 }
@@ -194,266 +184,6 @@ function RestoreCalendarAccess() {
 function PrefetchRoutes() {
   usePrefetchRoutes()
   return null
-}
-
-const RESYNC_CONCURRENCY = 4
-
-async function runBounded<T>(
-  work: Array<() => Promise<T>>,
-  limit: number,
-): Promise<Array<T>> {
-  const results = new Array<T>(work.length)
-  let next = 0
-  const runOne = async () => {
-    for (let index = next++; index < work.length; index = next++) {
-      results[index] = await work[index]()
-    }
-  }
-  await Promise.all(
-    Array.from({ length: Math.min(limit, work.length) }, runOne),
-  )
-  return results
-}
-
-function reportResync(results: Array<SyncOutcome>) {
-  const updated = results.filter((r) => r.ok && !r.silent).length
-  const failures = results.filter((f): f is FailedSync => !f.ok)
-  const total = results.length
-  const tasks = `of ${total} synced ${total === 1 ? 'task' : 'tasks'}`
-  if (failures.length === 0) {
-    toast.success(`Calendar repaired: ${updated} updated ${tasks}`)
-    return
-  }
-  toast.error(
-    `Calendar repair finished: ${updated} updated, ${failures.length} failed ${tasks}`,
-    { description: commonReason(failures) },
-  )
-}
-
-type FailedSync = Extract<SyncOutcome, { ok: false }>
-
-function commonReason(failures: Array<FailedSync>) {
-  const counts = new Map<string, { n: number; outcome: FailedSync }>()
-  for (const failure of failures) {
-    const seen = counts.get(failure.message)
-    if (seen) seen.n += 1
-    else counts.set(failure.message, { n: 1, outcome: failure })
-  }
-  const top = [...counts.values()].sort((a, b) => b.n - a.n)[0]
-  if (!top) return ''
-  return top.outcome.needsReconnect
-    ? `${top.outcome.message} Reconnect Google above.`
-    : top.outcome.message
-}
-
-function CalendarSettings() {
-  const { data: settings } = useQuery(calendarSettingsQueryOptions)
-  const { data: board } = useQuery(boardQueryOptions(null))
-  const updateSettings = useUpdateCalendarSettings()
-  const { connection, connect } = useGoogleCalendar()
-  const syncToCalendar = useSyncTaskToCalendar()
-  const [resyncing, setResyncing] = useState(false)
-  const [repairHint, setRepairHint] = useState(false)
-  const [confirmOff, setConfirmOff] = useState(false)
-
-  const enabled = settings?.syncEnabled ?? false
-  const googleConnected = connection.status === 'connected'
-  const defaultReminder = settings?.defaultReminderMinutes ?? 15
-  const needsScope = connection.status === 'needs_scope'
-
-  const autoAdd = settings?.autoAddToCalendar ?? false
-  const boardTasks = (board ?? []).flatMap((p) => p.tasks)
-  const syncedTasks = boardTasks.filter(
-    (t) => t.calendarEventId !== null || (t.addToCalendar && t.dueAt !== null),
-  )
-  const resyncTasks = boardTasks.filter(
-    (t) =>
-      t.calendarEventId !== null ||
-      (t.dueAt !== null &&
-        !t.done &&
-        !t.archived &&
-        (t.addToCalendar || autoAdd)),
-  )
-
-  const handleToggle = (checked: boolean) => {
-    if (!checked) {
-      setConfirmOff(true)
-      return
-    }
-    updateSettings.mutate({ syncEnabled: true })
-  }
-
-  const handleConnect = async () => {
-    try {
-      await connect()
-    } catch (e) {
-      toast.error('Could not connect Google Calendar', {
-        description: e instanceof Error ? e.message : String(e),
-      })
-    }
-  }
-
-  const handleDisconnect = () => {
-    updateSettings.mutate({ syncEnabled: false })
-    setConfirmOff(false)
-    toast.success('Calendar sync turned off')
-  }
-
-  const handleReminderChange = (v: string) => {
-    updateSettings.mutate({ defaultReminderMinutes: Number(v) })
-  }
-
-  const handleResync = async () => {
-    if (resyncing) return
-    setResyncing(true)
-    try {
-      const results = await runBounded(
-        resyncTasks.map((t) => () => syncToCalendar(t.id)),
-        RESYNC_CONCURRENCY,
-      )
-      reportResync(results)
-    } finally {
-      setResyncing(false)
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <h3 className="text-sm font-semibold">Calendar Integration</h3>
-      <Separator />
-
-      <div className="flex items-center justify-between">
-        <div className="flex flex-col gap-0.5">
-          <Label className="text-sm font-medium">
-            Enable Google Calendar Sync
-          </Label>
-          {!enabled ? (
-            <span className="font-mono text-[11px] text-muted-foreground">
-              Connect your Google Calendar to sync task times
-            </span>
-          ) : null}
-        </div>
-        <Switch checked={enabled} onCheckedChange={handleToggle} />
-      </div>
-
-      {confirmOff ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3">
-          <p className="mb-2 text-xs leading-snug">
-            Turning sync off removes {syncedTasks.length} synced{' '}
-            {syncedTasks.length === 1 ? 'event' : 'events'} from your Google
-            Calendar. Events you deleted there are unaffected.
-          </p>
-          <div className="flex gap-1.5">
-            <Button size="sm" variant="destructive" onClick={handleDisconnect}>
-              Turn off and remove events
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setConfirmOff(false)}
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
-      ) : null}
-
-      {enabled && !googleConnected ? (
-        <div className="rounded-md border border-dashed p-3">
-          <p className="mb-2 text-xs leading-snug text-muted-foreground">
-            {needsScope
-              ? 'Your Google account is linked but has not granted calendar access yet.'
-              : 'Connect your Google account to push task times to your calendar.'}
-          </p>
-          <Button size="sm" className="w-full" onClick={handleConnect}>
-            {needsScope ? 'Grant calendar access' : 'Connect Google Calendar'}
-          </Button>
-        </div>
-      ) : null}
-
-      {enabled && googleConnected ? (
-        <div className="flex items-center justify-between rounded-md border bg-accent/30 px-3 py-2">
-          <span className="flex items-center gap-2 text-sm">
-            <span className="size-2 rounded-full bg-emerald-500" />
-            Connected
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleToggle.bind(null, false)}
-          >
-            Turn off sync
-          </Button>
-        </div>
-      ) : null}
-
-      {enabled ? (
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex flex-col gap-0.5">
-            <Label className="text-sm font-medium">Add every dated task</Label>
-            <span className="font-mono text-[11px] text-muted-foreground">
-              Every personal task with a date goes to your calendar
-            </span>
-          </div>
-          <Switch
-            checked={autoAdd}
-            onCheckedChange={(checked) =>
-              updateSettings.mutate({ autoAddToCalendar: checked })
-            }
-          />
-        </div>
-      ) : null}
-
-      <div className="flex items-center justify-between">
-        <Label className="os-label">Default reminder</Label>
-        <Select
-          value={String(defaultReminder)}
-          onValueChange={handleReminderChange}
-        >
-          <SelectTrigger size="sm" className="w-[140px] text-xs">
-            <SelectValue>{`${defaultReminder} minutes before`}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="5">5 minutes before</SelectItem>
-            <SelectItem value="15">15 minutes before</SelectItem>
-            <SelectItem value="30">30 minutes before</SelectItem>
-            <SelectItem value="60">60 minutes before</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <Label className="os-label">Repair calendar</Label>
-        <Tooltip open={repairHint} onOpenChange={setRepairHint}>
-          <TooltipTrigger asChild>
-            <span
-              tabIndex={0}
-              className="rounded-md"
-              onPointerDown={(e) => {
-                if (e.pointerType === 'touch') setRepairHint(!repairHint)
-              }}
-            >
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!enabled || !googleConnected || resyncing}
-                onClick={handleResync}
-              >
-                {resyncing ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : null}
-                Repair now
-              </Button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent side="top" align="end" className="max-w-56">
-            Missing or out-of-date events? This sends every synced task to
-            Google again and brings back events you deleted there.
-          </TooltipContent>
-        </Tooltip>
-      </div>
-    </div>
-  )
 }
 
 function SettingsDialog({ collapsed }: { collapsed?: boolean }) {
@@ -540,33 +270,22 @@ function SidebarFooter({ collapsed }: { collapsed?: boolean }) {
   )
 }
 
+const sidebarCollapsed = storedValue(
+  'lifeos-sidebar-collapsed',
+  flagCodec,
+  false,
+)
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
-  const [collapsed, setCollapsed] = useLocalFlag(
-    'lifeos-sidebar-collapsed',
-    false,
-  )
+  const [collapsed, setCollapsed] = useStored(sidebarCollapsed)
   const spacesTarget = useSpacesNavTarget()
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const el = e.target as HTMLElement | null
-      if (
-        el &&
-        (el.tagName === 'INPUT' ||
-          el.tagName === 'TEXTAREA' ||
-          el.isContentEditable)
-      )
-        return
-      if (e.metaKey || e.ctrlKey || e.altKey) return
-      if (e.key === '[') {
-        e.preventDefault()
-        setCollapsed(!collapsed)
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [collapsed, setCollapsed])
+  useKeyShortcuts((event) => {
+    if (event.key !== '[') return
+    event.preventDefault()
+    setCollapsed(!collapsed)
+  })
 
   return (
     <TooltipProvider delayDuration={300}>

@@ -1,16 +1,18 @@
 import { useEffect } from 'react'
 import { useAuth, useUser } from '@clerk/tanstack-react-start'
-import { useAction, useMutation } from 'convex/react'
+import { useMutation } from 'convex/react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import * as z from 'zod'
 
 import { api } from '../../convex/_generated/api'
+import { GOOGLE_EVENTS_SCOPE } from '../../convex/syncRule'
+import { localTimeZone } from '../../convex/zonedTime'
+import { storedValue, textCodec } from '#/design-system'
 import {
   calendarSettingsQueryOptions,
   useUpdateCalendarSettings,
 } from './queries'
-
-export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar.events'
 
 type ExternalAccount = {
   provider?: string
@@ -48,7 +50,7 @@ export function useGoogleCalendar() {
     const accounts = (user as ClerkUser | null | undefined)?.externalAccounts
     const google = accounts?.find((a) => a.provider?.includes('google'))
     if (!google) return { status: 'disconnected' }
-    return google.approvedScopes?.includes(CALENDAR_SCOPE)
+    return google.approvedScopes?.includes(GOOGLE_EVENTS_SCOPE)
       ? { status: 'connected' }
       : { status: 'needs_scope' }
   })()
@@ -63,12 +65,12 @@ export function useGoogleCalendar() {
 
     const result = google?.reauthorize
       ? await google.reauthorize({
-          additionalScopes: [CALENDAR_SCOPE],
+          additionalScopes: [GOOGLE_EVENTS_SCOPE],
           redirectUrl,
         })
       : await clerkUser.createExternalAccount?.({
           strategy: 'oauth_google',
-          additionalScopes: [CALENDAR_SCOPE],
+          additionalScopes: [GOOGLE_EVENTS_SCOPE],
           redirectUrl,
         })
 
@@ -84,12 +86,23 @@ export function useGoogleCalendar() {
   return { connection, connect }
 }
 
-const RESTORE_KEY = 'lifeos.calendar.restoreSession'
-const RETRY_KEY = 'lifeos.calendar.retrySession'
+const restoredInSession = storedValue(
+  'lifeos.calendar.restoreSession',
+  textCodec(z.string()),
+  '',
+)
+const retriedInSession = storedValue(
+  'lifeos.calendar.retrySession',
+  textCodec(z.string()),
+  '',
+)
 
-function firstTimeThisSession(key: string, sessionId: string): boolean {
-  if (localStorage.getItem(key) === sessionId) return false
-  localStorage.setItem(key, sessionId)
+function firstTimeThisSession(
+  store: typeof restoredInSession,
+  sessionId: string,
+): boolean {
+  if (store.read() === sessionId) return false
+  store.write(sessionId)
   return true
 }
 
@@ -103,12 +116,15 @@ export function useRestoreCalendarAccess() {
 
   useEffect(() => {
     if (!sessionId || !syncEnabled) return
-    if (status === 'connected' && firstTimeThisSession(RETRY_KEY, sessionId)) {
+    if (
+      status === 'connected' &&
+      firstTimeThisSession(retriedInSession, sessionId)
+    ) {
       void retryAccessIssues({})
       return
     }
     if (status !== 'needs_scope') return
-    if (!firstTimeThisSession(RESTORE_KEY, sessionId)) return
+    if (!firstTimeThisSession(restoredInSession, sessionId)) return
     const id = toast.loading('Restoring Google Calendar access…')
     connect().catch((error: unknown) => {
       toast.error('Could not restore Google Calendar access', {
@@ -119,82 +135,13 @@ export function useRestoreCalendarAccess() {
   }, [sessionId, syncEnabled, status, connect, retryAccessIssues])
 }
 
-type SyncMessage = Record<SyncAction | SyncReason, string>
-
-type SyncResultShape = Awaited<
-  ReturnType<ReturnType<typeof useAction<typeof api.calendar.syncTask>>>
->
-type SyncAction = Extract<SyncResultShape, { ok: true }>['action']
-type SyncReason = Extract<SyncResultShape, { ok: false }>['reason']
-
-const MESSAGES: SyncMessage = {
-  created: 'Added to Google Calendar',
-  updated: 'Updated in Google Calendar',
-  deleted: 'Removed from Google Calendar',
-  noop: 'Calendar updated',
-  event_removed: 'That event was removed in Google Calendar',
-  not_connected: 'Connect Google Calendar in Settings first',
-  reauth_required: 'Google Calendar needs reconnecting',
-  missing_scope:
-    'Life OS needs calendar permission. Reconnect Google in Settings.',
-  no_timezone: 'Life OS does not know your timezone yet',
-  not_personal: 'Calendar sync is personal only',
-  not_configured: 'Calendar sync is not configured on the server',
-  rate_limited: 'Google is rate limiting us. Try again shortly.',
-  google_error: 'Google rejected the change',
-}
-
-export function syncIssueMessage(issue: SyncReason): string {
-  return issue === 'event_removed'
-    ? 'This event was deleted in Google Calendar. Use Repair calendar in Settings to bring it back.'
-    : `Last push to Google failed: ${MESSAGES[issue]}`
-}
-
-const RECONNECT_REASONS: Set<SyncReason> = new Set([
-  'not_connected',
-  'reauth_required',
-  'missing_scope',
-])
-
-export type SyncOutcome =
-  | { ok: true; silent: boolean; message: string; link: string | null }
-  | { ok: false; message: string; detail: string; needsReconnect: boolean }
-
-export function useSyncTaskToCalendar() {
-  const syncTask = useAction(api.calendar.syncTask)
-
-  return (taskId: string): Promise<SyncOutcome> =>
-    syncTask({ taskId }).then(
-      (result): SyncOutcome =>
-        result.ok
-          ? {
-              ok: true,
-              silent: result.action === 'noop',
-              message: MESSAGES[result.action],
-              link: result.link,
-            }
-          : {
-              ok: false,
-              message: MESSAGES[result.reason],
-              detail: result.detail,
-              needsReconnect: RECONNECT_REASONS.has(result.reason),
-            },
-      (error: unknown): SyncOutcome => ({
-        ok: false,
-        message: 'Calendar sync failed',
-        detail: error instanceof Error ? error.message : String(error),
-        needsReconnect: false,
-      }),
-    )
-}
-
 export function useEnsureTimezone() {
   const { data: settings } = useQuery(calendarSettingsQueryOptions)
   const update = useUpdateCalendarSettings()
-  const resolved = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const resolved = localTimeZone()
 
   useEffect(() => {
-    if (!resolved || settings === undefined) return
+    if (settings === undefined) return
     if (settings.timeZone === resolved) return
     update.mutate({ timeZone: resolved })
   }, [resolved, settings, update])

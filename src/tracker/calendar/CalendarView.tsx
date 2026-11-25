@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from '#/design-system/ui/select'
 
-import { newId, positionAfter } from '../types'
+import { newId } from '../types'
 import { CalendarSyncButton } from './CalendarSyncButton'
 import { ExternalEventCard } from './ExternalEventCard'
 import { ProjectPicker } from './ProjectPicker'
@@ -31,21 +31,20 @@ import { useBackwardSync } from './pull'
 import { useAddTask, useUpdateTask } from '../queries'
 import { useBoardScope } from '../board-scope'
 import { activeProjects, canvasProjects } from '../board/board-logic'
-import { useBoardUI } from '../board/board-ui'
+import { useBoardUI } from '../board/TaskDetailsHost'
+import { allDayId, calTaskId, dayId } from '../board/drop'
+import { appendRootPosition } from '../board/placement'
+import { isAllDay } from '../due'
 import {
   BLOCK_MINUTES,
-  allDayId,
   atMinute,
   blockShortLabel,
-  calTaskId,
   calendarWeek,
   cardDensity,
-  dayId,
   dragSpan,
   durationLabel,
   hourPxFor,
   importedEventIds,
-  isAllDay,
   labelStep,
   minuteOfDay,
   resizedMinutes,
@@ -697,7 +696,6 @@ function QuickCreate({
   const [title, setTitle] = useState('')
   const projects = canvasProjects(board)
   const { home, choose } = useHomeProject(projects)
-  const siblings = board.find((p) => p.id === home)?.tasks ?? []
   const dueAt = atMinute(draft.dayStart, draft.minute ?? 0)
   const minutes = draft.minute === null ? null : (draft.minutes ?? blockMinutes)
 
@@ -708,7 +706,7 @@ function QuickCreate({
       id: newId(),
       projectId: home,
       title: t,
-      position: positionAfter(siblings.filter((x) => !x.parentId)),
+      position: appendRootPosition(board.find((p) => p.id === home)),
       dueAt,
       durationMinutes: minutes,
       createdFrom: 'calendar',
@@ -818,11 +816,10 @@ function CalendarBody({
 
   const days = visibleDays(anchor, span)
   const projects = activeProjects(board)
-  const spaceId = useBoardScope()
-  const personal = spaceId === null
-  const { events } = useBackwardSync(days, active && personal)
+  const { can } = useBoardScope()
+  const { events } = useBackwardSync(days, active && can.importEvents)
   const imported = importedEventIds(board)
-  const feed = personal
+  const feed = can.importEvents
     ? events.filter((event) => !imported.has(event.eventId))
     : []
 

@@ -1,33 +1,25 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { format } from 'date-fns/format'
-import { isPast } from 'date-fns/isPast'
 import { isToday } from 'date-fns/isToday'
 import { CornerDownRight, Crosshair, Repeat } from 'lucide-react'
 
 import { cn } from '#/design-system'
 import { Checkbox } from '#/design-system/ui/checkbox'
 
-import { POSITION_GAP } from '../types'
 import { useBoardScope } from '../board-scope'
-import { useSetTaskFocus, useUpdateTask } from '../queries'
-import { taskId } from './board-logic'
-import { useBoardUI } from './board-ui'
+import { isAllDay, isOverdue } from '../due'
+import { useUpdateTask } from '../queries'
+import { taskId } from './drop'
+import { useBoardUI } from './TaskDetailsHost'
 
 import type { TaskNode } from './board-logic'
 import type { Task } from '../types'
 
-export function DueChip({
-  due,
-  done,
-}: {
-  due: number | Date | string
-  done?: boolean
-}) {
+export function DueChip({ due, done }: { due: number; done?: boolean }) {
   const date = new Date(due)
-  const overdue = !done && isPast(date) && !isToday(date)
-  const hasTime = date.getHours() !== 0 || date.getMinutes() !== 0
-  const timeStr = hasTime ? format(date, 'h:mm a') : null
+  const overdue = !done && isOverdue(date)
+  const timeStr = isAllDay(date) ? null : format(date, 'h:mm a')
   const dateStr = isToday(date) ? 'today' : format(date, 'd MMM')
   return (
     <span
@@ -57,9 +49,8 @@ export function TaskRowBody({
   subtask?: boolean
 }) {
   const updateTask = useUpdateTask()
-  const setFocus = useSetTaskFocus()
-  const spaceId = useBoardScope()
-  const { openTask, setHovered } = useBoardUI()
+  const { can } = useBoardScope()
+  const { openTask, setHovered, toggleFocus } = useBoardUI()
 
   return (
     <div
@@ -106,17 +97,11 @@ export function TaskRowBody({
         />
       ) : null}
       {task.dueAt ? <DueChip due={task.dueAt} done={task.done} /> : null}
-      {spaceId === null ? (
+      {can.focus ? (
         <button
           type="button"
           aria-label={task.inFocus ? 'Remove from focus' : 'Add to focus'}
-          onClick={() =>
-            setFocus.mutate({
-              id: task.id,
-              inFocus: !task.inFocus,
-              focusOrder: Date.now() / 1000 + POSITION_GAP,
-            })
-          }
+          onClick={() => toggleFocus(task)}
           onPointerDown={(e) => e.stopPropagation()}
           className={cn(
             'mt-0.5 shrink-0 cursor-pointer transition-opacity',

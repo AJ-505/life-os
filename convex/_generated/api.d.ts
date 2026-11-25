@@ -22,6 +22,7 @@ import type * as recurrence from "../recurrence.js";
 import type * as release from "../release.js";
 import type * as settings from "../settings.js";
 import type * as spaces from "../spaces.js";
+import type * as syncRule from "../syncRule.js";
 import type * as taskModel from "../taskModel.js";
 import type * as tracker from "../tracker.js";
 import type * as zonedTime from "../zonedTime.js";
@@ -47,6 +48,7 @@ declare const fullApi: ApiFromModules<{
   release: typeof release;
   settings: typeof settings;
   spaces: typeof spaces;
+  syncRule: typeof syncRule;
   taskModel: typeof taskModel;
   tracker: typeof tracker;
   zonedTime: typeof zonedTime;

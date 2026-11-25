@@ -15,7 +15,6 @@ import {
   externalPlacement,
   hourPxFor,
   importedEventIds,
-  isAllDay,
   labelStep,
   minuteOfDay,
   normalizeBlockMinutes,
@@ -27,6 +26,7 @@ import {
   visibleDays,
   weekDays,
 } from './calendar-logic'
+import { isAllDay } from '../due'
 
 import { NO_PROJECT_ID } from '../types'
 

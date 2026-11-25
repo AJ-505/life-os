@@ -1,14 +1,16 @@
 ---- MODULE CalendarSync ----
 \* One personal task and the user's calendar settings, as convex/settings.ts,
-\* convex/tracker.ts and convex/calendar.ts handle them. The model keeps one
-\* slot of waiting work. A push reads the newest task row when it runs, so a
-\* second push behind the first changes nothing.
+\* convex/calendarSync.ts and convex/calendar.ts handle them. The model keeps
+\* one slot of waiting work. A push reads the newest task row when it runs, so
+\* a second push behind the first changes nothing. A push also deletes an event
+\* that the task no longer wants, so a push takes the slot of a waiting cleanup,
+\* and a cleanup behind a push changes nothing.
 
 VARIABLES sync, auto, due, switch, event, issue, work
 vars == <<sync, auto, due, switch, event, issue, work>>
 
-Issues == {"none", "limited", "removed"}
-Work == {"none", "push", "retry", "cleanup"}
+Issues == {"none", "limited", "removed", "failed"}
+Work == {"none", "push", "cleanup"}
 
 TypeOK ==
     /\ sync \in BOOLEAN /\ auto \in BOOLEAN
@@ -19,44 +21,49 @@ WantsOf(s, a, d, sw) == s /\ d /\ (sw \/ a)
 Wants == WantsOf(sync, auto, due, switch)
 Settled == work = "none"
 
-Queue(kind, when) == work' = IF work = "none" /\ when THEN kind ELSE work
+Queue(kind, when) ==
+    work' = IF when /\ (work = "none" \/ (kind = "push" /\ work = "cleanup"))
+              THEN kind ELSE work
 
 Init ==
     /\ sync = FALSE /\ auto = FALSE
     /\ due = FALSE /\ switch = FALSE
     /\ event = FALSE /\ issue = "none" /\ work = "none"
 
-\* scheduleCalendarSync: a calendar field changed, so push when the task
-\* wants an event or has one.
+\* afterTaskWrite: a calendar field changed, so push when the task wants an
+\* event or has one.
 SchedulePush(d, sw) == Queue("push", WantsOf(sync, auto, d, sw) \/ event)
 
-\* updateCalendarSettings, off to on. The backfill runs only when "add every
-\* dated task" is on, and it skips a task marked deleted in Google.
+\* afterSettingsChange, off to on: the backfill sweep pushes every task that
+\* wants an event and has none, by its own switch or by "add every dated
+\* task". It skips a task marked deleted in Google.
 YouTurnSyncOn ==
     /\ ~sync
     /\ sync' = TRUE
-    /\ Queue("retry", auto /\ WantsOf(TRUE, auto, due, switch) /\ ~event /\ issue # "removed")
+    /\ Queue("push", WantsOf(TRUE, auto, due, switch) /\ ~event /\ issue # "removed")
     /\ UNCHANGED <<auto, due, switch, event, issue>>
 
-\* updateCalendarSettings, on to off: delete every event the user owns.
+\* afterSettingsChange, on to off: the removeAll sweep deletes every event
+\* the user owns.
 YouTurnSyncOff ==
     /\ sync
     /\ sync' = FALSE
-    /\ work' = IF event THEN "cleanup" ELSE work
+    /\ Queue("cleanup", event)
     /\ UNCHANGED <<auto, due, switch, event, issue>>
 
 YouTurnAutoAddOn ==
     /\ ~auto
     /\ auto' = TRUE
-    /\ Queue("retry", sync /\ WantsOf(sync, TRUE, due, switch) /\ ~event /\ issue # "removed")
+    /\ Queue("push", sync /\ WantsOf(sync, TRUE, due, switch) /\ ~event /\ issue # "removed")
     /\ UNCHANGED <<sync, due, switch, event, issue>>
 
-\* continueAutoSyncOff: only tasks without their own switch lose their event.
+\* The removeAutoAdded sweep: only tasks without their own switch lose their
+\* event.
 YouTurnAutoAddOff ==
     /\ auto
     /\ auto' = FALSE
     /\ IF sync /\ ~switch
-         THEN /\ work' = IF event THEN "cleanup" ELSE work
+         THEN /\ Queue("cleanup", event)
               /\ issue' = IF issue = "removed" THEN "none" ELSE issue
          ELSE UNCHANGED <<work, issue>>
     /\ UNCHANGED <<sync, due, switch, event>>
@@ -103,49 +110,47 @@ RunOutcome(ok) ==
 Reaches == (Wants \/ event) /\ ~(Wants /\ ~event /\ issue = "removed")
 
 ThePushRuns ==
-    /\ work \in {"push", "retry"}
+    /\ work = "push"
     /\ work' = "none"
     /\ RunOutcome(TRUE)
     /\ UNCHANGED <<sync, auto, due, switch>>
 
-\* syncTaskForUser with no attempt: a 429 is stored and never retried.
+\* syncTaskForUser stores the 429, backs off and tries again, for every push.
+\* The model leaves out the limit of 3 attempts.
 GoogleLimitsThePush ==
     /\ work = "push" /\ Reaches
-    /\ work' = "none"
-    /\ RunOutcome(FALSE)
-    /\ UNCHANGED <<sync, auto, due, switch>>
-
-\* syncTaskForUser with an attempt backs off and tries again. The model leaves
-\* out the limit of 3 attempts.
-GoogleLimitsTheRetry ==
-    /\ work = "retry" /\ Reaches
-    /\ work' = "retry"
+    /\ work' = "push"
     /\ RunOutcome(FALSE)
     /\ UNCHANGED <<sync, auto, due, switch>>
 
 \* A PATCH answers 404 or 410: the user deleted the event in Google.
 ThePushFindsTheEventDeleted ==
-    /\ work \in {"push", "retry"} /\ Wants /\ event
+    /\ work = "push" /\ Wants /\ event
     /\ work' = "none"
     /\ event' = FALSE
     /\ issue' = "removed"
     /\ UNCHANGED <<sync, auto, due, switch>>
 
-\* deleteEventsForUser, then clearEventIds.
+\* deleteEventsForUser, then clearEventIds. A task that no longer wants an
+\* event loses any stored issue.
 TheCleanupDeletesTheEvent ==
     /\ work = "cleanup"
     /\ event' = FALSE
     /\ work' = IF Wants /\ issue # "removed" THEN "push" ELSE "none"
-    /\ issue' = IF ~Wants /\ issue = "removed" THEN "none" ELSE issue
+    /\ issue' = IF Wants THEN issue ELSE "none"
     /\ UNCHANGED <<sync, auto, due, switch>>
 
-\* deleteEventsForUser skips any answer but 2xx, 404 and 410, and records nothing.
+\* deleteEventsForUser backs off and tries again on a 429 or a Google error,
+\* which the model shows as no step. On any other refusal, markRemovalFailed
+\* stores the reason on the task that still holds the event.
 GoogleRefusesTheCleanup ==
     /\ work = "cleanup"
     /\ work' = "none"
-    /\ UNCHANGED <<sync, auto, due, switch, event, issue>>
+    /\ issue' = IF event THEN "failed" ELSE issue
+    /\ UNCHANGED <<sync, auto, due, switch, event>>
 
-\* Settings > Repair now: syncTask clears the deleted mark and pushes at once.
+\* Settings > Repair now: repairCalendar clears the deleted mark and pushes
+\* every synced task at once.
 YouPressRepair ==
     /\ sync /\ (event \/ (due /\ (switch \/ auto)))
     /\ event' = Wants
@@ -155,7 +160,7 @@ YouPressRepair ==
 Next ==
     \/ YouTurnSyncOn \/ YouTurnSyncOff \/ YouTurnAutoAddOn \/ YouTurnAutoAddOff
     \/ YouDateTheTask \/ YouFinishTheTask \/ YouTurnTheSwitchOn \/ YouTurnTheSwitchOff
-    \/ ThePushRuns \/ GoogleLimitsThePush \/ GoogleLimitsTheRetry
+    \/ ThePushRuns \/ GoogleLimitsThePush
     \/ ThePushFindsTheEventDeleted \/ TheCleanupDeletesTheEvent \/ GoogleRefusesTheCleanup
     \/ YouPressRepair
 
@@ -170,6 +175,6 @@ WantedEventArrives == Settled => (Wants => (event \/ issue # "none"))
 UnwantedEventLeaves == Settled => ((~Wants /\ event) => issue # "none")
 
 \* A rate-limit warning always has a retry waiting.
-RateLimitIsRetried == (issue = "limited") => (work = "retry")
+RateLimitIsRetried == (issue = "limited") => (work = "push")
 
 ====

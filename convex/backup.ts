@@ -5,7 +5,8 @@ import type { Infer } from 'convex/values'
 import { internalMutation, mutation, query } from './_generated/server'
 import { internal } from './_generated/api'
 import { requireUserId } from './access'
-import { eventsToDelete, scheduleRemoval } from './calendarSync'
+import { scheduleRemoval } from './calendarSync'
+import { eventsToDelete } from './syncRule'
 import { repeatRule } from './recurrence'
 import { clampDuration } from './taskModel'
 
@@ -188,9 +189,7 @@ async function importBackupSide(
     ...side.deleteProjectIds
       .slice(0, IMPORT_BATCH)
       .map((id) => ctx.db.delete(id)),
-    ...side.deleteTaskIds
-      .slice(0, IMPORT_BATCH)
-      .map((id) => ctx.db.delete(id)),
+    ...side.deleteTaskIds.slice(0, IMPORT_BATCH).map((id) => ctx.db.delete(id)),
   ])
 
   const projectBatch = side.projects.slice(0, IMPORT_BATCH)

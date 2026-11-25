@@ -32,7 +32,11 @@ const settle = (t: T) => t.finishAllScheduledFunctions(vi.runAllTimers)
 async function seed(
   t: T,
   settings: { syncEnabled: boolean; autoAdd: boolean },
-  task: { addToCalendar?: boolean; calendarEventId?: string; dueAt?: number | null } = {},
+  task: {
+    addToCalendar?: boolean
+    calendarEventId?: string
+    dueAt?: number | null
+  } = {},
 ) {
   await t.run(async (ctx) => {
     await ctx.db.insert('userSettings', {
@@ -70,7 +74,9 @@ const readTask = (t: T) =>
   t.run(async (ctx) =>
     ctx.db
       .query('tasks')
-      .withIndex('by_user_id', (q) => q.eq('userId', 'user_a').eq('id', TASK_ID))
+      .withIndex('by_user_id', (q) =>
+        q.eq('userId', 'user_a').eq('id', TASK_ID),
+      )
       .first(),
   )
 
@@ -82,7 +88,10 @@ describe('calendar sync rules from docs/statecharts/CalendarSync', () => {
     google.refuse('POST', 429, 2)
     vi.stubGlobal('fetch', google.fetch)
 
-    await asUser(t).mutation(api.tracker.updateTask, { id: TASK_ID, dueAt: DUE })
+    await asUser(t).mutation(api.tracker.updateTask, {
+      id: TASK_ID,
+      dueAt: DUE,
+    })
     await settle(t)
 
     expect(google.count('POST')).toBe(3)
@@ -94,7 +103,11 @@ describe('calendar sync rules from docs/statecharts/CalendarSync', () => {
 
   it('WantedEventArrives: turning sync on adds a task switched to the calendar', async () => {
     const t = convexTest(schema, modules)
-    await seed(t, { syncEnabled: false, autoAdd: false }, { addToCalendar: true })
+    await seed(
+      t,
+      { syncEnabled: false, autoAdd: false },
+      { addToCalendar: true },
+    )
     const google = fakeGoogle()
     vi.stubGlobal('fetch', google.fetch)
 
@@ -157,7 +170,11 @@ describe('calendar sync rules from docs/statecharts/CalendarSync', () => {
 describe('repairCalendar', () => {
   it('pushes every synced task and reports the result', async () => {
     const t = convexTest(schema, modules)
-    await seed(t, { syncEnabled: true, autoAdd: false }, { addToCalendar: true })
+    await seed(
+      t,
+      { syncEnabled: true, autoAdd: false },
+      { addToCalendar: true },
+    )
     const google = fakeGoogle()
     vi.stubGlobal('fetch', google.fetch)
 
@@ -169,7 +186,11 @@ describe('repairCalendar', () => {
 
   it('names the most common failure', async () => {
     const t = convexTest(schema, modules)
-    await seed(t, { syncEnabled: true, autoAdd: false }, { addToCalendar: true })
+    await seed(
+      t,
+      { syncEnabled: true, autoAdd: false },
+      { addToCalendar: true },
+    )
     vi.stubGlobal('fetch', fakeGoogle({ connected: false }).fetch)
 
     const summary = await asUser(t).action(api.calendar.repairCalendar, {})

@@ -3,21 +3,17 @@ import { v } from 'convex/values'
 import { internalMutation } from './_generated/server'
 import { internal } from './_generated/api'
 
+import {
+  eventsToDelete,
+  syncRule,
+  taskHasEvent,
+  taskWantsEvent,
+} from './syncRule'
+
 import type { Infer } from 'convex/values'
 import type { Doc } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
-
-export type SyncRule = { syncEnabled: boolean; autoAdd: boolean }
-
-export type SyncFields = {
-  addToCalendar?: boolean
-  dueAt: number | null
-  done: boolean
-  archived: boolean
-  spaceId?: string | null
-  importedFromEventId?: string | null
-  calendarEventId?: string | null
-}
+import type { SyncRule } from './syncRule'
 
 export const eventToDelete = v.object({
   taskId: v.string(),
@@ -25,8 +21,6 @@ export const eventToDelete = v.object({
 })
 
 export type EventToDelete = Infer<typeof eventToDelete>
-
-const EVENT_ID = /^[a-v0-9]{5,1024}$/
 
 const SWEEP_PAGE = 100
 const PUSH_STAGGER_MS = 300
@@ -50,50 +44,6 @@ export async function readUserSettings(
     .query('userSettings')
     .withIndex('by_user', (q) => q.eq('userId', userId))
     .first()
-}
-
-export function syncRule(row: Doc<'userSettings'> | null): SyncRule {
-  return {
-    syncEnabled: row?.calendarSyncEnabled ?? false,
-    autoAdd: row?.autoAddToCalendar ?? false,
-  }
-}
-
-export function derivedEventId(taskId: string): string | null {
-  const id = taskId.replace(/-/g, '').toLowerCase()
-  return EVENT_ID.test(id) ? id : null
-}
-
-export function taskWantsEvent(task: SyncFields, rule: SyncRule): boolean {
-  return (
-    rule.syncEnabled &&
-    !task.spaceId &&
-    (task.importedFromEventId ?? null) === null &&
-    (task.addToCalendar === true || rule.autoAdd) &&
-    task.dueAt !== null &&
-    !task.done &&
-    !task.archived
-  )
-}
-
-export function taskHasEvent(task: SyncFields): boolean {
-  return (task.calendarEventId ?? null) !== null
-}
-
-export function eventsToDelete(
-  tasks: Array<SyncFields & { id: string }>,
-): Array<EventToDelete> {
-  const byEventId = new Map<string, EventToDelete>()
-  for (const task of tasks) {
-    if (task.spaceId) continue
-    const stored = task.calendarEventId ?? null
-    if (stored) byEventId.set(stored, { taskId: task.id, eventId: stored })
-    if (task.addToCalendar !== true || task.dueAt === null) continue
-    const derived = derivedEventId(task.id)
-    if (derived && !byEventId.has(derived))
-      byEventId.set(derived, { taskId: task.id, eventId: derived })
-  }
-  return [...byEventId.values()]
 }
 
 export async function schedulePush(

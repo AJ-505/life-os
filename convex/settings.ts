@@ -2,14 +2,13 @@ import { v } from 'convex/values'
 
 import { mutation, query } from './_generated/server'
 import { getWritable, requireMember, requireUserId } from './access'
-import { afterSettingsChange, readUserSettings, syncRule } from './calendarSync'
+import { afterSettingsChange, readUserSettings } from './calendarSync'
+import { DEFAULT_REMINDER_MINUTES, syncRule } from './syncRule'
 import { NO_PROJECT_ID } from './taskModel'
 
 import type { Doc } from './_generated/dataModel'
 import type { MutationCtx, QueryCtx } from './_generated/server'
 import type { Scope } from './access'
-
-export const DEFAULT_REMINDER_MINUTES = 15
 
 const DEFAULTS = {
   syncEnabled: false,

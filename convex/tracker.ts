@@ -111,10 +111,7 @@ async function recordUpdateActivity(
     })
 }
 
-async function profileName(
-  ctx: QueryCtx,
-  userId: string,
-): Promise<string> {
+async function profileName(ctx: QueryCtx, userId: string): Promise<string> {
   const profile = await ctx.db
     .query('userProfiles')
     .withIndex('by_user', (q) => q.eq('userId', userId))
@@ -146,7 +143,10 @@ export const getBoard = query({
 
     const board = projects
       .sort((a, b) => a.gridCol - b.gridCol || a.gridRow - b.gridRow)
-      .map((p) => ({ ...shapeProject(p), tasks: ordered(tasksByProject.get(p.id)) }))
+      .map((p) => ({
+        ...shapeProject(p),
+        tasks: ordered(tasksByProject.get(p.id)),
+      }))
     const loose = tasksByProject.get(null)
     if (!loose) return board
     return [...board, noProjectBucket(spaceId, ordered(loose))]

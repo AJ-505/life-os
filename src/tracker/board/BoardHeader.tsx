@@ -207,7 +207,7 @@ export function BoardHeader({
   onToggleFocus: () => void
   view: BoardViewMode
 }) {
-  const spaceId = useBoardScope()
+  const { spaceId, can } = useBoardScope()
   const inSpace = SPACES_ENABLED && spaceId !== null
 
   return (
@@ -242,7 +242,7 @@ export function BoardHeader({
         >
           <Plus className="size-4" /> Project
         </Button>
-        {spaceId === null ? (
+        {can.focus ? (
           <Button
             variant={focusOpen ? 'secondary' : 'ghost'}
             size="icon"
