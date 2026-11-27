@@ -4,6 +4,7 @@ import { useUser } from '@clerk/tanstack-react-start'
 import { useConvexMutation } from '@convex-dev/react-query'
 import {
   CalendarRange,
+  Goal,
   LayoutGrid,
   Library as LibraryIcon,
   Menu,
@@ -61,6 +62,7 @@ import { api } from '../../convex/_generated/api'
 const NAV = [
   { to: '/', label: 'Board', icon: LayoutGrid },
   { to: '/timeline', label: 'Timeline', icon: CalendarRange },
+  { to: '/goals', label: 'Goals', icon: Goal },
   { to: '/library', label: 'Library', icon: LibraryIcon },
 ] as const
 

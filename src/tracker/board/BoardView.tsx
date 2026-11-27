@@ -15,8 +15,7 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useSuspenseQuery } from '@tanstack/react-query'
-import { Check, Crosshair, Plus } from 'lucide-react'
-import { toast } from 'sonner'
+import { Crosshair, Plus } from 'lucide-react'
 
 import {
   cn,
@@ -26,23 +25,11 @@ import {
   useStored,
 } from '#/design-system'
 import { Button } from '#/design-system/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '#/design-system/ui/dialog'
-import { Input } from '#/design-system/ui/input'
-import { Label } from '#/design-system/ui/label'
 import { Sheet, SheetContent } from '#/design-system/ui/sheet'
 
-import { PROJECT_COLORS, newId } from '../types'
 import { useBoardScope } from '../board-scope'
 import {
-  type CreateProjectArgs,
   boardQueryOptions,
-  useCreateProject,
   useMoveProject,
   useMoveTask,
   useSetTaskFocus,
@@ -58,7 +45,7 @@ import {
   projectCounts,
 } from './board-logic'
 import { colId, parseDragId, projId, resolveDrop } from './drop'
-import { appendProjectRow } from './placement'
+import { NewProjectDialog } from './NewProjectDialog'
 import { ProjectCard } from './ProjectCard'
 import { BoardHeader } from './BoardHeader'
 import { ResizableFocusPanel } from './ResizableFocusPanel'
@@ -191,109 +178,6 @@ function collisionFor(kind: DragKind): CollisionDetection {
 
     return closestCenter(args)
   }
-}
-
-function NewProjectDialog({
-  open,
-  onClose,
-  gridCol,
-  board,
-}: {
-  open: boolean
-  onClose: () => void
-  gridCol: number
-  board: BoardData
-}) {
-  const { spaceId } = useBoardScope()
-  const createProject = useCreateProject()
-  const [name, setName] = useState('')
-  const nextColor = (offset: number) =>
-    PROJECT_COLORS[
-      (canvasProjects(board).length + offset) % PROJECT_COLORS.length
-    ]
-  const [color, setColor] = useState<string>(nextColor(0))
-
-  const create = (args: CreateProjectArgs) => {
-    createProject.mutate(args, {
-      onError: (e: unknown) => {
-        toast.error('Could not create the project', {
-          description: e instanceof Error ? e.message : String(e),
-          action: { label: 'Retry', onClick: () => create(args) },
-        })
-      },
-    })
-  }
-
-  const submit = () => {
-    const n = name.trim()
-    if (!n) return
-    if (createProject.isPending) return
-    create({
-      id: newId(),
-      name: n,
-      color,
-      spaceId,
-      gridCol,
-      gridRow: appendProjectRow(board, gridCol),
-    })
-    setName('')
-    setColor(nextColor(1))
-    onClose()
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>New project</DialogTitle>
-        </DialogHeader>
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label className="os-label">Name</Label>
-            <Input
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== 'Enter') return
-                e.preventDefault()
-                submit()
-              }}
-              placeholder="e.g. PAU Archive, Sem 2, Apartment hunt…"
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label className="os-label">Color</Label>
-            <div className="flex flex-wrap gap-2">
-              {PROJECT_COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  data-proj={c}
-                  aria-label={c}
-                  onClick={() => setColor(c)}
-                  className={cn(
-                    'flex size-7 cursor-pointer items-center justify-center rounded-full bg-proj transition-transform hover:scale-110',
-                    color === c &&
-                      'ring-2 ring-ring ring-offset-2 ring-offset-card',
-                  )}
-                >
-                  {color === c ? (
-                    <Check className="size-3.5 text-white" />
-                  ) : null}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button size="sm" onClick={submit} disabled={!name.trim()}>
-            Create
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
 }
 
 function BoardColumn({

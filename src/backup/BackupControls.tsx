@@ -18,6 +18,14 @@ import { backupFile } from './schema'
 
 import type { BackupFile } from './schema'
 
+function importSummary(file: BackupFile) {
+  const when = new Date(file.exportedAt).toLocaleString()
+  const kept = 'Projects inside a space are not in the file and are left alone.'
+  if (!file.goals)
+    return `Importing this backup will erase your personal board and restore ${file.projects.length} projects and ${file.tasks.length} tasks from ${when}. ${kept} Your goals are not in this file and are left alone. This cannot be undone.`
+  return `Importing this backup will erase your personal board and goals, and restore ${file.projects.length} projects, ${file.tasks.length} tasks and ${file.goals.length} goals from ${when}. ${kept} This cannot be undone.`
+}
+
 export function BackupControls() {
   const convex = useConvex()
   const importBackup = useConvexMutation(api.backup.importBackup)
@@ -107,14 +115,7 @@ export function BackupControls() {
           <DialogHeader>
             <DialogTitle>Replace your personal board?</DialogTitle>
             <DialogDescription>
-              Importing this backup will erase your personal board and restore{' '}
-              {pendingImport?.projects.length ?? 0} projects and{' '}
-              {pendingImport?.tasks.length ?? 0} tasks from{' '}
-              {pendingImport
-                ? new Date(pendingImport.exportedAt).toLocaleString()
-                : ''}
-              . Projects inside a space are not in the file and are left alone.
-              This cannot be undone.
+              {pendingImport ? importSummary(pendingImport) : null}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

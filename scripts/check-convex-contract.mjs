@@ -101,6 +101,28 @@ const LIVE_CLIENT_SENDS = {
       },
     ],
   },
+  'goals:listGoals': null,
+  'goals:createGoal': {
+    id: 'contract-probe',
+    title: 'contract probe',
+    color: 'moss',
+    target: 100,
+    unit: null,
+    targetDate: null,
+    position: 0,
+  },
+  'goals:updateGoal': {
+    id: 'contract-probe',
+    title: 'contract probe',
+    color: 'moss',
+    target: 100,
+    unit: null,
+    targetDate: null,
+  },
+  'goals:setGoalProgress': { id: 'contract-probe', value: 0 },
+  'goals:reopenGoal': { id: 'contract-probe' },
+  'goals:moveGoal': { id: 'contract-probe', position: 0 },
+  'goals:deleteGoal': { id: 'contract-probe' },
   'spaces:getMySpaces': null,
   'spaces:getSpaceMembers': { spaceId: 'contract-probe' },
   'spaces:deleteSpace': { spaceId: 'contract-probe' },
@@ -168,22 +190,22 @@ async function chunks() {
   return [...found]
 }
 
+const MODULES = 'tracker|spaces|settings|calendar|backup|goals'
+const FUNCTION_REF = new RegExp(
+  `(?<![\\w$'"\`])(?:api\\.)?[$A-Za-z_][$\\w]*\\.(${MODULES})\\.([A-Za-z_$]\\w*)`,
+  'g',
+)
+
+function functionRefs(src) {
+  return [...src.matchAll(FUNCTION_REF)].map((m) => `${m[1]}:${m[2]}`)
+}
+
 async function referencedFunctions() {
   const refs = new Set()
   for (const chunk of await chunks()) {
     const res = await get(APP + chunk)
     if (!res.ok) continue
-    const src = await res.text()
-    for (const m of src.matchAll(
-      /\b(?:api\.)?[$A-Za-z_][$\w]*\.(tracker|spaces|settings|calendar|backup)\.([A-Za-z_$]\w*)/g,
-    )) {
-      refs.add(`${m[1]}:${m[2]}`)
-    }
-    for (const m of src.matchAll(
-      /\b(tracker|spaces|settings|calendar|backup)\b/g,
-    )) {
-      void m
-    }
+    for (const ref of functionRefs(await res.text())) refs.add(ref)
   }
   return [...refs].sort()
 }

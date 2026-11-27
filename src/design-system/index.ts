@@ -11,4 +11,5 @@ export {
 export type { StoredValue } from './stored'
 export { ThemeProvider, ModeToggle, useTheme, THEME_INIT_SCRIPT } from './theme'
 export { useMediaQuery } from './use-media-query'
+export { useNow } from './use-now'
 export { useKeyShortcuts } from './shortcuts'

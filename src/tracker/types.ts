@@ -28,6 +28,13 @@ export const PROJECT_COLORS = [
 
 export type ProjectColor = (typeof PROJECT_COLORS)[number]
 
+export function freshColor(used: Array<string>): ProjectColor {
+  const uses = (color: string) => used.filter((u) => u === color).length
+  return PROJECT_COLORS.reduce((best, color) =>
+    uses(color) < uses(best) ? color : best,
+  )
+}
+
 export function newId(): string {
   return globalThis.crypto.randomUUID()
 }

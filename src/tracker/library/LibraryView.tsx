@@ -13,14 +13,7 @@ import {
 
 import { Badge } from '#/design-system/ui/badge'
 import { Button } from '#/design-system/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '#/design-system/ui/dialog'
+import { ConfirmDelete } from '#/design-system/confirm-delete'
 import {
   Tabs,
   TabsContent,
@@ -36,44 +29,13 @@ import {
   useUpdateTask,
 } from '../queries'
 
-import type { ProjectWithTasks, Task } from '../types'
+import { ReachedGoalRow } from '#/goals/ReachedGoalRow'
+import { goalsQueryOptions } from '#/goals/queries'
 
-function ConfirmDelete({
-  label,
-  open,
-  onClose,
-  onConfirm,
-}: {
-  label: string
-  open: boolean
-  onClose: () => void
-  onConfirm: () => void
-}) {
-  return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Delete {label}?</DialogTitle>
-          <DialogDescription>This is permanent.</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={() => {
-              onConfirm()
-              onClose()
-            }}
-          >
-            Delete
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
+import { LIBRARY_TABS } from './library-search'
+
+import type { ProjectWithTasks, Task } from '../types'
+import type { LibraryTab } from './library-search'
 
 function ProjectRow({
   project,
@@ -218,8 +180,18 @@ function EmptyState({
   )
 }
 
-export function LibraryView() {
+export function LibraryView({
+  tab,
+  onTab,
+}: {
+  tab: LibraryTab
+  onTab: (tab: LibraryTab) => void
+}) {
   const { data: board } = useSuspenseQuery(boardQueryOptions(null))
+  const { data: goals } = useSuspenseQuery(goalsQueryOptions)
+  const reachedGoals = goals
+    .filter((goal) => goal.reachedAt !== null)
+    .sort((a, b) => (b.reachedAt ?? 0) - (a.reachedAt ?? 0))
 
   const shelved = board
     .filter((p) => p.status === 'shelved')
@@ -260,7 +232,13 @@ export function LibraryView() {
 
       <div className="board-scroll min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-2xl p-4 pb-24">
-          <Tabs defaultValue="shelf">
+          <Tabs
+            value={tab}
+            onValueChange={(next) => {
+              const chosen = LIBRARY_TABS.find((known) => known === next)
+              if (chosen) onTab(chosen)
+            }}
+          >
             <TabsList className="mb-4">
               <TabsTrigger value="shelf" className="gap-1.5">
                 <Archive className="size-3.5" /> Shelf
@@ -290,6 +268,18 @@ export function LibraryView() {
             </TabsContent>
 
             <TabsContent value="done" className="flex flex-col gap-6">
+              {reachedGoals.length > 0 ? (
+                <div>
+                  <h2 className="os-label mb-2">
+                    Reached goals · {reachedGoals.length}
+                  </h2>
+                  <div className="flex flex-col gap-2">
+                    {reachedGoals.map((goal) => (
+                      <ReachedGoalRow key={goal.id} goal={goal} />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <div>
                 <h2 className="os-label mb-2">Finished projects</h2>
                 {finished.length === 0 ? (

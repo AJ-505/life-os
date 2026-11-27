@@ -9,6 +9,7 @@ import { scheduleRemoval } from './calendarSync'
 import { eventsToDelete } from './syncRule'
 import { repeatRule } from './recurrence'
 import { clampDuration } from './taskModel'
+import { backupGoal, exportGoals, replaceGoals } from './goals'
 
 import type { MutationCtx, QueryCtx } from './_generated/server'
 
@@ -114,6 +115,7 @@ export const exportBackup = query({
         importedFromEventId: t.importedFromEventId ?? null,
         repeat: t.repeat ?? null,
       })),
+      goals: await exportGoals(ctx, userId),
     }
   },
 })
@@ -125,6 +127,7 @@ export const importBackup = mutation({
     exportedAt: v.string(),
     projects: v.array(backupProject),
     tasks: v.array(backupTask),
+    goals: v.optional(v.array(backupGoal)),
   },
   handler: async (ctx, data) => {
     const userId = await requireUserId(ctx)
@@ -157,6 +160,8 @@ export const importBackup = mutation({
       projects: [...projectsById.values()],
       tasks: [...tasksById.values()],
     })
+
+    if (data.goals) await replaceGoals(ctx, userId, data.goals)
 
     return {
       ok: true,

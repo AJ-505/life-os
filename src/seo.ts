@@ -41,6 +41,11 @@ const BY_ROUTE_ID: Record<string, PageSeo> = {
     description: `Shelf, accomplished and archived work. ${DESCRIPTION}`,
     noindex: true,
   },
+  '/goals': {
+    title: `Goals — ${SITE_NAME}`,
+    description: `How close you are getting to your goals. ${DESCRIPTION}`,
+    noindex: true,
+  },
   '/timeline': {
     title: `Timeline — ${SITE_NAME}`,
     description: `Overdue, today, this week and later. ${DESCRIPTION}`,

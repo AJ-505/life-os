@@ -38,12 +38,28 @@ const backupTask = z.object({
   repeat: z.enum(REPEAT_RULES).nullable().optional(),
 })
 
+const backupGoal = z.object({
+  id: z.string(),
+  title: z.string(),
+  color: z.string(),
+  target: z.number(),
+  unit: z.string().nullable(),
+  targetDate: z.number().nullable(),
+  current: z.number(),
+  position: z.number(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+  reachedAt: z.number().nullable(),
+  history: z.array(z.object({ value: z.number(), at: z.number() })),
+})
+
 export const backupFile = z.object({
   app: z.literal('lifeos'),
   version: z.literal(1),
   exportedAt: z.string(),
   projects: z.array(backupProject),
   tasks: z.array(backupTask),
+  goals: z.array(backupGoal).optional(),
 })
 
 export type BackupFile = z.infer<typeof backupFile>
