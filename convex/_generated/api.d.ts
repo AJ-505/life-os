@@ -15,6 +15,8 @@ import type * as calendarPull from "../calendarPull.js";
 import type * as calendarSync from "../calendarSync.js";
 import type * as crons from "../crons.js";
 import type * as devAuth from "../devAuth.js";
+import type * as goalModel from "../goalModel.js";
+import type * as goals from "../goals.js";
 import type * as googleCalendar from "../googleCalendar.js";
 import type * as http from "../http.js";
 import type * as migrations from "../migrations.js";
@@ -41,6 +43,8 @@ declare const fullApi: ApiFromModules<{
   calendarSync: typeof calendarSync;
   crons: typeof crons;
   devAuth: typeof devAuth;
+  goalModel: typeof goalModel;
+  goals: typeof goals;
   googleCalendar: typeof googleCalendar;
   http: typeof http;
   migrations: typeof migrations;

@@ -5,6 +5,7 @@ import { useRouter } from '@tanstack/react-router'
 import { SPACES_ENABLED } from '#/feature-flags'
 import { mySpacesQueryOptions } from '#/spaces/queries'
 import { boardQueryOptions } from '#/tracker/queries'
+import { goalsQueryOptions } from '#/goals/queries'
 
 import type { QueryClient } from '@tanstack/react-query'
 import type { AnyRouter } from '@tanstack/react-router'
@@ -26,6 +27,8 @@ export function warmRoutes({
   spacesEnabled = SPACES_ENABLED,
 }: WarmClients & { spacesEnabled?: boolean }) {
   void router.preloadRoute({ to: '/timeline' }).catch(ignore)
+  void router.preloadRoute({ to: '/goals' }).catch(ignore)
+  void queryClient.prefetchQuery(goalsQueryOptions)
   void router.preloadRoute({ to: '/library' }).catch(ignore)
   void router.preloadRoute({ to: '/spaces' }).catch(ignore)
 

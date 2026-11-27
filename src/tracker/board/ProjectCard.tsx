@@ -10,7 +10,6 @@ import { format } from 'date-fns/format'
 import {
   Archive,
   CalendarIcon,
-  Check,
   ChevronDown,
   CircleCheckBig,
   Eye,
@@ -47,7 +46,8 @@ import {
   PopoverTrigger,
 } from '#/design-system/ui/popover'
 
-import { PROJECT_COLORS, newId } from '../types'
+import { ColorSwatches } from '../ColorSwatches'
+import { newId } from '../types'
 import {
   useAddTask,
   useDeleteProject,
@@ -60,34 +60,6 @@ import { appendRootPosition } from './placement'
 import { TaskRow } from './TaskRow'
 
 import type { ProjectWithTasks } from '../types'
-
-function ColorSwatches({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (c: string) => void
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {PROJECT_COLORS.map((c) => (
-        <button
-          key={c}
-          type="button"
-          data-proj={c}
-          aria-label={c}
-          onClick={() => onChange(c)}
-          className={cn(
-            'flex size-7 cursor-pointer items-center justify-center rounded-full bg-proj transition-transform hover:scale-110',
-            value === c && 'ring-2 ring-ring ring-offset-2 ring-offset-card',
-          )}
-        >
-          {value === c ? <Check className="size-3.5 text-white" /> : null}
-        </button>
-      ))}
-    </div>
-  )
-}
 
 export function ProjectEditDialog({
   project,

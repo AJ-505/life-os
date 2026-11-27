@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { warmRoutes } from './prefetch-routes'
 import { boardQueryOptions } from '#/tracker/queries'
+import { goalsQueryOptions } from '#/goals/queries'
 
 import type { QueryClient } from '@tanstack/react-query'
 import type { AnyRouter } from '@tanstack/react-router'
@@ -54,7 +55,7 @@ const spacesList = (n: number) =>
   Array.from({ length: n }, (_, i) => ({ id: `space_${i}` }))
 
 describe('warmRoutes', () => {
-  it('preloads the shell navigation routes and the spaces list', async () => {
+  it('preloads the shell navigation routes, the goals and the spaces list', async () => {
     const c = fakeClients(spacesList(1))
 
     warmRoutes({
@@ -66,11 +67,12 @@ describe('warmRoutes', () => {
 
     expect(c.preloaded.map((p) => p.to)).toEqual([
       '/timeline',
+      '/goals',
       '/library',
       '/spaces',
       '/space/$spaceId',
     ])
-    expect(c.preloaded[3].params).toEqual({ spaceId: 'space_0' })
+    expect(c.preloaded[4].params).toEqual({ spaceId: 'space_0' })
     expect(c.ensured).toHaveLength(1)
   })
 
@@ -86,6 +88,7 @@ describe('warmRoutes', () => {
 
     const boardKeys = c.prefetched.map((q) => JSON.stringify(q.queryKey))
     expect(boardKeys).toEqual([
+      JSON.stringify(goalsQueryOptions.queryKey),
       JSON.stringify(boardQueryOptions('space_0').queryKey),
       JSON.stringify(boardQueryOptions('space_1').queryKey),
       JSON.stringify(boardQueryOptions('space_2').queryKey),
@@ -104,11 +107,14 @@ describe('warmRoutes', () => {
 
     expect(c.preloaded.map((p) => p.to)).toEqual([
       '/timeline',
+      '/goals',
       '/library',
       '/spaces',
     ])
     expect(c.ensured).toHaveLength(0)
-    expect(c.prefetched).toHaveLength(0)
+    expect(c.prefetched.map((q) => JSON.stringify(q.queryKey))).toEqual([
+      JSON.stringify(goalsQueryOptions.queryKey),
+    ])
   })
 
   it('stays silent when the network is not there', async () => {
@@ -136,9 +142,12 @@ describe('warmRoutes', () => {
 
     expect(c.preloaded.map((p) => p.to)).toEqual([
       '/timeline',
+      '/goals',
       '/library',
       '/spaces',
     ])
-    expect(c.prefetched).toHaveLength(0)
+    expect(c.prefetched.map((q) => JSON.stringify(q.queryKey))).toEqual([
+      JSON.stringify(goalsQueryOptions.queryKey),
+    ])
   })
 })

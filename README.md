@@ -44,12 +44,24 @@ Every dated task shows up in Timeline, grouped so you can scan what's actually u
 
 Project target dates appear there too. You can check tasks off or add them to Focus without leaving the view.
 
+## Goals
+
+Goals is a personal progress tracker, separate from projects. Give a goal a name, then move its slider as you get closer. A goal is a percent, or a real number with a unit, such as 9 of 24 books.
+
+- **Slider.** Drag it, tap it, or use the arrow keys. Click the big number to type an exact value. Every change saves at once.
+- **History.** Each move is kept. The card shows a sparkline and how much you moved this week.
+- **Target date.** Optional. A marker on the slider shows where an even pace would put you, and the card tells you if you are ahead or behind.
+- **Order.** Drag the grip to reorder the cards. On a phone, press and hold the grip.
+- **Reached.** At the target, the card celebrates, then moves to Library, under Accomplished. Undo in the toast brings it back. Reopen it from the Library at any time.
+
+Goals are private to you. They never appear in a Space.
+
 ## Library
 
 Where finished things live:
 
 - **Shelf** — projects you've shelved to get them off the board. Restore or finish them later.
-- **Accomplished** — finished projects and completed tasks grouped by month.
+- **Accomplished** — reached goals, finished projects, and completed tasks grouped by month.
 - **Archived** — tasks you've hidden from a project without deleting them.
 
 No separate archive app. It's all in the sidebar.
@@ -139,7 +151,7 @@ domain needs a rebuild.
 
 ## Backup
 
-Export your data as JSON from the sidebar and import it back anytime. A backup covers your **personal** board only: a space's projects belong to everyone in it, so they are not captured and a restore never touches them. Tasks keep their calendar association across a round trip, and an event whose task the snapshot drops is removed rather than orphaned.
+Export your data as JSON from the sidebar and import it back anytime. A backup covers your **personal** board and your goals, with their history: a space's projects belong to everyone in it, so they are not captured and a restore never touches them. Tasks keep their calendar association across a round trip, and an event whose task the snapshot drops is removed rather than orphaned.
 
 ---
 

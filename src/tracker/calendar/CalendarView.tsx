@@ -6,7 +6,7 @@ import { isSameMonth } from 'date-fns/isSameMonth'
 import { isToday } from 'date-fns/isToday'
 import { ChevronLeft, ChevronRight, Flag, Grid2x2, Repeat } from 'lucide-react'
 
-import { cn, useMediaQuery } from '#/design-system'
+import { cn, useMediaQuery, useNow } from '#/design-system'
 import { Button } from '#/design-system/ui/button'
 import { Input } from '#/design-system/ui/input'
 import {
@@ -73,15 +73,6 @@ const DRAFT_BOX_CLASSES =
 export function calendarSlotAt(point: { x: number; y: number }) {
   const hit = document.elementFromPoint(point.x, point.y)
   return hit?.closest<HTMLElement>('[data-cal-drop]')?.dataset.calDrop ?? null
-}
-
-function useNow() {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 60_000)
-    return () => window.clearInterval(id)
-  }, [])
-  return now
 }
 
 function weekLabel(days: Array<Date>) {

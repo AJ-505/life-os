@@ -141,6 +141,28 @@ export default defineSchema({
     .index('by_user_fetchedAt', ['userId', 'fetchedAt'])
     .index('by_fetchedAt', ['fetchedAt']),
 
+  goals: defineTable({
+    userId: v.string(),
+    id: v.string(),
+    title: v.string(),
+    color: v.string(),
+    target: v.number(),
+    unit: v.union(v.string(), v.null()),
+    targetDate: v.union(v.number(), v.null()),
+    current: v.number(),
+    position: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    reachedAt: v.union(v.number(), v.null()),
+  }).index('by_user_id', ['userId', 'id']),
+
+  goalCheckins: defineTable({
+    userId: v.string(),
+    goalId: v.string(),
+    value: v.number(),
+    at: v.number(),
+  }).index('by_user_goal_at', ['userId', 'goalId', 'at']),
+
   inviteAttempts: defineTable({
     userId: v.string(),
     count: v.number(),
